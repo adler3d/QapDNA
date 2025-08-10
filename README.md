@@ -6,7 +6,7 @@ t_cmd decide_next_action(
   vector<t_cmd> allowed_actions
 ){
   static vector<t_cmd_with_vpow> log;
-  t_reconstucted_world&w=log_and_vpow2rw(log,vpow);
+  t_reconstructed_world&w=log_and_vpow2rw(log,vpow);
   t_best_score best;
   for(auto&ex:allowed_actions){
     auto tmp=w;
