@@ -1,6 +1,3 @@
-// crossplatfrom_net_api_by_ai.cpp : Этот файл содержит функцию "main". Здесь начинается и заканчивается выполнение программы.
-//
-
 #include "pch.h"
 #include <string>
 #include <map>
