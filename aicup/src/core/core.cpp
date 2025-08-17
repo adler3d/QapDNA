@@ -51,7 +51,7 @@ string generate_token(string coder_name,string timestamp) {
   //return sha256( random_bytes(32) + timestamp + coder_name );
 }
 template<class TYPE>TYPE parse(string s){return {};}
-template<class TYPE>string serialize(TYPE&&ref){return "nope";}
+string serialize(...){return "nope";}
 struct t_client20250817{
   struct t_input{
     struct t_visible_part_of_world{};
@@ -250,54 +250,105 @@ struct t_main:t_process{
     capi.write_to_socket(node2ipport[node],"new_game,"+serialize(gd)+"\n");
   }
 };
-struct t_player{
-  string coder;
-  string app;
-};
-struct t_game{
-  vector<t_player> players;
-  string config;
-  int tick=0;
-  int maxtick=20000;
-};
+//struct t_player{
+//  string coder;
+//  string app;
+//};
+//struct t_game{
+//  vector<t_player> players;
+//  string config;
+//  int tick=0;
+//  int maxtick=20000;
+//};
 struct t_node:t_process{
-  vector<t_game> games;
-  //struct t_pipe{};
-  //struct t_stream{void on_data(...){}};
-  //struct t_proc{void write(const string&data){}};
-  struct i_cb{virtual void go(const string&data){}};
-  struct t_cb:i_cb{
-    int id=-1;
-    void go(const string&data)override{
-
-    }
+  struct i_output{
+    virtual void on_stdout(const string&data)=0;
+    virtual void on_stderr(const string&data)=0;
+    virtual void on_closed_stdout()=0;
+    virtual void on_closed_stderr()=0;
+    virtual void on_stdin_open()=0;
   };
-  struct i_inp{virtual void write(const string&data){}};
-  struct t_doker_api{
-    t_cb out,err;
-    unique_ptr<i_inp> inp;
-    void write(const string&data){inp->write(data);}
+  struct i_input{
+    virtual void write_stdin(const string&data)=0;
+    virtual void close_stdin()=0;
   };
-  void spawn_doker(const string&fn,t_doker_api&api){return;};
-  static string config2seed(const string&config){return {};}
-  struct t_game_cbs{
+  struct t_docker_api{
+    unique_ptr<i_input>  input;
+    unique_ptr<i_output> output;
+    void send(const string&data){if(input)input->write_stdin(data);}
+  };
+  struct t_cmd{bool valid=true;};
+  struct t_runned_game{
     t_game_decl gd;
-    vector<unique_ptr<t_doker_api>> slot2api;
+    int tick=0;
+    vector<unique_ptr<t_docker_api>> slot2api;
+    vector<t_cmd> slot2cmd;
   };
-  vector<t_game_cbs> gcbs;
+  struct t_player_ctx:i_output{
+    int player_id;
+    string coder;
+    t_runned_game*pgame=nullptr;
+    t_node*pnode=nullptr;
+    string err;
+    void on_stdout(const string&data)override{
+      pnode->on_player_stdout(*pgame,player_id,data);
+    }
+    void on_stderr(const string&data)override{
+      if(data.size()+err.size()<1024*64)err+=data;
+    }
+    void on_closed_stderr()override{}
+    void on_closed_stdout()override{}
+    void on_stdin_open()override{}
+  };
+  void spawn_docker(const string&fn,t_docker_api&api){
+    struct t_stdin_writer:i_input{
+      void write_stdin(const string&data){};
+      void close_stdin(){};
+    };
+    api.input=make_unique<t_stdin_writer>();
+    /*
+    вот что тут нужно сделать:
+    запустить изолированно в "отдельном docker-процессе" "изолированный процесс" из файла fn
+    прикрутить t_stdin_writer к этому процессу.
+    прикрутить i_output из t_docker_api::output к этому процессу.
+    */
+    return;
+  }
+  static string config2seed(const string&config){return {};}
+  vector<unique_ptr<t_runned_game>> rgarr;
   void new_game(const t_game_decl&gd){
-    auto&g=qap_add_back(gcbs);
+    auto&gu=qap_add_back(rgarr);
+    gu=make_unique<t_runned_game>();
+    auto&g=*gu.get();
     g.gd=gd;
     int i=-1;
     for(auto&ex:gd.arr){
       i++;
       auto&b=qap_add_back(g.slot2api);
-      b=make_unique<t_doker_api>();
+      b=make_unique<t_docker_api>();
+      auto pc=make_unique<t_player_ctx>();
+      auto&o=*pc.get();
+      o.coder=ex.coder;
+      o.player_id=i;
+      o.pnode=this;
+      o.pgame=&g;
+      b->output=std::move(pc);
       auto&c=*b.get();
-      c.out.id=i;
-      c.err.id=i;
-      spawn_doker(ex.cdn_bin_file,c);
-      c.write("seed,"+config2seed(gd.config)+"\n");
+      spawn_docker(ex.cdn_bin_file,c);
+    }
+  }
+  void game_tick(t_runned_game&game) {
+    string world_state=serialize(game.gd,game.tick);
+    for(int i=0;i<game.slot2api.size();i++){
+      auto&api=game.slot2api[i];
+      api->send("vpow,"+world_state+"\n");
+    }
+    this_thread::sleep_for(50ms);
+  }
+  void on_player_stdout(t_runned_game&g,int player_id,const string&data){
+    auto move=parse<t_cmd>(data);
+    if(move.valid){
+      g.slot2cmd[player_id]=move;
     }
   }
   int main(){
