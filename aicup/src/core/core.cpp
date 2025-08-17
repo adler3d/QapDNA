@@ -240,7 +240,7 @@ struct t_game_rec{
   int tick=0;
 };
 struct t_game_slot{string coder;string cdn_bin_file;};
-struct t_game_decl{vector<t_game_slot> arr;string config;int game_id=0;};
+struct t_game_decl{vector<t_game_slot> arr;string config;int game_id=0;int maxtick=20000;int stderr_max=1024*64;};
 struct t_main:t_process{
   vector<t_coder_rec> carr;
   vector<t_game_rec> garr;
@@ -266,8 +266,10 @@ static int mkfifo(...){return 0;}
 static int open(...){return 0;}
 static int write(...){return 0;}
 static int close(...){return 0;}
+static int read(...){return 0;}
 static constexpr int O_WRONLY=0;
 static constexpr int O_NONBLOCK=0;
+static constexpr int O_RDONLY=0;
 #else
 #endif
 struct t_node:t_process{
@@ -288,13 +290,27 @@ struct t_node:t_process{
     void send(const string&data){if(input)input->write_stdin(data);}
   };
   struct t_cmd{bool valid=true;};
-  struct t_status{bool TL=false;};
+  struct t_status{bool TL=false;bool ok()const{return !TL;}};
   struct t_runned_game{
     t_game_decl gd;
     int tick=0;
     vector<unique_ptr<t_docker_api>> slot2api;
     vector<t_cmd> slot2cmd;
     vector<t_status> slot2status;
+    vector<int> slot2ready;
+    void init(){
+      slot2cmd.resize(gd.arr.size());
+      slot2status.resize(gd.arr.size());
+      slot2ready.resize(gd.arr.size());
+    }
+    void new_tick(){for(auto&ex:slot2ready)ex=false;}
+    bool all_ready(){
+      for(int i=0;i<slot2cmd.size();i++){
+        if(slot2ready[i]||!slot2status[i].ok())continue;
+        return false;
+      }
+      return true;
+    }
   };
   struct t_player_ctx:i_output{
     int player_id;
@@ -306,32 +322,46 @@ struct t_node:t_process{
       pnode->on_player_stdout(*pgame,player_id,data);
     }
     void on_stderr(const string&data)override{
-      if(data.size()+err.size()<1024*64)err+=data;
+      if(data.size()+err.size()<pgame->gd.stderr_max)err+=data;
     }
     void on_closed_stderr()override{}
     void on_closed_stdout()override{}
     void on_stdin_open()override{}
   };
   static constexpr int buff_size=1024*64;
-  static void start_stdout_reader(FILE*pipe,i_output*output){
-    thread t([pipe,output](){
-      char buffer[buff_size];
-      while(fgets(buffer,sizeof(buffer),pipe)) {
-        output->on_stdout(string(buffer));
+  static void start_stdout_reader(const string&pipe_path,i_output*output){
+    thread t([pipe_path,output](){
+      int fd=open(pipe_path.c_str(),O_RDONLY);
+      if(fd==-1){
+        output->on_stderr("failed to open stdout pipe\n");
+        return;
       }
+      char buffer[buff_size];
+      int n;
+      while((n=read(fd,buffer,sizeof(buffer)-1))>0){
+        buffer[n]='\0';
+        output->on_stdout(string(buffer,n));
+      }
+      close(fd);
       output->on_closed_stdout();
-      fclose(pipe);
     });
     t.detach();
   }
-  static void start_stderr_reader(FILE*pipe,i_output*output){
-    thread t([pipe,output](){
-      char buffer[buff_size];
-      while(fgets(buffer,sizeof(buffer),pipe)){
-        output->on_stderr(string(buffer));
+  static void start_stderr_reader(const string&pipe_path,i_output*output){
+    thread t([pipe_path,output](){
+      int fd=open(pipe_path.c_str(),O_RDONLY);
+      if(fd==-1){
+        output->on_stderr("failed to open stderr pipe\n");
+        return;
       }
+      char buffer[buff_size];
+      int n;
+      while((n=read(fd,buffer,sizeof(buffer)-1))>0){
+        buffer[n]='\0';
+        output->on_stderr(string(buffer, n));
+      }
+      close(fd);
       output->on_closed_stderr();
-      fclose(pipe);
     });
     t.detach();
   }
@@ -367,7 +397,7 @@ struct t_node:t_process{
     static constexpr int MAX_TICK_TIME=50;
     void update(){
       for(auto&t:tasks){
-        if(time(0)-t.started_at<=MAX_TICK_TIME)continue;
+        if(time(0)-t.started_at<=MAX_TICK_TIME)continue; // TODO: заменить на высокоточный таймер
         string cmd="docker kill "+t.container_id;
         system(cmd.c_str());
         t.pgame->slot2status[t.player_id].TL=true;
@@ -413,7 +443,7 @@ struct t_node:t_process{
     FILE*pipe=popen(cmd.c_str(),"r+");
     if(!pipe){
       api.output->on_stderr("docker run failed\n");
-      return;
+      return false;
     }
     struct t_stdin_writer:i_input{
       int fd=-1;
@@ -424,14 +454,14 @@ struct t_node:t_process{
       void write_stdin(const string&data){send_to_player(data);};
       void close_stdin(){if(fd==-1)return;close(fd);fd=-1;};
     };
-    auto inp=make_unique<t_stdin_writer>(pipe);
+    auto inp=make_unique<t_stdin_writer>();
     inp->fd=open(names.in.c_str(),O_WRONLY|O_NONBLOCK);
     api.input=std::move(inp);
     auto*output=api.output.get();
     if(output){
-      start_stdout_reader(open(names.out.c_str(),O_WRONLY|O_NONBLOCK),output);// переделывать на пайпы? ридер ждёт FILE*!
-      start_stderr_reader(open(names.err.c_str(),O_WRONLY|O_NONBLOCK),output);// переделывать на пайпы? ридер ждёт FILE*!
-    }
+      start_stdout_reader(names.out,output);
+      start_stderr_reader(names.err,output);
+    }else return false;
     return true;
   }
   void spawn_docker_old(const string&fn,t_docker_api&api){
@@ -450,6 +480,7 @@ struct t_node:t_process{
     gu=make_unique<t_runned_game>();
     auto&g=*gu.get();
     g.gd=gd;
+    g.init();
     int i=-1;
     for(auto&ex:gd.arr){
       i++;
@@ -478,11 +509,24 @@ struct t_node:t_process{
   void on_player_stdout(t_runned_game&g,int player_id,const string&data){
     auto move=parse<t_cmd>(data);
     if(move.valid){
-      g.slot2cmd[player_id]=move; // TODO: мувы нужно посчитать, когда все накопятся нужно готовить следующий шаг симуляции
+      g.slot2cmd[player_id]=move; // TODO: нужно гармотно сообщат о том что мув невалидный и мочить процесс с ошибкой.
+      g.slot2ready[player_id]=true; // TODO: нужно где-то проверять g.all_ready
     }
   }
   int main(){
-    //for(int i=0;i<game... в отдельных трэдах все игры обрабатывать?
+    t_container_monitor monitor;
+    monitor.pnode=this;
+    while(true){
+      monitor.update();
+      for(auto&gu:rgarr){
+        auto&g=*gu.get();
+        if(g.tick>=g.gd.maxtick)continue;
+        game_tick(g);
+        g.tick++;
+        g.new_tick();
+      }
+      this_thread::sleep_for(50ms);
+    }
   }
 };
 
