@@ -240,7 +240,7 @@ struct t_game_rec{
   int tick=0;
 };
 struct t_game_slot{string coder;string cdn_bin_file;};
-struct t_game_decl{vector<t_game_slot> arr;string config;};
+struct t_game_decl{vector<t_game_slot> arr;string config;int game_id=0;};
 struct t_main:t_process{
   vector<t_coder_rec> carr;
   vector<t_game_rec> garr;
@@ -260,6 +260,16 @@ struct t_main:t_process{
 //  int tick=0;
 //  int maxtick=20000;
 //};
+#ifdef _WIN32
+static FILE*popen(...){return nullptr;}
+static int mkfifo(...){return 0;}
+static int open(...){return 0;}
+static int write(...){return 0;}
+static int close(...){return 0;}
+static constexpr int O_WRONLY=0;
+static constexpr int O_NONBLOCK=0;
+#else
+#endif
 struct t_node:t_process{
   struct i_output{
     virtual void on_stdout(const string&data)=0;
@@ -278,11 +288,13 @@ struct t_node:t_process{
     void send(const string&data){if(input)input->write_stdin(data);}
   };
   struct t_cmd{bool valid=true;};
+  struct t_status{bool TL=false;};
   struct t_runned_game{
     t_game_decl gd;
     int tick=0;
     vector<unique_ptr<t_docker_api>> slot2api;
     vector<t_cmd> slot2cmd;
+    vector<t_status> slot2status;
   };
   struct t_player_ctx:i_output{
     int player_id;
@@ -300,22 +312,139 @@ struct t_node:t_process{
     void on_closed_stdout()override{}
     void on_stdin_open()override{}
   };
-  void spawn_docker(const string&fn,t_docker_api&api){
+  static constexpr int buff_size=1024*64;
+  static void start_stdout_reader(FILE*pipe,i_output*output){
+    thread t([pipe,output](){
+      char buffer[buff_size];
+      while(fgets(buffer,sizeof(buffer),pipe)) {
+        output->on_stdout(string(buffer));
+      }
+      output->on_closed_stdout();
+      fclose(pipe);
+    });
+    t.detach();
+  }
+  static void start_stderr_reader(FILE*pipe,i_output*output){
+    thread t([pipe,output](){
+      char buffer[buff_size];
+      while(fgets(buffer,sizeof(buffer),pipe)){
+        output->on_stderr(string(buffer));
+      }
+      output->on_closed_stderr();
+      fclose(pipe);
+    });
+    t.detach();
+  }
+  static bool build_ai_image(const string& binary_path, const string& container_id) {
+    string dir = "/tmp/ai_build_" + container_id;
+    system(("mkdir -p " + dir).c_str());
+    system(("cp " + binary_path + " " + dir + "/ai.bin").c_str());
+    ofstream df((dir + "/Dockerfile").c_str());
+    df << "FROM ubuntu:20.04\n"
+          "RUN useradd -m ai\n"
+          "USER ai\n"
+          "WORKDIR /home/ai\n"
+          "COPY ai.bin /home/ai/\n"
+          "RUN chmod +x ai.bin\n"
+          "CMD [\"./ai.bin\"]\n";
+    df.close();
+    string cmd = "docker build -t ai_image_" + container_id + " " + dir;
+    int result = system(cmd.c_str());
+    return result == 0;
+  }
+  struct t_container_monitor {
+    struct t_task {
+      t_runned_game*pgame=nullptr;
+      string container_id;
+      int player_id;
+      time_t started_at;
+    };
+    vector<t_task> tasks;
+    t_node*pnode=nullptr;
+    void add(t_runned_game*pgame,const string&container_id,int player_id) {
+      tasks.push_back({pgame,container_id,player_id,time(0)});
+    }
+    static constexpr int MAX_TICK_TIME=50;
+    void update(){
+      for(auto&t:tasks){
+        if(time(0)-t.started_at<=MAX_TICK_TIME)continue;
+        string cmd="docker kill "+t.container_id;
+        system(cmd.c_str());
+        t.pgame->slot2status[t.player_id].TL=true;
+      }
+    }
+  };
+  struct t_pipe_names {
+    string in;   // /tmp/ai_in_{game_id}_{player_id}
+    string out;  // /tmp/ai_out_{game_id}_{player_id}
+    string err;  // /tmp/ai_err_{game_id}_{player_id}
+  };
+  t_pipe_names make_pipe_names(int game_id, int player_id) {
+    return {
+      "/tmp/ai_in_" +to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand()),
+      "/tmp/ai_out_"+to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand()),
+      "/tmp/ai_err_"+to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand())
+    };
+  }
+  bool create_pipes(const t_pipe_names& names) {
+    if (mkfifo(names.in.c_str(), 0666) == -1 && errno != EEXIST) return false;
+    if (mkfifo(names.out.c_str(),0666) == -1 && errno != EEXIST)return false;
+    if (mkfifo(names.err.c_str(),0666) == -1 && errno != EEXIST)return false;
+    return true;
+  }
+  bool spawn_docker(const string&fn,t_docker_api&api,int game_id,int player_id){
+    string container_id="game_"+to_string(game_id)+"_p"+to_string(player_id)+"_"+to_string(rand());
+    auto names=make_pipe_names(game_id,player_id);
+    if(!create_pipes(names)){
+      api.output->on_stderr("create_pipes failed\n");
+      return false;
+    }
+    string cmd = "docker run --rm "
+                 "--name " + container_id + " "
+                 "--memory=512m --cpus=1 --network=none --read-only "
+                 "--mount type=pipe,src=" + names.in  + ",dst=/dev/stdin "
+                 "--mount type=pipe,src=" + names.out + ",dst=/dev/stdout "
+                 "--mount type=pipe,src=" + names.err + ",dst=/dev/stderr "
+                 "ai_image_" + container_id;
+    if(!build_ai_image(fn,container_id)) {
+      api.output->on_stderr("build failed\n");
+      return false;
+    }
+    FILE*pipe=popen(cmd.c_str(),"r+");
+    if(!pipe){
+      api.output->on_stderr("docker run failed\n");
+      return;
+    }
+    struct t_stdin_writer:i_input{
+      int fd=-1;
+      void send_to_player(const string&data){
+        if(fd==-1)return;
+        write(fd,data.c_str(),data.size());
+      }
+      void write_stdin(const string&data){send_to_player(data);};
+      void close_stdin(){if(fd==-1)return;close(fd);fd=-1;};
+    };
+    auto inp=make_unique<t_stdin_writer>(pipe);
+    inp->fd=open(names.in.c_str(),O_WRONLY|O_NONBLOCK);
+    api.input=std::move(inp);
+    auto*output=api.output.get();
+    if(output){
+      start_stdout_reader(open(names.out.c_str(),O_WRONLY|O_NONBLOCK),output);// переделывать на пайпы? ридер ждёт FILE*!
+      start_stderr_reader(open(names.err.c_str(),O_WRONLY|O_NONBLOCK),output);// переделывать на пайпы? ридер ждёт FILE*!
+    }
+    return true;
+  }
+  void spawn_docker_old(const string&fn,t_docker_api&api){
     struct t_stdin_writer:i_input{
       void write_stdin(const string&data){};
       void close_stdin(){};
     };
     api.input=make_unique<t_stdin_writer>();
-    /*
-    вот что тут нужно сделать:
-    запустить изолированно в "отдельном docker-процессе" "изолированный процесс" из файла fn
-    прикрутить t_stdin_writer к этому процессу.
-    прикрутить i_output из t_docker_api::output к этому процессу.
-    */
     return;
   }
   static string config2seed(const string&config){return {};}
   vector<unique_ptr<t_runned_game>> rgarr;
+  int game_n=0;
   void new_game(const t_game_decl&gd){
     auto&gu=qap_add_back(rgarr);
     gu=make_unique<t_runned_game>();
@@ -334,8 +463,9 @@ struct t_node:t_process{
       o.pgame=&g;
       b->output=std::move(pc);
       auto&c=*b.get();
-      spawn_docker(ex.cdn_bin_file,c);
+      spawn_docker(ex.cdn_bin_file,c,gd.game_id,i);
     }
+    game_n++;
   }
   void game_tick(t_runned_game&game) {
     string world_state=serialize(game.gd,game.tick);
@@ -348,15 +478,16 @@ struct t_node:t_process{
   void on_player_stdout(t_runned_game&g,int player_id,const string&data){
     auto move=parse<t_cmd>(data);
     if(move.valid){
-      g.slot2cmd[player_id]=move;
+      g.slot2cmd[player_id]=move; // TODO: мувы нужно посчитать, когда все накопятся нужно готовить следующий шаг симуляции
     }
   }
   int main(){
-
+    //for(int i=0;i<game... в отдельных трэдах все игры обрабатывать?
   }
 };
 
 int main() {
+  srand(time(0));
   t_net_api api;
   //string line;
   //if (api.readline_from_socket("127.0.0.1:80", line)) {
