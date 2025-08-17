@@ -11,7 +11,7 @@ string generate_token(string coder_name,string timestamp) {
   return "token:"+to_string((rand()<<16)+rand())+coder_name+timestamp;
   //return sha256( random_bytes(32) + timestamp + coder_name );
 }
-struct t_client20250817{
+struct t_client{
   struct t_input{
     struct t_visible_part_of_world{};
     struct t_allowed_cmds{};
@@ -91,7 +91,7 @@ struct t_client20250817{
     email=arr[3];
   }
 };
-struct t_main20250817{
+struct t_main{
   struct t_coder{
     string coder;
     string token="def";
@@ -186,35 +186,13 @@ struct t_process{
   string name;
   string main;
 };
-
-struct t_coder_rec{
-  string name;
-  string token;
-  string email;
-  vector<string> sources;
-  int total_games=0;
-};
-struct t_game_rec{
-  struct t_slot{string coder;double score=0;string err;string status;};
-  vector<t_slot> arr;
-  string cdn_file;
-  int tick=0;
-};
-struct t_main:t_process{
-  vector<t_coder_rec> carr;
-  vector<t_game_rec> garr;
-  void on_tick(){
-
-  }
-};
-
 struct t_player{
   string coder;
   string app;
 };
 struct t_game{
   vector<t_player> players;
-  string proxy;
+  string admin;
   string config;
   int tick=0;
   int maxtick=20000;
@@ -224,6 +202,15 @@ struct t_node:t_process{
   int main(){
 
   }
+};
+struct t_proxy:t_process{
+  string admin_or_proxy;
+  vector<string> to_proxys;
+  vector<string> to_fronts;
+};
+struct t_admin:t_process{
+  string proxy;
+  string to_cdn_file;
 };
 
 int main() {
