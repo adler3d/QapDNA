@@ -1,8 +1,47 @@
 #include "netapi.h"
 #include "FromQapEng.h"
-/*
 
-*/
+#include <vector>
+#include <cmath>
+#include <string>
+using namespace std;
+
+struct t_elo_score {
+  double a, b, c, d;
+  double get() const { return 0.25 * (a + b + c + d); }
+  void set(double val) { a = b = c = d = val; }
+};
+
+struct t_player_with_score{
+  string coder;
+  t_elo_score cur, next;
+  double game_score;
+};
+
+void update_score(vector<t_player_with_score>& players) {
+  constexpr double K = 32.0;
+  size_t n = players.size();
+  for (size_t i = 0; i < n; ++i) {
+    double Ri = players[i].cur.get();
+    double expected_score = 0.0;
+    for (size_t j = 0; j < n; ++j) {
+      if (i == j) continue;
+      double Rj = players[j].cur.get();
+      double expected = 1.0 / (1.0 + pow(10.0, (Rj - Ri) / 400.0));
+      expected_score += expected;
+    }
+    expected_score /= (n - 1);
+    double max_score = 0.0;
+    for (const auto& p : players) {
+      if (p.game_score > max_score) max_score = p.game_score;
+    }
+    double actual_score = max_score > 0 ? players[i].game_score / max_score : 0;
+    double new_rating = Ri + K * (actual_score - expected_score);
+    players[i].next.set(new_rating);
+  }
+}
+
+
 using namespace std;
 string local_main_ip_port="127.0.0.1:31456";
 //vector<string> split(...){return {};}
@@ -11,6 +50,8 @@ string generate_token(string coder_name,string timestamp) {
   return "token:"+to_string((rand()<<16)+rand())+coder_name+timestamp;
   //return sha256( random_bytes(32) + timestamp + coder_name );
 }
+template<class TYPE>TYPE parse(string s){return {};}
+template<class TYPE>string serialize(TYPE&&ref){return "nope";}
 struct t_client20250817{
   struct t_input{
     struct t_visible_part_of_world{};
@@ -25,8 +66,6 @@ struct t_client20250817{
       return {};
     };
   };
-  template<class TYPE>TYPE parse(string s){return {};}
-  template<class TYPE>string serialize(TYPE&&ref){return "nope";}
   string main_ip_port=1?local_main_ip_port:"82.208.124.191:31456";
   t_ai ai;
   t_net_api api;
@@ -200,27 +239,67 @@ struct t_game_rec{
   string cdn_file;
   int tick=0;
 };
+struct t_game_slot{string coder;string cdn_bin_file;};
+struct t_game_decl{vector<t_game_slot> arr;string config;};
 struct t_main:t_process{
   vector<t_coder_rec> carr;
   vector<t_game_rec> garr;
-  void on_tick(){
-
+  map<string,string> node2ipport;
+  t_net_api capi;
+  void create_new_game_on_node(const string&node,const t_game_decl&gd){
+    capi.write_to_socket(node2ipport[node],"new_game,"+serialize(gd)+"\n");
   }
 };
-
 struct t_player{
   string coder;
   string app;
 };
 struct t_game{
   vector<t_player> players;
-  string proxy;
   string config;
   int tick=0;
   int maxtick=20000;
 };
 struct t_node:t_process{
   vector<t_game> games;
+  //struct t_pipe{};
+  //struct t_stream{void on_data(...){}};
+  //struct t_proc{void write(const string&data){}};
+  struct i_cb{virtual void go(const string&data){}};
+  struct t_cb:i_cb{
+    int id=-1;
+    void go(const string&data)override{
+
+    }
+  };
+  struct i_inp{virtual void write(const string&data){}};
+  struct t_doker_api{
+    t_cb out,err;
+    unique_ptr<i_inp> inp;
+    void write(const string&data){inp->write(data);}
+  };
+  void spawn_doker(const string&fn,t_doker_api&api){return;};
+  static string config2seed(const string&config){return {};}
+  struct t_game_cbs{
+    t_game_decl gd;
+    vector<unique_ptr<t_doker_api>> slot2api;
+  };
+  vector<t_game_cbs> gcbs;
+  void new_game(const t_game_decl&gd){
+    auto&g=qap_add_back(gcbs);
+    g.gd=gd;
+    int i=-1;
+    for(auto&ex:gd.arr){
+      i++;
+      auto&b=qap_add_back(g.slot2api);
+      b=make_unique<t_doker_api>();
+      auto&c=*b.get();
+      c.out.id=i;
+      c.err.id=i;
+      spawn_doker(ex.cdn_bin_file,c);
+      c.write("seed,"+config2seed(gd.config)+"\n");
+    }
+  }
   int main(){
 
   }
