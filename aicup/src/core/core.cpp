@@ -273,6 +273,24 @@ static constexpr int O_RDONLY=0;
 #else
 #endif
 struct t_node:t_process{
+  struct t_pipe_names {
+    string in;   // /tmp/ai_in_{game_id}_{player_id}
+    string out;  // /tmp/ai_out_{game_id}_{player_id}
+    string err;  // /tmp/ai_err_{game_id}_{player_id}
+  };
+  t_pipe_names make_pipe_names(int game_id, int player_id) {
+    return {
+      "/tmp/ai_in_" +to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand()),
+      "/tmp/ai_out_"+to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand()),
+      "/tmp/ai_err_"+to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand())
+    };
+  }
+  bool create_pipes(const t_pipe_names& names) {
+    if (mkfifo(names.in.c_str(), 0666) == -1 && errno != EEXIST) return false;
+    if (mkfifo(names.out.c_str(),0666) == -1 && errno != EEXIST)return false;
+    if (mkfifo(names.err.c_str(),0666) == -1 && errno != EEXIST)return false;
+    return true;
+  }
   struct i_output{
     virtual void on_stdout(const string&data)=0;
     virtual void on_stderr(const string&data)=0;
@@ -298,6 +316,7 @@ struct t_node:t_process{
     vector<t_cmd> slot2cmd;
     vector<t_status> slot2status;
     vector<int> slot2ready;
+    vector<t_pipe_names> slot2pipe_names;
     void init(){
       slot2cmd.resize(gd.arr.size());
       slot2status.resize(gd.arr.size());
@@ -404,24 +423,6 @@ struct t_node:t_process{
       }
     }
   };
-  struct t_pipe_names {
-    string in;   // /tmp/ai_in_{game_id}_{player_id}
-    string out;  // /tmp/ai_out_{game_id}_{player_id}
-    string err;  // /tmp/ai_err_{game_id}_{player_id}
-  };
-  t_pipe_names make_pipe_names(int game_id, int player_id) {
-    return {
-      "/tmp/ai_in_" +to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand()),
-      "/tmp/ai_out_"+to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand()),
-      "/tmp/ai_err_"+to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand())
-    };
-  }
-  bool create_pipes(const t_pipe_names& names) {
-    if (mkfifo(names.in.c_str(), 0666) == -1 && errno != EEXIST) return false;
-    if (mkfifo(names.out.c_str(),0666) == -1 && errno != EEXIST)return false;
-    if (mkfifo(names.err.c_str(),0666) == -1 && errno != EEXIST)return false;
-    return true;
-  }
   bool spawn_docker(const string&fn,t_docker_api&api,int game_id,int player_id){
     string container_id="game_"+to_string(game_id)+"_p"+to_string(player_id)+"_"+to_string(rand());
     auto names=make_pipe_names(game_id,player_id);
