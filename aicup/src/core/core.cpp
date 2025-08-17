@@ -1,11 +1,12 @@
 #include "netapi.h"
+#include "FromQapEng.h"
 /*
 
 */
 using namespace std;
 string local_main_ip_port="127.0.0.1:31456";
-vector<string> split(...){return {};}
-#define QapAssert(...)
+//vector<string> split(...){return {};}
+//#define QapAssert(...)
 string generate_token(string coder_name,string timestamp) {
   return "token:"+to_string((rand()<<16)+rand())+coder_name+timestamp;
   //return sha256( random_bytes(32) + timestamp + coder_name );
@@ -45,6 +46,7 @@ struct t_client{
   string coder="unk";
   string email="email@example.com";
   int main(){
+    load_config();
     if(token=="default"){
       api.write_to_socket(main_ip_port,"hi_i_default_and_idk_me_token,"+coder+","+to_string(max_games)+","+email+"\n");
       string resp;
@@ -70,7 +72,24 @@ struct t_client{
     }
     return 0;
   }
-  void save_config(){}
+  string config_fn="t_client.cfg";
+  void save_config(){
+    vector<string> arr;
+    arr.push_back(to_string(max_games));
+    arr.push_back(token);
+    arr.push_back(coder);
+    arr.push_back(email);
+    file_put_contents(config_fn,join(arr,","));
+  }
+  void load_config(){
+    auto s=file_get_contents(config_fn);
+    auto arr=split(s,",");
+    if(arr.size()!=4)return;
+    max_games=std::stoi(arr[0]);
+    token=arr[1];
+    coder=arr[2];
+    email=arr[3];
+  }
 };
 struct t_main{
   struct t_coder{
