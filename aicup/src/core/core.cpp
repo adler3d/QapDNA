@@ -316,10 +316,9 @@ struct t_node:t_process{
     };
   }
   bool create_pipes(const t_pipe_names& names) {
-    // TODO: нужно собрать все хэнделы куда-то и замачть их разом когда игра закончится?
-    if (mkfifo(names.in.c_str(), 0666) == -1 && errno != EEXIST) return false;
-    if (mkfifo(names.out.c_str(),0666) == -1 && errno != EEXIST)return false;
-    if (mkfifo(names.err.c_str(),0666) == -1 && errno != EEXIST)return false;
+    if(mkfifo(names.in.c_str(), 0666)==-1&&errno!=EEXIST)return false;
+    if(mkfifo(names.out.c_str(),0666)==-1&&errno!=EEXIST)return false;
+    if(mkfifo(names.err.c_str(),0666)==-1&&errno!=EEXIST)return false;
     return true;
   }
   struct i_output{
@@ -357,7 +356,7 @@ struct t_node:t_process{
     unique_ptr<t_player_ctx> output;
     void send(const string&data){if(input)input->write_stdin(data);}
   };
-  struct t_status{bool TL=false;bool ok()const{return !TL;}};
+  struct t_status{bool TL=false;bool PF=false;bool ok()const{return !TL&&!PF;}};
   struct t_cmd{bool valid=true;};
   struct t_world{
     void use(int player_id,const t_cmd&cmd){}
@@ -367,6 +366,7 @@ struct t_node:t_process{
   struct t_runned_game{
     t_game_decl gd;
     int tick=0;
+    bool started=false;
     vector<unique_ptr<t_docker_api>> slot2api;
     vector<t_cmd> slot2cmd;
     vector<t_status> slot2status;
@@ -392,7 +392,7 @@ struct t_node:t_process{
     return build_ai_image_impl(binary_path,itag);
   }
   static bool build_ai_image_impl(const string&binary_path,const string&itag){
-    string dir = "/tmp/ai_build_"+itag; //TODO: я всё правильно тут сделал?
+    string dir = "/tmp/ai_build_"+itag;
     system(("mkdir -p " + dir).c_str());
     system(("cp " + binary_path + " " + dir + "/ai.bin").c_str());
     ofstream df((dir + "/Dockerfile").c_str());
@@ -404,12 +404,17 @@ struct t_node:t_process{
           "RUN chmod +x ai.bin\n"
           "CMD [\"./ai.bin\"]\n";
     df.close();
-    string cmd = "docker build -t "+itag+" "+dir; //TODO: а тут я всё правильно сделал?
+    string cmd = "docker build -t "+itag+" "+dir;
     int result = system(cmd.c_str());
     return result == 0;
   }
   struct t_container_monitor{
-    struct t_task {
+    static void kill(t_runned_game&g,int pid){
+      auto&conid=g.slot2api[pid]->output.get()->conid;
+      string cmd="docker kill "+conid;
+      system(cmd.c_str());
+    }
+    struct t_task{
       t_runned_game*pgame=nullptr;
       int player_id;
       double started_at;
@@ -421,15 +426,11 @@ struct t_node:t_process{
         get().time_log.push_back(ms);
       }
       t_player_ctx&get(){return *pgame->slot2api[player_id]->output.get();}
-      void kill(){
-        string cmd="docker kill "+get().conid;
-        system(cmd.c_str());
-      }
       void kill_if_TL(double ms){
         auto&gd=pgame->gd;
         auto TL=pgame->tick?gd.TL:gd.TL0;
         if(ms<=TL)return;
-        kill();
+        kill(*pgame,player_id);
         pgame->slot2status[player_id].TL=true;
       }
     };
@@ -490,8 +491,8 @@ struct t_node:t_process{
     auto inp=make_unique<t_stdin_writer>();
     inp->fd=open(names.in.c_str(),O_WRONLY|O_NONBLOCK);
     api.input=std::move(inp);
-    add_to_even_loop(names.out,&g,player_id,true);
-    add_to_even_loop(names.err,&g,player_id,true);
+    add_to_event_loop(names.out,&g,player_id,true);
+    add_to_event_loop(names.err,&g,player_id,true);
     return true;
   }
   static string config2seed(const string&config){return {};}
@@ -520,10 +521,19 @@ struct t_node:t_process{
     }
     game_n++;
   }
-  void game_tick(t_runned_game&game) {
-    for(int i=0;i<game.slot2cmd.size();i++)game.w.use(i,game.slot2cmd[i]);
-    game.w.step();
-    if(game.w.finished()||game.tick>=game.gd.maxtick)return;//TODO: kill all and send resp to t_main
+  void send_game_result(t_runned_game&game){
+
+  }
+  void game_tick(t_runned_game&game){
+    if(game.started){
+      for(int i=0;i<game.slot2cmd.size();i++)game.w.use(i,game.slot2cmd[i]);
+      game.w.step();
+      if(game.w.finished()||game.tick>=game.gd.maxtick){
+        send_game_result(game);
+        for(int i=0;i<game.gd.arr.size();i++)container_monitor.kill(game,i);
+        return;
+      }
+    }
     for(int i=0;i<game.slot2api.size();i++){
       if(!game.slot2status[i].ok())continue;
       string vpow=serialize(game.w,i);
@@ -533,23 +543,42 @@ struct t_node:t_process{
     }
   }
   void on_player_stdout(t_runned_game&g,int player_id,const string_view&data){
+    string s(data);
+    if(!g.started){
+      if(s.find("READY")==string::npos){
+        auto&api=g.slot2api[player_id];
+        api->output->on_stderr("\nERROR DETECTED: YOU MUST READY BEFORE FIRST ACTION!!!\n");
+        return;
+      }
+      g.slot2ready[player_id]=true;
+      if(g.all_ready()){
+        tick(g);
+        g.started=true;
+      }
+      return;
+    }
     auto move=parse<t_cmd>(data);
     if(move.valid){
-      g.slot2cmd[player_id]=move; // TODO: нужно грамотно сообщать о том что мув невалидный и мочить процесс с ошибкой.
+      g.slot2cmd[player_id]=move;
       auto&r=g.slot2ready[player_id];
       if(r){g.slot2api[player_id]->output->on_stderr("\nERROR DETECTED: ANSWER AFTER ANSWER!!!\n");}
       r=true;
       for(auto&ex:container_monitor.tasks)if(ex.player_id==player_id)ex.on_done(container_monitor.clock);
-      if(g.all_ready()){
-        tick(g);
-      }
+    }else{
+      auto&api=g.slot2api[player_id];
+      api->output->on_stderr("INVALID_MOVE: parsing failed\n");
+      container_monitor.kill(g,player_id);
+      g.slot2status[player_id].PF=true;
+    }
+    if(g.all_ready()){
+      tick(g);
     }
   }
   void tick(t_runned_game&g){
     container_monitor.donekiller();
     container_monitor.tasks.clear();
     game_tick(g);
-    g.tick++;
+    if(g.started)g.tick++;
     g.new_tick();
   }
   struct t_event_loop{
@@ -637,7 +666,7 @@ struct t_node:t_process{
     }
   };
   t_event_loop loop;
-  void add_to_even_loop(const string&path,t_runned_game*g,int pid,bool out){
+  void add_to_event_loop(const string&path,t_runned_game*g,int pid,bool out){
     loop.add(path,g,pid,out);
   }
   int main() {
