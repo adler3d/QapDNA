@@ -462,6 +462,8 @@ struct t_node:t_process{
       api.output->on_stderr("create_pipes failed\n");
       return false;
     }
+    add_to_event_loop(names.out,&g,player_id,true);
+    add_to_event_loop(names.err,&g,player_id,false);
     auto itag=get_image_tag(fn);
     string cmd = "docker run --rm "
                  "--name " + container_id + " "
@@ -491,8 +493,6 @@ struct t_node:t_process{
     auto inp=make_unique<t_stdin_writer>();
     inp->fd=open(names.in.c_str(),O_WRONLY|O_NONBLOCK);
     api.input=std::move(inp);
-    add_to_event_loop(names.out,&g,player_id,true);
-    add_to_event_loop(names.err,&g,player_id,true);
     return true;
   }
   static string config2seed(const string&config){return {};}
@@ -547,7 +547,7 @@ struct t_node:t_process{
     if(!g.started){
       if(s.find("READY")==string::npos){
         auto&api=g.slot2api[player_id];
-        api->output->on_stderr("\nERROR DETECTED: YOU MUST READY BEFORE FIRST ACTION!!!\n");
+        api->output->on_stderr("\nERROR DETECTED: YOU MUST SAY READY BEFORE FIRST ACTION!!!\n");
         return;
       }
       g.slot2ready[player_id]=true;
