@@ -14,6 +14,16 @@ string sha256(const string&s){
   picosha2::hash256(s.begin(),s.end(),hash.begin(),hash.end());
   return picosha2::bytes_to_hex_string(hash.begin(),hash.end());
 }
+string get_image_tag(const string&binary_path){
+  auto s=file_get_contents(binary_path);
+  string hash=sha256(s);
+  return "ai_cache_"+hash.substr(0,16);
+}
+
+bool has_cached_image(const string&image_tag){
+  string cmd="docker image inspect "+image_tag+" > /dev/null 2>&1";
+  return system(cmd.c_str())==0;
+}
 
 struct t_elo_score {
   double a, b, c, d;
@@ -306,6 +316,7 @@ struct t_node:t_process{
     };
   }
   bool create_pipes(const t_pipe_names& names) {
+    // TODO: нужно собрать все хэнделы куда-то и замачть их разом когда игра закончится?
     if (mkfifo(names.in.c_str(), 0666) == -1 && errno != EEXIST) return false;
     if (mkfifo(names.out.c_str(),0666) == -1 && errno != EEXIST)return false;
     if (mkfifo(names.err.c_str(),0666) == -1 && errno != EEXIST)return false;
@@ -376,8 +387,12 @@ struct t_node:t_process{
     }
   };
   static constexpr int buff_size=1024*64;
-  static bool build_ai_image(const string& binary_path, const string& container_id) {
-    string dir = "/tmp/ai_build_" + container_id;
+  bool build_if_needed(const string&binary_path,const string&itag){
+    if(has_cached_image(itag))return true;
+    return build_ai_image_impl(binary_path,itag);
+  }
+  static bool build_ai_image_impl(const string&binary_path,const string&itag){
+    string dir = "/tmp/ai_build_"+itag; //TODO: я всё правильно тут сделал?
     system(("mkdir -p " + dir).c_str());
     system(("cp " + binary_path + " " + dir + "/ai.bin").c_str());
     ofstream df((dir + "/Dockerfile").c_str());
@@ -389,7 +404,7 @@ struct t_node:t_process{
           "RUN chmod +x ai.bin\n"
           "CMD [\"./ai.bin\"]\n";
     df.close();
-    string cmd = "docker build -t ai_image_" + container_id + " " + dir;
+    string cmd = "docker build -t "+itag+" "+dir; //TODO: а тут я всё правильно сделал?
     int result = system(cmd.c_str());
     return result == 0;
   }
@@ -446,14 +461,15 @@ struct t_node:t_process{
       api.output->on_stderr("create_pipes failed\n");
       return false;
     }
+    auto itag=get_image_tag(fn);
     string cmd = "docker run --rm "
                  "--name " + container_id + " "
                  "--memory=512m --cpus=1 --network=none --read-only "
                  "--mount type=pipe,src=" + names.in  + ",dst=/dev/stdin "
                  "--mount type=pipe,src=" + names.out + ",dst=/dev/stdout "
                  "--mount type=pipe,src=" + names.err + ",dst=/dev/stderr "
-                 "ai_image_" + container_id;
-    if(!build_ai_image(fn,container_id)) {
+                 +itag;
+    if(!build_if_needed(fn,itag)){
       api.output->on_stderr("build failed\n");
       return false;
     }
