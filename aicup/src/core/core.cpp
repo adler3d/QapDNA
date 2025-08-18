@@ -267,6 +267,7 @@ static int open(...){return 0;}
 static int write(...){return 0;}
 static int close(...){return 0;}
 static int read(...){return 0;}
+static int poll(...){return 0;}
 static constexpr int O_WRONLY=0;
 static constexpr int O_NONBLOCK=0;
 static constexpr int O_RDONLY=0;
@@ -502,10 +503,10 @@ struct t_node:t_process{
   void game_tick(t_runned_game&game) {
     string world_state=serialize(game.gd,game.tick);
     for(int i=0;i<game.slot2api.size();i++){
+      if(!game.slot2status[i].ok())continue;
       auto&api=game.slot2api[i];
       api->send("vpow,"+world_state+"\n");
     }
-    this_thread::sleep_for(50ms);
   }
   void on_player_stdout(t_runned_game&g,int player_id,const string&data){
     auto move=parse<t_cmd>(data);
@@ -527,6 +528,89 @@ struct t_node:t_process{
         g.new_tick();
       }
       this_thread::sleep_for(50ms);
+    }
+  }
+  void run_event_loop() {
+    // Список всех файловых дескрипторов для опроса
+    vector<pollfd> poll_fds;
+    vector<pair<int,pair<t_runned_game*,int>>> fd_to_player; // fd → (игра, игрок)
+
+    // Инициализация: добавляем все stdout-пайпы
+    auto init_poll_fds = [&]() {
+      poll_fds.clear();
+      fd_to_player.clear();
+
+      for (auto& gu : rgarr) {
+        auto& g = *gu.get();
+        for (int i = 0; i < g.slot2api.size(); i++) {
+          const string& pipe_path = g.slot2pipe_names[i].out;
+
+          int fd = open(pipe_path.c_str(), O_RDONLY | O_NONBLOCK);
+          if (fd == -1) continue;
+
+          pollfd p = {fd, POLLIN, 0};
+          poll_fds.push_back(p);
+          fd_to_player.push_back({fd, {&g, i}});
+        }
+      }
+    };
+
+    init_poll_fds();
+
+    t_container_monitor monitor;
+    monitor.pnode = this;
+
+    while (true) {
+      init_poll_fds();
+      if (poll_fds.empty()) {
+        this_thread::sleep_for(100ms);
+        continue;
+      }
+
+      int ready = poll(poll_fds.data(), poll_fds.size(), 10);
+      if (ready < 0) {
+        perror("syscall poll return negative value");
+        break;
+      }
+
+      for (size_t i = 0; i < poll_fds.size(); i++) {
+        if (poll_fds[i].revents & (POLLIN | POLLERR | POLLHUP)) {
+          int fd = poll_fds[i].fd;
+          auto it = find_if(fd_to_player.begin(), fd_to_player.end(),
+                            [fd](auto& p) { return p.first == fd; });
+          if (it != fd_to_player.end()) {
+            auto [game, player_id] = it->second;
+            char buffer[buff_size];
+            int n = read(fd, buffer, sizeof(buffer) - 1);
+            if (n > 0) {
+              buffer[n] = '\0';
+              on_player_stdout(*game, player_id, string(buffer, n));
+              game->slot2ready[player_id] = true;
+            } else {
+              close(fd);
+              poll_fds[i].fd = -1; // Исключаем
+            }
+          }
+        }
+      }
+
+      // Проверка: может, пора следующий тик?
+      for (auto& gu : rgarr) {
+        auto& g = *gu.get();
+        if (g.tick >= g.gd.maxtick) continue;
+
+        if (g.all_ready()) {
+          // Все ходы собраны → обновляем мир
+          game_tick(g);
+          g.tick++;
+          g.new_tick();
+        }
+      }
+
+      // Проверка TL
+      monitor.update();
+
+      // Можно добавить: создание новых игр, логирование
     }
   }
 };
