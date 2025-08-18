@@ -346,8 +346,13 @@ struct t_node:t_process{
     unique_ptr<t_player_ctx> output;
     void send(const string&data){if(input)input->write_stdin(data);}
   };
-  struct t_cmd{bool valid=true;};
   struct t_status{bool TL=false;bool ok()const{return !TL;}};
+  struct t_cmd{bool valid=true;};
+  struct t_world{
+    void use(int player_id,const t_cmd&cmd){}
+    void step(){};
+    bool finished(){return false;}
+  };
   struct t_runned_game{
     t_game_decl gd;
     int tick=0;
@@ -355,7 +360,7 @@ struct t_node:t_process{
     vector<t_cmd> slot2cmd;
     vector<t_status> slot2status;
     vector<int> slot2ready;
-    vector<t_pipe_names> slot2pipe_names;
+    t_world w;
     void init(){
       slot2cmd.resize(gd.arr.size());
       slot2status.resize(gd.arr.size());
@@ -371,42 +376,6 @@ struct t_node:t_process{
     }
   };
   static constexpr int buff_size=1024*64;
-  static void start_stdout_reader_unused(const string&pipe_path,i_output*output){
-    thread t([pipe_path,output](){
-      int fd=open(pipe_path.c_str(),O_RDONLY);
-      if(fd==-1){
-        output->on_stderr("failed to open stdout pipe\n");
-        return;
-      }
-      char buffer[buff_size];
-      int n;
-      while((n=read(fd,buffer,sizeof(buffer)-1))>0){
-        buffer[n]='\0';
-        output->on_stdout(string(buffer,n));
-      }
-      close(fd);
-      output->on_closed_stdout();
-    });
-    t.detach();
-  }
-  static void start_stderr_reader_unused(const string&pipe_path,i_output*output){
-    thread t([pipe_path,output](){
-      int fd=open(pipe_path.c_str(),O_RDONLY);
-      if(fd==-1){
-        output->on_stderr("failed to open stderr pipe\n");
-        return;
-      }
-      char buffer[buff_size];
-      int n;
-      while((n=read(fd,buffer,sizeof(buffer)-1))>0){
-        buffer[n]='\0';
-        output->on_stderr(string(buffer, n));
-      }
-      close(fd);
-      output->on_closed_stderr();
-    });
-    t.detach();
-  }
   static bool build_ai_image(const string& binary_path, const string& container_id) {
     string dir = "/tmp/ai_build_" + container_id;
     system(("mkdir -p " + dir).c_str());
@@ -469,7 +438,7 @@ struct t_node:t_process{
     }
   };
   t_container_monitor container_monitor;
-  bool spawn_docker(const string&fn,t_docker_api&api,int game_id,int player_id){
+  bool spawn_docker(const string&fn,t_docker_api&api,int game_id,int player_id,t_runned_game&g){
     string container_id="game_"+to_string(game_id)+"_p"+to_string(player_id)+"_"+to_string(rand());
     api.output->conid=container_id;
     auto names=make_pipe_names(game_id,player_id);
@@ -505,11 +474,8 @@ struct t_node:t_process{
     auto inp=make_unique<t_stdin_writer>();
     inp->fd=open(names.in.c_str(),O_WRONLY|O_NONBLOCK);
     api.input=std::move(inp);
-    //auto*output=api.output.get();
-    //if(output){
-    //  start_stdout_reader(names.out,output);
-    //  start_stderr_reader(names.err,output);
-    //}else return false;
+    add_to_even_loop(names.out,&g,player_id,true);
+    add_to_even_loop(names.err,&g,player_id,true);
     return true;
   }
   static string config2seed(const string&config){return {};}
@@ -534,16 +500,19 @@ struct t_node:t_process{
       o.pgame=&g;
       b->output=std::move(pc);
       auto&c=*b.get();
-      spawn_docker(ex.cdn_bin_file,c,gd.game_id,i);
+      spawn_docker(ex.cdn_bin_file,c,gd.game_id,i,g);
     }
     game_n++;
   }
   void game_tick(t_runned_game&game) {
-    string world_state=serialize(game.gd,game.tick);
+    for(int i=0;i<game.slot2cmd.size();i++)game.w.use(i,game.slot2cmd[i]);
+    game.w.step();
+    if(game.w.finished()||game.tick>=game.gd.maxtick)return;//TODO: kill all and send resp to t_main
     for(int i=0;i<game.slot2api.size();i++){
       if(!game.slot2status[i].ok())continue;
+      string vpow=serialize(game.w,i);
       auto&api=game.slot2api[i];
-      api->send("vpow,"+world_state+"\n");
+      api->send("vpow,"+vpow+"\n");
       container_monitor.add(&game,i);
     }
   }
@@ -567,8 +536,8 @@ struct t_node:t_process{
     g.tick++;
     g.new_tick();
   }
-  struct t_event_loop {
-    struct t_monitored_pipe {
+  struct t_event_loop{
+    struct t_monitored_pipe{
       int fd;
       string path;
       t_runned_game*game;
@@ -652,6 +621,9 @@ struct t_node:t_process{
     }
   };
   t_event_loop loop;
+  void add_to_even_loop(const string&path,t_runned_game*g,int pid,bool out){
+    loop.add(path,g,pid,out);
+  }
   int main() {
     loop.pnode=this;
 
