@@ -50,7 +50,7 @@ string generate_token(string coder_name,string timestamp) {
   return "token:"+to_string((rand()<<16)+rand())+coder_name+timestamp;
   //return sha256( random_bytes(32) + timestamp + coder_name );
 }
-template<class TYPE>TYPE parse(string s){return {};}
+template<class TYPE>TYPE parse(const string_view&s){return {};}
 string serialize(...){return "nope";}
 struct t_client20250817{
   struct t_input{
@@ -293,8 +293,8 @@ struct t_node:t_process{
     return true;
   }
   struct i_output{
-    virtual void on_stdout(const string&data)=0;
-    virtual void on_stderr(const string&data)=0;
+    virtual void on_stdout(const string_view&data)=0;
+    virtual void on_stderr(const string_view&data)=0;
     virtual void on_closed_stdout()=0;
     virtual void on_closed_stderr()=0;
     virtual void on_stdin_open()=0;
@@ -338,10 +338,10 @@ struct t_node:t_process{
     t_runned_game*pgame=nullptr;
     t_node*pnode=nullptr;
     string err;
-    void on_stdout(const string&data)override{
+    void on_stdout(const string_view&data)override{
       pnode->on_player_stdout(*pgame,player_id,data);
     }
-    void on_stderr(const string&data)override{
+    void on_stderr(const string_view&data)override{
       if(data.size()+err.size()<pgame->gd.stderr_max)err+=data;
     }
     void on_closed_stderr()override{}
@@ -508,7 +508,7 @@ struct t_node:t_process{
       api->send("vpow,"+world_state+"\n");
     }
   }
-  void on_player_stdout(t_runned_game&g,int player_id,const string&data){
+  void on_player_stdout(t_runned_game&g,int player_id,const string_view&data){
     auto move=parse<t_cmd>(data);
     if(move.valid){
       g.slot2cmd[player_id]=move; // TODO: нужно гармотно сообщат о том что мув невалидный и мочить процесс с ошибкой.
@@ -530,89 +530,88 @@ struct t_node:t_process{
       this_thread::sleep_for(50ms);
     }
   }
-  void run_event_loop() {
-    // Список всех файловых дескрипторов для опроса
-    vector<pollfd> poll_fds;
-    vector<pair<int,pair<t_runned_game*,int>>> fd_to_player; // fd → (игра, игрок)
-
-    // Инициализация: добавляем все stdout-пайпы
-    auto init_poll_fds = [&]() {
-      poll_fds.clear();
-      fd_to_player.clear();
-
-      for (auto& gu : rgarr) {
-        auto& g = *gu.get();
-        for (int i = 0; i < g.slot2api.size(); i++) {
-          const string& pipe_path = g.slot2pipe_names[i].out;
-
-          int fd = open(pipe_path.c_str(), O_RDONLY | O_NONBLOCK);
-          if (fd == -1) continue;
-
-          pollfd p = {fd, POLLIN, 0};
-          poll_fds.push_back(p);
-          fd_to_player.push_back({fd, {&g, i}});
-        }
-      }
+  struct t_event_loop {
+    struct t_monitored_pipe {
+      int fd;
+      string path;
+      t_runned_game*game;
+      int player_id;
+      bool active;
     };
-
-    init_poll_fds();
-
-    t_container_monitor monitor;
-    monitor.pnode = this;
-
-    while (true) {
-      init_poll_fds();
-      if (poll_fds.empty()) {
-        this_thread::sleep_for(100ms);
-        continue;
-      }
-
-      int ready = poll(poll_fds.data(), poll_fds.size(), 10);
-      if (ready < 0) {
-        perror("syscall poll return negative value");
-        break;
-      }
-
-      for (size_t i = 0; i < poll_fds.size(); i++) {
-        if (poll_fds[i].revents & (POLLIN | POLLERR | POLLHUP)) {
-          int fd = poll_fds[i].fd;
-          auto it = find_if(fd_to_player.begin(), fd_to_player.end(),
-                            [fd](auto& p) { return p.first == fd; });
-          if (it != fd_to_player.end()) {
-            auto [game, player_id] = it->second;
-            char buffer[buff_size];
-            int n = read(fd, buffer, sizeof(buffer) - 1);
-            if (n > 0) {
-              buffer[n] = '\0';
-              on_player_stdout(*game, player_id, string(buffer, n));
-              game->slot2ready[player_id] = true;
-            } else {
-              close(fd);
-              poll_fds[i].fd = -1; // Исключаем
+    struct t_fd_info{
+      t_runned_game*g;
+      int pid;
+      bool out;
+    };
+    vector<t_monitored_pipe> pipes;
+    map<int,t_fd_info> fd2info;
+    mutex mtx;
+    t_node*pnode=nullptr;
+    void add(const string&path,t_runned_game*g,int pid,bool out){
+      int fd=open(path.c_str(),O_RDONLY|O_NONBLOCK);
+      if(fd==-1)return;
+      lock_guard<mutex> lock(mtx);
+      pipes.push_back({fd,path,g,pid,true});
+      auto&i=fd2info[fd];
+      i.g=g;i.pid=pid;i.out=out;
+    }
+    void run(t_node*pn){
+      pnode=pn;
+      vector<pollfd> fds;
+      for(;;){
+        fds.clear();
+        {
+          lock_guard<mutex> lock(mtx);
+          for(auto&p:pipes){
+            if(p.active&&p.fd!=-1){
+              fds.push_back({p.fd,POLLIN,0});
             }
           }
         }
-      }
-
-      // Проверка: может, пора следующий тик?
-      for (auto& gu : rgarr) {
-        auto& g = *gu.get();
-        if (g.tick >= g.gd.maxtick) continue;
-
-        if (g.all_ready()) {
-          // Все ходы собраны → обновляем мир
-          game_tick(g);
-          g.tick++;
-          g.new_tick();
+        int ready=poll(fds.data(),fds.size(),10);
+        if(ready<=0)continue;
+        bool need_clean=false;
+        for(auto&ex:fds){
+          if(!(ex.revents&POLLIN))return;
+          char buf[buff_size];
+          int n=read(ex.fd,buf,sizeof(buf)-1);
+          t_fd_info i;
+          {
+            lock_guard<mutex> lock(mtx);
+            i=fd2info[ex.fd];
+          }
+          auto&o=*i.g->slot2api[i.pid]->output.get();
+          if(n>0){
+            if(i.out){
+              o.on_stdout(string_view(buf,n));
+            }else{
+              o.on_stderr(string_view(buf,n));
+            }
+          }else{
+            {
+              lock_guard<mutex> lock(mtx);
+              fd2info.erase(ex.fd);
+            }
+            close(ex.fd);
+            if(i.out){
+              o.on_closed_stdout();
+            }else{
+              o.on_closed_stderr();
+            }
+            for(auto&p:pipes){
+              if(p.fd!=ex.fd)continue;
+              p.active=false;
+              need_clean=true;
+            }
+          }
         }
+        if(!need_clean)continue;
+        lock_guard<mutex> lock(mtx);
+        QapCleanIf(pipes,[](t_monitored_pipe&p){return !p.active;});
       }
-
-      // Проверка TL
-      monitor.update();
-
-      // Можно добавить: создание новых игр, логирование
+      int gg=1;
     }
-  }
+  };
 };
 
 int main() {
