@@ -1,10 +1,19 @@
 #include "netapi.h"
 #include "FromQapEng.h"
-
+#include "thirdparty/picosha2.h"
 #include <vector>
 #include <cmath>
 #include <string>
+#include <chrono>
+
 using namespace std;
+using namespace std::chrono;
+
+string sha256(const string&s){
+  std::vector<unsigned char> hash(picosha2::k_digest_size);
+  picosha2::hash256(s.begin(),s.end(),hash.begin(),hash.end());
+  return picosha2::bytes_to_hex_string(hash.begin(),hash.end());
+}
 
 struct t_elo_score {
   double a, b, c, d;
@@ -240,7 +249,15 @@ struct t_game_rec{
   int tick=0;
 };
 struct t_game_slot{string coder;string cdn_bin_file;};
-struct t_game_decl{vector<t_game_slot> arr;string config;int game_id=0;int maxtick=20000;int stderr_max=1024*64;};
+struct t_game_decl{
+  vector<t_game_slot> arr;
+  string config;
+  int game_id=0;
+  int maxtick=20000;
+  int stderr_max=1024*64;
+  double TL=50.0;
+  double TL0=1000.0;
+};
 struct t_main:t_process{
   vector<t_coder_rec> carr;
   vector<t_game_rec> garr;
@@ -271,7 +288,9 @@ static int poll(...){return 0;}
 static constexpr int O_WRONLY=0;
 static constexpr int O_NONBLOCK=0;
 static constexpr int O_RDONLY=0;
+static inline pollfd make_pollin(...){return {};}
 #else
+static inline pollfd make_pollin(int fd){return pollfd{fd,POLLIN,0};}
 #endif
 struct t_node:t_process{
   struct t_pipe_names {
@@ -303,9 +322,28 @@ struct t_node:t_process{
     virtual void write_stdin(const string&data)=0;
     virtual void close_stdin()=0;
   };
+  struct t_runned_game;
+  struct t_player_ctx:i_output{
+    int player_id;
+    string coder;
+    t_runned_game*pgame=nullptr;
+    t_node*pnode=nullptr;
+    string err;
+    string conid;
+    vector<double> time_log;
+    void on_stdout(const string_view&data)override{
+      pnode->on_player_stdout(*pgame,player_id,data);
+    }
+    void on_stderr(const string_view&data)override{
+      if(data.size()+err.size()<pgame->gd.stderr_max)err+=data;
+    }
+    void on_closed_stderr()override{}
+    void on_closed_stdout()override{}
+    void on_stdin_open()override{}
+  };
   struct t_docker_api{
     unique_ptr<i_input>  input;
-    unique_ptr<i_output> output;
+    unique_ptr<t_player_ctx> output;
     void send(const string&data){if(input)input->write_stdin(data);}
   };
   struct t_cmd{bool valid=true;};
@@ -332,24 +370,8 @@ struct t_node:t_process{
       return true;
     }
   };
-  struct t_player_ctx:i_output{
-    int player_id;
-    string coder;
-    t_runned_game*pgame=nullptr;
-    t_node*pnode=nullptr;
-    string err;
-    void on_stdout(const string_view&data)override{
-      pnode->on_player_stdout(*pgame,player_id,data);
-    }
-    void on_stderr(const string_view&data)override{
-      if(data.size()+err.size()<pgame->gd.stderr_max)err+=data;
-    }
-    void on_closed_stderr()override{}
-    void on_closed_stdout()override{}
-    void on_stdin_open()override{}
-  };
   static constexpr int buff_size=1024*64;
-  static void start_stdout_reader(const string&pipe_path,i_output*output){
+  static void start_stdout_reader_unused(const string&pipe_path,i_output*output){
     thread t([pipe_path,output](){
       int fd=open(pipe_path.c_str(),O_RDONLY);
       if(fd==-1){
@@ -367,7 +389,7 @@ struct t_node:t_process{
     });
     t.detach();
   }
-  static void start_stderr_reader(const string&pipe_path,i_output*output){
+  static void start_stderr_reader_unused(const string&pipe_path,i_output*output){
     thread t([pipe_path,output](){
       int fd=open(pipe_path.c_str(),O_RDONLY);
       if(fd==-1){
@@ -402,30 +424,54 @@ struct t_node:t_process{
     int result = system(cmd.c_str());
     return result == 0;
   }
-  struct t_container_monitor {
+  struct t_container_monitor{
     struct t_task {
       t_runned_game*pgame=nullptr;
-      string container_id;
       int player_id;
-      time_t started_at;
+      double started_at;
+      double ms;
+      bool done=false;
+      void on_done(QapClock&clock){
+        done=true;
+        ms=clock.MS()-started_at;
+        get().time_log.push_back(ms);
+      }
+      t_player_ctx&get(){return *pgame->slot2api[player_id]->output.get();}
+      void kill(){
+        string cmd="docker kill "+get().conid;
+        system(cmd.c_str());
+      }
+      void kill_if_TL(double ms){
+        auto&gd=pgame->gd;
+        auto TL=pgame->tick?gd.TL:gd.TL0;
+        if(ms<=TL)return;
+        kill();
+        pgame->slot2status[player_id].TL=true;
+      }
     };
     vector<t_task> tasks;
     t_node*pnode=nullptr;
-    void add(t_runned_game*pgame,const string&container_id,int player_id) {
-      tasks.push_back({pgame,container_id,player_id,time(0)});
+    QapClock clock;
+    void add(t_runned_game*pgame,int player_id) {
+      tasks.push_back({pgame,player_id,clock.MS()});
     }
     static constexpr int MAX_TICK_TIME=50;
+    void donekiller(){
+      for(auto&t:tasks)if(t.done){
+        t.kill_if_TL(t.ms);
+      }
+    }
     void update(){
-      for(auto&t:tasks){
-        if(time(0)-t.started_at<=MAX_TICK_TIME)continue; // TODO: заменить на высокоточный таймер
-        string cmd="docker kill "+t.container_id;
-        system(cmd.c_str());
-        t.pgame->slot2status[t.player_id].TL=true;
+      auto now=clock.MS();
+      for(auto&t:tasks)if(!t.done){
+        t.kill_if_TL(now-t.started_at);
       }
     }
   };
+  t_container_monitor container_monitor;
   bool spawn_docker(const string&fn,t_docker_api&api,int game_id,int player_id){
     string container_id="game_"+to_string(game_id)+"_p"+to_string(player_id)+"_"+to_string(rand());
+    api.output->conid=container_id;
     auto names=make_pipe_names(game_id,player_id);
     if(!create_pipes(names)){
       api.output->on_stderr("create_pipes failed\n");
@@ -442,8 +488,8 @@ struct t_node:t_process{
       api.output->on_stderr("build failed\n");
       return false;
     }
-    FILE*pipe=popen(cmd.c_str(),"r+");
-    if(!pipe){
+    int result=system(cmd.c_str());
+    if(result!=0){
       api.output->on_stderr("docker run failed\n");
       return false;
     }
@@ -459,20 +505,12 @@ struct t_node:t_process{
     auto inp=make_unique<t_stdin_writer>();
     inp->fd=open(names.in.c_str(),O_WRONLY|O_NONBLOCK);
     api.input=std::move(inp);
-    auto*output=api.output.get();
-    if(output){
-      start_stdout_reader(names.out,output);
-      start_stderr_reader(names.err,output);
-    }else return false;
+    //auto*output=api.output.get();
+    //if(output){
+    //  start_stdout_reader(names.out,output);
+    //  start_stderr_reader(names.err,output);
+    //}else return false;
     return true;
-  }
-  void spawn_docker_old(const string&fn,t_docker_api&api){
-    struct t_stdin_writer:i_input{
-      void write_stdin(const string&data){};
-      void close_stdin(){};
-    };
-    api.input=make_unique<t_stdin_writer>();
-    return;
   }
   static string config2seed(const string&config){return {};}
   vector<unique_ptr<t_runned_game>> rgarr;
@@ -506,29 +544,28 @@ struct t_node:t_process{
       if(!game.slot2status[i].ok())continue;
       auto&api=game.slot2api[i];
       api->send("vpow,"+world_state+"\n");
+      container_monitor.add(&game,i);
     }
   }
   void on_player_stdout(t_runned_game&g,int player_id,const string_view&data){
     auto move=parse<t_cmd>(data);
     if(move.valid){
-      g.slot2cmd[player_id]=move; // TODO: нужно гармотно сообщат о том что мув невалидный и мочить процесс с ошибкой.
-      g.slot2ready[player_id]=true; // TODO: нужно где-то проверять g.all_ready
+      g.slot2cmd[player_id]=move; // TODO: нужно грамотно сообщать о том что мув невалидный и мочить процесс с ошибкой.
+      auto&r=g.slot2ready[player_id];
+      if(r){g.slot2api[player_id]->output->on_stderr("\nERROR DETECTED: ANSWER AFTER ANSWER!!!\n");}
+      r=true;
+      for(auto&ex:container_monitor.tasks)if(ex.player_id==player_id)ex.on_done(container_monitor.clock);
+      if(g.all_ready()){
+        tick(g);
+      }
     }
   }
-  int main(){
-    t_container_monitor monitor;
-    monitor.pnode=this;
-    while(true){
-      monitor.update();
-      for(auto&gu:rgarr){
-        auto&g=*gu.get();
-        if(g.tick>=g.gd.maxtick)continue;
-        game_tick(g);
-        g.tick++;
-        g.new_tick();
-      }
-      this_thread::sleep_for(50ms);
-    }
+  void tick(t_runned_game&g){
+    container_monitor.donekiller();
+    container_monitor.tasks.clear();
+    game_tick(g);
+    g.tick++;
+    g.new_tick();
   }
   struct t_event_loop {
     struct t_monitored_pipe {
@@ -557,14 +594,16 @@ struct t_node:t_process{
     }
     void run(t_node*pn){
       pnode=pn;
+      pnode->container_monitor.pnode=pn;
       vector<pollfd> fds;
       for(;;){
+        pnode->container_monitor.update();
         fds.clear();
         {
           lock_guard<mutex> lock(mtx);
           for(auto&p:pipes){
             if(p.active&&p.fd!=-1){
-              fds.push_back({p.fd,POLLIN,0});
+              fds.push_back(make_pollin(p.fd));
             }
           }
         }
@@ -572,7 +611,7 @@ struct t_node:t_process{
         if(ready<=0)continue;
         bool need_clean=false;
         for(auto&ex:fds){
-          if(!(ex.revents&POLLIN))return;
+          if(!(ex.revents&POLLIN))continue;
           char buf[buff_size];
           int n=read(ex.fd,buf,sizeof(buf)-1);
           t_fd_info i;
@@ -612,6 +651,15 @@ struct t_node:t_process{
       int gg=1;
     }
   };
+  t_event_loop loop;
+  int main() {
+    loop.pnode=this;
+
+    // new_game(...) — где-то вызывается
+
+    loop.run(this);
+    return 0;
+  }
 };
 
 int main() {
