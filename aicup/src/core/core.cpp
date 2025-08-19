@@ -316,7 +316,7 @@ static inline pollfd make_pollin(int fd){return pollfd{fd,POLLIN,0};}
 
 namespace fs = std::filesystem;
 
-const string DOCKERFILE_PATH = "./docker/universal-runner/Dockerfile";
+const string DOCKERFILE_PATH = "./docker/universal-runner/Dockerfile"; //TODO: check this file must exists!
 const string IMAGE_NAME = "universal-runner:latest";
 const string ARCHIVE_NAME = "/tmp/universal-runner.tar";
 const string CDN_URL = "https://cdn.your-system.com/images/"; //TODO: replace to t_main "ip:port/images/"
@@ -406,7 +406,103 @@ bool ensure_runner_image() {
   return true;
 }
 
-struct t_node:t_process{
+const string t_node_cache_dir="/t_node_cache/bins/";
+struct t_node_cache{
+  struct t_lru_cache{
+    string log_file="/t_node_cache/lru.log";
+    const size_t mb=1024*1024;
+    size_t max_size=5*1024*mb;
+    size_t current_size=0;
+    map<string,time_t> access_time;//hash2at
+    mutex mtx;
+    static string get_hash(const string&url){return sha256(url);}
+    static string get_path(const string&hash){return t_node_cache_dir+hash+".bin";}
+    void touch(const string&hash){
+      lock_guard<mutex> lock(mtx);
+      access_time[hash]=time(0);
+      ofstream log(log_file,ios::app);
+      if(!log)return;
+      log<<access_time[hash]<<" "<<hash<<"\n";
+    }
+    void cleanup(){
+      lock_guard<mutex> lock(mtx);
+      vector<tuple<time_t,string,string>> files;
+      for(auto&[hash,t]:access_time){
+        string path=get_path(hash);
+        struct stat buf;
+        if(stat(path.c_str(),&buf)!=0)continue;
+        files.push_back({t,path,hash});
+      }
+      sort(files.begin(),files.end());
+      size_t freed=0;
+      for(auto&[t,path,hash]:files){
+        struct stat buf;
+        if(stat(path.c_str(),&buf)!=0)continue;
+        unlink(path.c_str());
+        access_time.erase(hash);
+        freed+=buf.st_size;
+        if(freed>=1024*mb)break;
+      }
+    }
+    bool ensure_space(size_t needed){
+      if(current_size+needed<=max_size){
+        return true;
+      }
+      cleanup();
+      return (current_size+needed)<=max_size;
+    }
+  };
+  t_lru_cache lru;
+  void LOG(...){}
+  static string get_cache_path(const string&fn){
+    return t_node_cache_dir+sha256(fn)+".bin";
+  }
+  bool load_from_cache(const string&fn,string&out){
+    string path=get_cache_path(fn);
+    out=file_get_contents(path);
+    return true;
+  }
+  bool save_to_cache(const string&fn,const string&mem) {
+    string path=get_cache_path(fn);
+    system(("mkdir -p "+t_node_cache_dir).c_str());
+    file_put_contents(path,mem);
+    return true;
+  }
+  bool cached_download(const string&fn,string&mem){
+    auto path=get_cache_path(fn);
+    if(load_from_cache(fn,mem)){
+      lru.touch(lru.get_hash(fn));
+      return true;
+    }
+    struct stat buf;
+    if(stat(path.c_str(),&buf)==0){
+      unlink(path.c_str());
+    }
+    string tmp_file="/tmp/dl_"+to_string(rand())+to_string(rand())+to_string(rand());
+    string cmd="curl -s -f -o "+tmp_file+" "+fn;
+    int result=system(cmd.c_str());
+    if(result!=0){
+      unlink(tmp_file.c_str());
+      LOG("CURL CANT LOAD BINARY FROM "+fn);
+      return false;
+    }
+    mem=file_get_contents(tmp_file);
+    unlink(tmp_file.c_str());
+    save_to_cache(fn,mem);
+    {
+      lock_guard<mutex> lock(lru.mtx);
+      if(!lru.ensure_space(mem.size())){
+        LOG("NOT UNOUGHT SPACE IN FS FOR "+fn);
+        return false;
+      }
+      lru.current_size+=mem.size();
+    }
+    lru.touch(lru.get_hash(fn));
+    return true;
+  }
+};
+
+struct t_node:t_process,t_node_cache{
   struct t_pipe_names{
     string in;   // /tmp/ai_in_{game_id}_{player_id}
     string out;  // /tmp/ai_out_{game_id}_{player_id}
@@ -480,12 +576,16 @@ struct t_node:t_process{
     vector<t_cmd> slot2cmd;
     vector<t_status> slot2status;
     vector<int> slot2ready;
+    vector<int> ready_sent;
+    vector<string> slot2bin;
     t_world w;
     vector<t_pipe_names> pipes;
     void init(){
       slot2cmd.resize(gd.arr.size());
       slot2status.resize(gd.arr.size());
       slot2ready.resize(gd.arr.size());
+      ready_sent.resize(gd.arr.size());
+      slot2bin.resize(gd.arr.size());
     }
     void free(){for(auto&ex:pipes)cleanup_pipes(ex);pipes.clear();}
     ~t_runned_game(){free();}
@@ -548,6 +648,18 @@ struct t_node:t_process{
     int result=system(cmd.c_str());
     return result==0;
   }
+  bool download_binary(const string& cdn_url, string& out_binary) {
+    string tmp_file = "/tmp/ai_bin_" + to_string(rand());
+    string cmd = "curl -s -f -o " + tmp_file + " " + cdn_url;
+    int result = system(cmd.c_str());
+    if (result != 0) {
+      unlink(tmp_file.c_str());
+      return false;
+    }
+    out_binary=file_get_contents(tmp_file);
+    unlink(tmp_file.c_str());
+    return true;
+  }
   struct t_container_monitor{
     static void kill(t_runned_game&g,int pid){
       auto&conid=g.slot2api[pid]->output.get()->conid;
@@ -602,10 +714,16 @@ struct t_node:t_process{
       api.output->on_stderr("create_pipes failed\n");
       return false;
     }
+    string binary;
+    if(!download_binary(fn,binary)){
+      api.output->on_stderr("download failed\n");
+      return false;
+    }
+    g.slot2bin[player_id]=binary;
     g.pipes.push_back(names);
     add_to_event_loop(names.out,&g,player_id,true);
     add_to_event_loop(names.err,&g,player_id,false);
-    auto itag=get_image_tag(fn);
+    string itag="universal-runner:latest";//get_image_tag(fn);
     string cmd = "docker run --rm "
                  "--name " + container_id + " "
                  "--memory=512m --cpus=1 --network=none --read-only "
@@ -617,7 +735,7 @@ struct t_node:t_process{
     //  api.output->on_stderr("build failed\n");
     //  return false;
     //}
-    mk_new_build(fn,itag);
+    //mk_new_build(fn,itag);
     int result=system(cmd.c_str());
     if(result!=0){
       api.output->on_stderr("docker run failed\n");
@@ -686,6 +804,19 @@ struct t_node:t_process{
   }
   void on_player_stdout(t_runned_game&g,int player_id,const string_view&data){
     string s(data);
+    if(!g.started&&!g.ready_sent[player_id]){
+      if(s.find("HI")==string::npos){
+        auto&api=g.slot2api[player_id];
+        api->output->on_stderr("\nERROR DETECTED: YOU MUST SAY HI IN FIRST MSG TO GET BINARY!!!\n");
+        return;
+      }
+      auto&bin=g.slot2bin[player_id];
+      g.slot2api[player_id]->send(bin);
+      g.ready_sent[player_id]=true;
+      bin.clear();
+      return;
+    }
+    if(!g.ready_sent[player_id])return;// TODO: remove this because this is use less check?
     if(!g.started){
       if(s.find("READY")==string::npos){
         auto&api=g.slot2api[player_id];
