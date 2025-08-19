@@ -599,55 +599,6 @@ struct t_node:t_process,t_node_cache{
     }
   };
   static constexpr int buff_size=1024*64;
-  static mutex build_mutex;
-  //static set<string> itags_in_building;
-  static map<string,future<bool>> itags_in_building;
-  void start_build(const string& binary_path,const string&itag){
-    lock_guard<mutex> lock(build_mutex);
-    auto it=itags_in_building.find(itag);
-    if(it!=itags_in_building.end())return;
-    auto fut=async(launch::async,[binary_path,itag](){
-      return build_ai_image_impl(binary_path,itag);
-    });
-    itags_in_building[itag]=std::move(fut);
-  }
-  
-  bool mk_new_build(const string&binary_path,const string&itag){
-    if(has_cached_image(itag))return false;
-    lock_guard<mutex> lock(build_mutex);
-    if(has_cached_image(itag))return false;// (double-checked locking)
-    start_build(binary_path,itag);
-    return true;
-    /*if(itags_in_building.count(itag)){
-      return false; // или ждать — зависит от стратегии
-    }
-    itags_in_building.insert(itag);
-    bool success=build_ai_image_impl(binary_path,itag);
-    if(success){
-      if(!has_cached_image(itag)){
-        success=false;
-      }
-    }
-    itags_in_building.erase(itag);
-    return success;*/
-  }
-  static bool build_ai_image_impl(const string&binary_path,const string&itag){
-    string dir = "/tmp/ai_build_"+itag;
-    system(("mkdir -p " + dir).c_str());
-    system(("cp " + binary_path + " " + dir + "/ai.bin").c_str());
-    ofstream df((dir + "/Dockerfile").c_str());
-    df << "FROM ubuntu:20.04\n"
-          "RUN useradd -m ai\n"
-          "USER ai\n"
-          "WORKDIR /home/ai\n"
-          "COPY ai.bin /home/ai/\n"
-          "RUN chmod +x ai.bin\n"
-          "CMD [\"./ai.bin\"]\n";
-    df.close();
-    string cmd="timeout 60s docker build -t "+itag+" "+dir;
-    int result=system(cmd.c_str());
-    return result==0;
-  }
   bool download_binary(const string& cdn_url, string& out_binary) {
     string tmp_file = "/tmp/ai_bin_" + to_string(rand());
     string cmd = "curl -s -f -o " + tmp_file + " " + cdn_url;
@@ -724,18 +675,13 @@ struct t_node:t_process,t_node_cache{
     add_to_event_loop(names.out,&g,player_id,true);
     add_to_event_loop(names.err,&g,player_id,false);
     string itag="universal-runner:latest";//get_image_tag(fn);
-    string cmd = "docker run --rm "
+    string cmd = "docker run -i --rm "
                  "--name " + container_id + " "
                  "--memory=512m --cpus=1 --network=none --read-only "
                  "--mount type=pipe,src=" + names.in  + ",dst=/dev/stdin "
                  "--mount type=pipe,src=" + names.out + ",dst=/dev/stdout "
                  "--mount type=pipe,src=" + names.err + ",dst=/dev/stderr "
                  +itag;
-    //if(!build_if_needed(fn,itag)){
-    //  api.output->on_stderr("build failed\n");
-    //  return false;
-    //}
-    //mk_new_build(fn,itag);
     int result=system(cmd.c_str());
     if(result!=0){
       api.output->on_stderr("docker run failed\n");
