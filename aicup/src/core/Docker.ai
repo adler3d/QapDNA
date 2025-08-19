@@ -1,14 +1,5 @@
-FROM ubuntu:20.04
-
-# Создаём пользователя-ограниченца
-RUN useradd -m ai
-USER ai
-WORKDIR /home/ai
-
-# Сюда будет скопирован бинарник
-# Ожидается, что он называется `ai.bin`
-COPY ai.bin /home/ai/
-RUN chmod +x ai.bin
-
-# Запускаем
-CMD ["./ai.bin"]
+FROM alpine:latest
+RUN apk add --no-cache bash
+COPY runner.sh /runner.sh
+RUN chmod +x /runner.sh
+CMD ["/runner.sh"]

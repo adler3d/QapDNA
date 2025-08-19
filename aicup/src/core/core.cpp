@@ -5,6 +5,7 @@
 #include <cmath>
 #include <string>
 #include <chrono>
+#include <future>
 
 using namespace std;
 using namespace std::chrono;
@@ -242,7 +243,7 @@ struct t_main20250817{
 struct t_process{
   string machine;
   string name;
-  string main;
+  //string main;
 };
 
 struct t_coder_rec{
@@ -276,6 +277,9 @@ struct t_main:t_process{
   void create_new_game_on_node(const string&node,const t_game_decl&gd){
     capi.write_to_socket(node2ipport[node],"new_game,"+serialize(gd)+"\n");
   }
+  int main(){
+    return 0;
+  }
 };
 //struct t_player{
 //  string coder;
@@ -299,23 +303,128 @@ static constexpr int O_WRONLY=0;
 static constexpr int O_NONBLOCK=0;
 static constexpr int O_RDONLY=0;
 static inline pollfd make_pollin(...){return {};}
+#define unlink(...)
 #else
 static inline pollfd make_pollin(int fd){return pollfd{fd,POLLIN,0};}
 #endif
+
+// t_main.cpp
+
+#include <cstdlib>
+#include <iostream>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
+const string DOCKERFILE_PATH = "./docker/universal-runner/Dockerfile";
+const string IMAGE_NAME = "universal-runner:latest";
+const string ARCHIVE_NAME = "/tmp/universal-runner.tar";
+const string CDN_URL = "https://cdn.your-system.com/images/"; //TODO: replace to t_main "ip:port/images/"
+
+bool build_image() {
+  cout << "[t_main] Building Docker image...\n";
+  string cmd = "docker build -t " + IMAGE_NAME + " -f " + DOCKERFILE_PATH + " .";
+  int result = system(cmd.c_str());
+  if (result != 0) {
+    cerr << "[t_main] Failed to build image\n";
+    return false;
+  }
+  cout << "[t_main] Image built: " + IMAGE_NAME + "\n";
+  return true;
+}
+
+bool save_image() {
+  cout << "[t_main] Saving image to tar...\n";
+  string cmd = "docker save " + IMAGE_NAME + " -o " + ARCHIVE_NAME;
+  int result = system(cmd.c_str());
+  if (result != 0) {
+    cerr << "[t_main] Failed to save image\n";
+    return false;
+  }
+  cout << "[t_main] Image saved to " + ARCHIVE_NAME + "\n";
+  return true;
+}
+
+/*bool upload_to_cdn() {
+  cout << "[t_main] Uploading to CDN...\n";
+  string cmd = "curl -X PUT -T " + ARCHIVE_NAME + " " + CDN_URL + "universal-runner.tar";
+  int result = system(cmd.c_str());
+  if (result != 0) {
+    cerr << "[t_main] Failed to upload to CDN\n";
+    return false;
+  }
+  cout << "[t_main] Image uploaded to CDN\n";
+  return true;
+}*/
+
+void publish_runner_image() {
+  if (!fs::exists(DOCKERFILE_PATH)) {
+    cerr << "[t_main] Dockerfile not found: " + DOCKERFILE_PATH + "\n";
+    return;
+  }
+  if (!build_image()) return;
+  if (!save_image()) return;
+  //if (!upload_to_cdn()) return;
+  cout << "[t_main] Runner image published and ready for t_node\n";
+}
+
+// t_node.cpp
+
+bool download_image_from_cdn() {
+  cout << "[t_node] Downloading runner image from CDN...\n";
+  string cmd = "curl -o /tmp/universal-runner.tar " + string(CDN_URL) + "universal-runner.tar";
+  int result = system(cmd.c_str());
+  if (result != 0) {
+    cerr << "[t_node] Failed to download image\n";
+    return false;
+  }
+  cout << "[t_node] Image downloaded\n";
+  return true;
+}
+
+bool load_image() {
+  cout << "[t_node] Loading image into Docker...\n";
+  string cmd = "docker load -i /tmp/universal-runner.tar";
+  int result = system(cmd.c_str());
+  if (result != 0) {
+    cerr << "[t_node] Failed to load image\n";
+    return false;
+  }
+  cout << "[t_node] Image loaded into Docker\n";
+  return true;
+}
+
+bool ensure_runner_image() {
+  string cmd = "docker image inspect universal-runner:latest > /dev/null 2>&1";
+  if (system(cmd.c_str()) == 0) {
+      cout << "[t_node] Runner image already exists\n";
+      return true;
+  }
+  if (!download_image_from_cdn()) return false;
+  if (!load_image()) return false;
+  fs::remove("/tmp/universal-runner.tar");
+  return true;
+}
+
 struct t_node:t_process{
-  struct t_pipe_names {
+  struct t_pipe_names{
     string in;   // /tmp/ai_in_{game_id}_{player_id}
     string out;  // /tmp/ai_out_{game_id}_{player_id}
     string err;  // /tmp/ai_err_{game_id}_{player_id}
   };
-  t_pipe_names make_pipe_names(int game_id, int player_id) {
+  t_pipe_names make_pipe_names(int game_id,int player_id){
     return {
       "/tmp/ai_in_" +to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand()),
       "/tmp/ai_out_"+to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand()),
       "/tmp/ai_err_"+to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand())
     };
   }
-  bool create_pipes(const t_pipe_names& names) {
+  static void cleanup_pipes(const t_pipe_names&names){
+    unlink(names.in.c_str());
+    unlink(names.out.c_str());
+    unlink(names.err.c_str());
+  }
+  static bool create_pipes(const t_pipe_names&names){
     if(mkfifo(names.in.c_str(), 0666)==-1&&errno!=EEXIST)return false;
     if(mkfifo(names.out.c_str(),0666)==-1&&errno!=EEXIST)return false;
     if(mkfifo(names.err.c_str(),0666)==-1&&errno!=EEXIST)return false;
@@ -372,11 +481,14 @@ struct t_node:t_process{
     vector<t_status> slot2status;
     vector<int> slot2ready;
     t_world w;
+    vector<t_pipe_names> pipes;
     void init(){
       slot2cmd.resize(gd.arr.size());
       slot2status.resize(gd.arr.size());
       slot2ready.resize(gd.arr.size());
     }
+    void free(){for(auto&ex:pipes)cleanup_pipes(ex);pipes.clear();}
+    ~t_runned_game(){free();}
     void new_tick(){for(auto&ex:slot2ready)ex=false;}
     bool all_ready(){
       for(int i=0;i<slot2cmd.size();i++){
@@ -387,9 +499,37 @@ struct t_node:t_process{
     }
   };
   static constexpr int buff_size=1024*64;
-  bool build_if_needed(const string&binary_path,const string&itag){
-    if(has_cached_image(itag))return true;
-    return build_ai_image_impl(binary_path,itag);
+  static mutex build_mutex;
+  //static set<string> itags_in_building;
+  static map<string,future<bool>> itags_in_building;
+  void start_build(const string& binary_path,const string&itag){
+    lock_guard<mutex> lock(build_mutex);
+    auto it=itags_in_building.find(itag);
+    if(it!=itags_in_building.end())return;
+    auto fut=async(launch::async,[binary_path,itag](){
+      return build_ai_image_impl(binary_path,itag);
+    });
+    itags_in_building[itag]=std::move(fut);
+  }
+  
+  bool mk_new_build(const string&binary_path,const string&itag){
+    if(has_cached_image(itag))return false;
+    lock_guard<mutex> lock(build_mutex);
+    if(has_cached_image(itag))return false;// (double-checked locking)
+    start_build(binary_path,itag);
+    return true;
+    /*if(itags_in_building.count(itag)){
+      return false; // или ждать — зависит от стратегии
+    }
+    itags_in_building.insert(itag);
+    bool success=build_ai_image_impl(binary_path,itag);
+    if(success){
+      if(!has_cached_image(itag)){
+        success=false;
+      }
+    }
+    itags_in_building.erase(itag);
+    return success;*/
   }
   static bool build_ai_image_impl(const string&binary_path,const string&itag){
     string dir = "/tmp/ai_build_"+itag;
@@ -404,9 +544,9 @@ struct t_node:t_process{
           "RUN chmod +x ai.bin\n"
           "CMD [\"./ai.bin\"]\n";
     df.close();
-    string cmd = "docker build -t "+itag+" "+dir;
-    int result = system(cmd.c_str());
-    return result == 0;
+    string cmd="timeout 60s docker build -t "+itag+" "+dir;
+    int result=system(cmd.c_str());
+    return result==0;
   }
   struct t_container_monitor{
     static void kill(t_runned_game&g,int pid){
@@ -462,6 +602,7 @@ struct t_node:t_process{
       api.output->on_stderr("create_pipes failed\n");
       return false;
     }
+    g.pipes.push_back(names);
     add_to_event_loop(names.out,&g,player_id,true);
     add_to_event_loop(names.err,&g,player_id,false);
     auto itag=get_image_tag(fn);
@@ -472,10 +613,11 @@ struct t_node:t_process{
                  "--mount type=pipe,src=" + names.out + ",dst=/dev/stdout "
                  "--mount type=pipe,src=" + names.err + ",dst=/dev/stderr "
                  +itag;
-    if(!build_if_needed(fn,itag)){
-      api.output->on_stderr("build failed\n");
-      return false;
-    }
+    //if(!build_if_needed(fn,itag)){
+    //  api.output->on_stderr("build failed\n");
+    //  return false;
+    //}
+    mk_new_build(fn,itag);
     int result=system(cmd.c_str());
     if(result!=0){
       api.output->on_stderr("docker run failed\n");
@@ -681,6 +823,19 @@ struct t_node:t_process{
 
 int main() {
   srand(time(0));
+  if(bool prod=false){
+    string mode="none";
+    if("t_main"==mode){
+      publish_runner_image();
+      t_main m;
+      return m.main();
+    }
+    if("t_node"==mode){
+      if(!ensure_runner_image())return -3145601;
+      t_node n;
+      return n.main();
+    }
+  }
   t_net_api api;
   //string line;
   //if (api.readline_from_socket("127.0.0.1:80", line)) {
