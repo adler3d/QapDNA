@@ -942,7 +942,17 @@ struct t_node:t_process,t_node_cache{
   void add_to_event_loop(const string&path,t_runned_game*g,int pid,bool out){
     loop.add(path,g,pid,out);
   }
-  int main() {
+  void periodic_cleanup(){
+    thread t([this](){
+      while (true) {
+        this_thread::sleep_for(1h);
+        lru.cleanup();
+      }
+    });
+    t.detach();
+  }
+  int main(){
+    periodic_cleanup();
     loop.pnode=this;
 
     // new_game(...) — где-то вызывается
