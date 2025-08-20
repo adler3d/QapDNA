@@ -5,3 +5,7 @@
 /aicup/src/.vs/core/v15
 /aicup/src/core/x64/Debug
 /aicup/src/x64/Debug
+/aicup/src/core/ai.exe
+/aicup/src/core/ai.obj
+/aicup/src/core/aibin.exe
+/aicup/src/core/ai.bin

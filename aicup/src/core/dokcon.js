@@ -1,68 +1,50 @@
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { spawn } = require('child_process');
 
+const AI_BIN_NAME = 'aibin.exe';
+const TMP_DIR = '.'; // можно на /tmpfs
 const SOCKET_PATH = '/tmp/nodejs-controller.sock';
-const TMP_DIR = '/tmpfs'; // tmpfs монтируемой в docker
-const AI_BIN_NAME = 'ai.bin';
 
-const MSG_TYPE = {
-  AI_BINARY: 0x01,
-  AI_START: 0x02,
-  AI_STOP: 0x03,
-  AI_STDOUT: 0x04,
-  AI_STDERR: 0x05,
-  LOG: 0x06
+// === ВСТАВКА emitter_on_data_decoder и stream_write_encoder ===
+var emitter_on_data_decoder = (emitter, cb) => {
+  var rd = Buffer.from([]);
+  emitter.on('data', data => {
+    rd = Buffer.concat([rd, data]);
+    var e = rd.indexOf("\0");
+    if (e < 0) return;
+    var en = e + 1;
+    var zpos = rd.indexOf('\0', en);
+    if (zpos < 0) return;
+    var zn = zpos + 1;
+    var blen = rd.slice(0, e);
+    var len = blen.toString("binary") | 0;
+    if (rd.length < zn + len) return;
+    var bz = rd.slice(en, en + zpos - en);
+    var z = bz.toString("binary");
+    var bmsg = rd.slice(zn, zn + len);
+    var msg = bmsg.toString("binary");
+    rd = rd.slice(zn + len);
+    cb(z, msg, bz, bmsg);
+  });
 };
 
-function sliceChunk(chunk, needed) {
-  return chunk.length > needed ? chunk.slice(0, needed) : chunk;
-}
+var stream_write_encoder = (stream, z) => data => {
+  var sep = Buffer.from([0]);
+  var strData = data ? data.toString() : "";
+  stream.write(Buffer.concat([
+    Buffer.from(strData.length + "", "binary"), sep,
+    Buffer.from(z, "binary"), sep,
+    Buffer.from(strData, "binary")
+  ]));
+};
+// === КОНЕЦ ВСТАВКИ ===
 
-function protocolParse(buffer) {
-  if (buffer.length < 5) return null;
-  const length = buffer.readUInt32BE(0);
-  if (buffer.length < length + 4) return null; // +4 байта на поле длины
-  const type = buffer[4];
-  const payload = buffer.slice(5, 4 + length); // payload с 5 до 4+length
-  return {length, type, payload, totalSize: length + 4};
-}
-
-function protocolBuild(type, payloadBuffer) {
-  const lengthBuf = Buffer.alloc(4);
-  lengthBuf.writeUInt32BE(payloadBuffer.length + 1, 0); // +1 на type
-  return Buffer.concat([lengthBuf, Buffer.from([type]), payloadBuffer]);
-}
-
-async function saveBinary(socket, length) {
-  return new Promise((resolve, reject) => {
-    const filePath = path.join(TMP_DIR, AI_BIN_NAME);
-    const writeStream = fs.createWriteStream(filePath, {flags: 'w', mode: 0o755});
-    let received = 0;
-
-    function onData(chunk) {
-      const toWrite = sliceChunk(chunk, length - received);
-      writeStream.write(toWrite);
-      received += toWrite.length;
-
-      if (received >= length) {
-        writeStream.end();
-        socket.pause();
-        socket.removeListener('data', onData);
-        resolve(filePath);
-      }
-    }
-
-    socket.on('data', onData);
-    socket.once('error', reject);
-  });
-}
+// --- Сервер (управляющая программа) ---
 
 async function handleConnection(socket) {
   console.log('Client connected');
-  let buffer = Buffer.alloc(0);
   let aiProcess = null;
 
   socket.on('close', () => {
@@ -81,88 +63,159 @@ async function handleConnection(socket) {
     }
   });
 
-  socket.on('data', async data => {
+  emitter_on_data_decoder(socket, async (z, msg, bz, bmsg) => {
     if (aiProcess) {
-      aiProcess.stdin.write(data);
+      // Пересылаем в stdin AI
+      aiProcess.stdin.write(bmsg); // бинарно!
       return;
     }
-    buffer = Buffer.concat([buffer, data]);
-    for(;;) {
-      const msg = protocolParse(buffer);
-      if (!msg) break;
-      buffer = buffer.slice(msg.totalSize);
 
-      switch (msg.type) {
-        case MSG_TYPE.AI_BINARY:
-          // payload — бинарь ИИ
-          console.log(`Saving binary of length ${msg.payload.length}`);
-          socket.pause();
-          const binaryPath = await saveBinaryToFile(msg.payload);
-          socket.write(protocolBuild(MSG_TYPE.LOG, Buffer.from('Binary saved')));
-          socket.resume();
+    switch (z) {
+      case 'ai_binary':
+        console.log(`Saving binary of length ${bmsg.length}`);
+        const filePath = path.join(TMP_DIR, AI_BIN_NAME);
+        try {
+          await fs.promises.writeFile(filePath, bmsg, { mode: 0o755 });
+          stream_write_encoder(socket, 'log')('Binary saved');
+        } catch (err) {
+          stream_write_encoder(socket, 'log')(`Write error: ${err.message}`);
+        }
+        break;
+
+      case 'ai_start':
+        if (aiProcess) {
+          stream_write_encoder(socket, 'log')('AI already running');
           break;
-
-        case MSG_TYPE.AI_START:
-          if (aiProcess) {
-            socket.write(protocolBuild(MSG_TYPE.LOG, Buffer.from('AI already running')));
-            break;
-          }
-          const aiBin = path.join(TMP_DIR, AI_BIN_NAME);
-          if (!fs.existsSync(aiBin)) {
-            socket.write(protocolBuild(MSG_TYPE.LOG, Buffer.from('Binary not found')));
-            break;
-          }
-          console.log('Starting AI process');
-          aiProcess = spawn(aiBin, [], {stdio: ['pipe', 'pipe', 'pipe']});
-
-          aiProcess.stdout.on('data', d => {
-            socket.write(protocolBuild(MSG_TYPE.AI_STDOUT, d));
-          });
-
-          aiProcess.stderr.on('data', d => {
-            socket.write(protocolBuild(MSG_TYPE.AI_STDERR, d));
-          });
-
-          aiProcess.on('close', code => {
-            socket.write(protocolBuild(MSG_TYPE.LOG, Buffer.from(`AI exited with code ${code}`)));
-            aiProcess = null;
-          });
+        }
+        const aiBin = path.join(TMP_DIR, AI_BIN_NAME);
+        if (!fs.existsSync(aiBin)) {
+          stream_write_encoder(socket, 'log')('Binary not found');
           break;
+        }
+        console.log('Starting AI process');
+        aiProcess = spawn(aiBin, [], { stdio: ['pipe', 'pipe', 'pipe'] });
 
-        case MSG_TYPE.AI_STOP:
-          if (aiProcess) {
-            aiProcess.kill();
-            socket.write(protocolBuild(MSG_TYPE.LOG, Buffer.from('AI killed')));
-          } else {
-            socket.write(protocolBuild(MSG_TYPE.LOG, Buffer.from('No AI process running')));
-          }
-          break;
+        // Перенаправляем stdout/stderr через стрим-протокол
+        aiProcess.stdout.on('data', stream_write_encoder(socket, 'ai_stdout'));
+        aiProcess.stderr.on('data', stream_write_encoder(socket, 'ai_stderr'));
 
-        default:
-          socket.write(protocolBuild(MSG_TYPE.LOG, Buffer.from('Unknown message type')));
-      }
+        aiProcess.on('close', (code) => {
+          stream_write_encoder(socket, 'log')(`AI exited with code ${code}`);
+          aiProcess = null;
+        });
+        break;
+
+      case 'ai_stop':
+        if (aiProcess) {
+          aiProcess.kill();
+          stream_write_encoder(socket, 'log')('AI killed');
+        } else {
+          stream_write_encoder(socket, 'log')('No AI process running');
+        }
+        break;
+
+      default:
+        stream_write_encoder(socket, 'log')(`Unknown channel: ${z}`);
     }
   });
 }
 
-async function saveBinaryToFile(buffer) {
-  const filePath = path.join(TMP_DIR, AI_BIN_NAME);
+function startServer(useUnixSocket) {
+  if (useUnixSocket) {
+    if (fs.existsSync(SOCKET_PATH)) fs.unlinkSync(SOCKET_PATH);
+    const server = net.createServer(handleConnection);
+    server.listen(SOCKET_PATH, () => {
+      console.log(`Server listening on Unix socket ${SOCKET_PATH}`);
+    });
+  } else {
+    const PORT = 4000;
+    const server = net.createServer(handleConnection);
+    server.listen(PORT, () => {
+      console.log(`Server listening on TCP port ${PORT}`);
+    });
+  }
+}
+
+// --- Клиент ---
+
+let lastErrNum = -1;
+const c_out = [];
+const c_err_lines = [];
+
+async function runClient(host, port, binaryFilePath) {
   return new Promise((resolve, reject) => {
-    fs.writeFile(filePath, buffer, {mode: 0o755}, err => {
-      if (err) reject(err);
-      else resolve(filePath);
+    const client = new net.Socket();
+    client.connect(port, host, async () => {
+      console.log('Connected to server');
+
+      // Читаем бинарник
+      const binData = fs.readFileSync(binaryFilePath);
+
+      // Отправляем бинарь
+      stream_write_encoder(client, 'ai_binary')(binData);
+      console.log('Sent binary');
+
+      // Ждём подтверждение
+      emitter_on_data_decoder(client, (z, msg) => {
+        if (z === 'log' && msg.includes('Binary saved')) {
+          // Запускаем ИИ
+          stream_write_encoder(client, 'ai_start')('');
+          console.log('Sent start command');
+        }
+
+        if (z === 'ai_stdout') {
+          console.log('AI stdout:', msg);
+          c_out.push(msg);
+        }
+
+        if (z === 'ai_stderr') {
+          console.error('AI stderr:', msg);
+          c_err_lines.push(msg);
+
+          // Проверка: ERR0, ERR1, ERR2...
+          if (msg.startsWith('ERR')) {
+            const numStr = msg.slice(3);
+            const num = parseInt(numStr, 10);
+            if (!isNaN(num)) {
+              if (lastErrNum >= 0 && num !== lastErrNum + 1) {
+                console.log(`fail!!! Expected ERR${lastErrNum + 1}, got ERR${num}`);
+              }
+              lastErrNum = num;
+            }
+          }
+        }
+
+        if (z === 'log') {
+          console.log('Log:', msg);
+          if (msg.includes('exited')) {
+            client.destroy();
+          }
+        }
+      });
+
+      client.on('close', () => {
+        console.log('Connection closed');
+        resolve();
+      });
+
+      client.on('error', err => {
+        reject(err);
+      });
     });
   });
 }
 
-module.exports = { MSG_TYPE, protocolBuild, protocolParse, handleConnection, saveBinaryToFile };
+// --- Запуск ---
 
-// Запуск сервера
-if (require.main === module) {
-  if (fs.existsSync(SOCKET_PATH)) fs.unlinkSync(SOCKET_PATH);
-
-  const server = net.createServer(handleConnection);
-  server.listen(SOCKET_PATH, () => {
-    console.log(`Listening on Unix socket ${SOCKET_PATH}`);
-  });
+if (process.argv[2] === 'server_unix') {
+  startServer(true);
+} else if (process.argv[2] === 'server_tcp') {
+  startServer(false);
+} else if (process.argv[2] === 'client_tcp' && process.argv[3] && process.argv[4] && process.argv[5]) {
+  const host = process.argv[3];
+  const port = parseInt(process.argv[4]);
+  const file = process.argv[5];
+  runClient(host, port, file).catch(console.error);
+} else {
+  console.log('Usage: node dokcon.js [server_unix|server_tcp|client_tcp <host> <port> <file>]');
 }
