@@ -1,13 +1,13 @@
-const net = require('net');
+Ôªøconst net = require('net');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
 const AI_BIN_NAME = 'aibin.exe';
-const TMP_DIR = '.'; // ÏÓÊÌÓ Ì‡ /tmpfs
+const TMP_DIR = '.'; // –º–æ–∂–Ω–æ –Ω–∞ /tmpfs
 const SOCKET_PATH = '/tmp/nodejs-controller.sock';
 
-// === ¬—“¿¬ ¿ emitter_on_data_decoder Ë stream_write_encoder ===
+// === –í–°–¢–ê–í–ö–ê emitter_on_data_decoder –∏ stream_write_encoder ===
 var emitter_on_data_decoder = (emitter, cb) => {
   var rd = Buffer.from([]);
   emitter.on('data', data => {
@@ -32,16 +32,26 @@ var emitter_on_data_decoder = (emitter, cb) => {
 
 var stream_write_encoder = (stream, z) => data => {
   var sep = Buffer.from([0]);
-  var strData = data ? data.toString() : "";
+
+  let payload;
+  if (Buffer.isBuffer(data)) {
+    payload = data;
+  } else {
+    payload = Buffer.from(data ? data.toString() : "", "utf8");
+  }
+
+  const lenBuf = Buffer.from(payload.length.toString(), "utf8");
+  const zBuf = Buffer.from(z, "utf8");
+
   stream.write(Buffer.concat([
-    Buffer.from(strData.length + "", "binary"), sep,
-    Buffer.from(z, "binary"), sep,
-    Buffer.from(strData, "binary")
+    lenBuf, sep,
+    zBuf, sep,
+    payload
   ]));
 };
-// ===  ŒÕ≈÷ ¬—“¿¬ » ===
+// === –ö–û–ù–ï–¶ –í–°–¢–ê–í–ö–ò ===
 
-// --- —Â‚Â (ÛÔ‡‚Îˇ˛˘‡ˇ ÔÓ„‡ÏÏ‡) ---
+// --- –°–µ—Ä–≤–µ—Ä (—É–ø—Ä–∞–≤–ª—è—é—â–∞—è –ø—Ä–æ–≥—Ä–∞–º–º–∞) ---
 
 async function handleConnection(socket) {
   console.log('Client connected');
@@ -65,8 +75,8 @@ async function handleConnection(socket) {
 
   emitter_on_data_decoder(socket, async (z, msg, bz, bmsg) => {
     if (aiProcess) {
-      // œÂÂÒ˚Î‡ÂÏ ‚ stdin AI
-      aiProcess.stdin.write(bmsg); // ·ËÌ‡ÌÓ!
+      // –ü–µ—Ä–µ—Å—ã–ª–∞–µ–º –≤ stdin AI
+      aiProcess.stdin.write(bmsg); // –±–∏–Ω–∞—Ä–Ω–æ!
       return;
     }
 
@@ -95,7 +105,7 @@ async function handleConnection(socket) {
         console.log('Starting AI process');
         aiProcess = spawn(aiBin, [], { stdio: ['pipe', 'pipe', 'pipe'] });
 
-        // œÂÂÌ‡Ô‡‚ÎˇÂÏ stdout/stderr ˜ÂÂÁ ÒÚËÏ-ÔÓÚÓÍÓÎ
+        // –ü–µ—Ä–µ–Ω–∞–ø—Ä–∞–≤–ª—è–µ–º stdout/stderr —á–µ—Ä–µ–∑ —Å—Ç—Ä–∏–º-–ø—Ä–æ—Ç–æ–∫–æ–ª
         aiProcess.stdout.on('data', stream_write_encoder(socket, 'ai_stdout'));
         aiProcess.stderr.on('data', stream_write_encoder(socket, 'ai_stderr'));
 
@@ -136,11 +146,12 @@ function startServer(useUnixSocket) {
   }
 }
 
-// ---  ÎËÂÌÚ ---
+// --- –ö–ª–∏–µ–Ω—Ç ---
 
 let lastErrNum = -1;
 const c_out = [];
 const c_err_lines = [];
+let err_buffer = ''; // –¥–ª—è –Ω–µ–∑–∞–≤–µ—Ä—à—ë–Ω–Ω—ã—Ö —Å—Ç—Ä–æ–∫
 
 async function runClient(host, port, binaryFilePath) {
   return new Promise((resolve, reject) => {
@@ -148,17 +159,17 @@ async function runClient(host, port, binaryFilePath) {
     client.connect(port, host, async () => {
       console.log('Connected to server');
 
-      // ◊ËÚ‡ÂÏ ·ËÌ‡ÌËÍ
+      // –ß–∏—Ç–∞–µ–º –±–∏–Ω–∞—Ä–Ω–∏–∫
       const binData = fs.readFileSync(binaryFilePath);
 
-      // ŒÚÔ‡‚ÎˇÂÏ ·ËÌ‡¸
+      // –û—Ç–ø—Ä–∞–≤–ª—è–µ–º –±–∏–Ω–∞—Ä—å
       stream_write_encoder(client, 'ai_binary')(binData);
       console.log('Sent binary');
 
-      // ∆‰∏Ï ÔÓ‰Ú‚ÂÊ‰ÂÌËÂ
+      // –ñ–¥—ë–º –ø–æ–¥—Ç–≤–µ—Ä–∂–¥–µ–Ω–∏–µ
       emitter_on_data_decoder(client, (z, msg) => {
         if (z === 'log' && msg.includes('Binary saved')) {
-          // «‡ÔÛÒÍ‡ÂÏ »»
+          // –ó–∞–ø—É—Å–∫–∞–µ–º –ò–ò
           stream_write_encoder(client, 'ai_start')('');
           console.log('Sent start command');
         }
@@ -168,20 +179,33 @@ async function runClient(host, port, binaryFilePath) {
           c_out.push(msg);
         }
 
-        if (z === 'ai_stderr') {
-          console.error('AI stderr:', msg);
-          c_err_lines.push(msg);
 
-          // œÓ‚ÂÍ‡: ERR0, ERR1, ERR2...
-          if (msg.startsWith('ERR')) {
-            const numStr = msg.slice(3);
-            const num = parseInt(numStr, 10);
-            if (!isNaN(num)) {
-              if (lastErrNum >= 0 && num !== lastErrNum + 1) {
-                console.log(`fail!!! Expected ERR${lastErrNum + 1}, got ERR${num}`);
+        if (z === 'ai_stderr') {
+          console.error('AI stderr:', JSON.stringify(msg)); // –≤–∏–¥–∏–º —Å—ã—Ä—ã–µ —Ñ—Ä–∞–≥–º–µ–Ω—Ç—ã
+          err_buffer += msg;
+
+          // –†–∞–∑–±–∏–≤–∞–µ–º –ø–æ \n (—Ç.–∫. endl ‚Üí \r\n, –Ω–æ \r –Ω–µ –º–µ—à–∞–µ—Ç)
+          const lines = err_buffer.split('\n');
+          err_buffer = lines.pop(); // –ø–æ—Å–ª–µ–¥–Ω–∏–π ‚Äî –Ω–µ–∑–∞–≤–µ—Ä—à—ë–Ω–Ω—ã–π
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+
+            if (line.startsWith('ERR')) {
+              const numStr = line.slice(3);
+              const num = parseInt(numStr, 10);
+
+              if (!isNaN(num)) {
+                if (lastErrNum >= 0 && num !== lastErrNum + 1) {
+                  console.log(`fail!!! Expected ERR${lastErrNum + 1}, got ERR${num} (line: ${line})`);
+                }
+                lastErrNum = num;
+              } else {
+                console.log(`fail!!! ERR followed by non-number: "${numStr}" (line: ${line})`);
               }
-              lastErrNum = num;
             }
+            // –ú–æ–∂–Ω–æ –ª–æ–≥–∏—Ä–æ–≤–∞—Ç—å –ø–æ–ª–Ω—É—é —Å—Ç—Ä–æ–∫—É
+            console.log('Full line:', line);
           }
         }
 
@@ -205,7 +229,7 @@ async function runClient(host, port, binaryFilePath) {
   });
 }
 
-// --- «‡ÔÛÒÍ ---
+// --- –ó–∞–ø—É—Å–∫ ---
 
 if (process.argv[2] === 'server_unix') {
   startServer(true);
