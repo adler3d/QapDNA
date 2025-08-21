@@ -328,7 +328,7 @@ struct t_node_cache{
     return true;
   }
 };
-struct tcp_client {
+struct t_unix_socket {
   int sock = -1;
   bool connected=false;
   bool connect_unix(const string& path) {
@@ -382,8 +382,8 @@ struct tcp_client {
   }
 };
 struct stream_write_encoder {
-  tcp_client& socket;
-  stream_write_encoder(tcp_client& s) : socket(s) {}
+  t_unix_socket& socket;
+  stream_write_encoder(t_unix_socket& s) : socket(s) {}
 
   void operator()(const string& z, const string& data) {
     string strData = data.empty() ? "" : data;
@@ -405,7 +405,7 @@ struct stream_write_encoder {
     socket.write((const char*)data, len);
   }
 };
-void stream_write(tcp_client& client, const string& z, const string& data) {
+void stream_write(t_unix_socket& client, const string& z, const string& data) {
   string strData = data;
   string lenStr = to_string(strData.length());
 
@@ -463,12 +463,39 @@ struct t_node:t_process,t_node_cache{
     t_runned_game* pgame = nullptr;
     t_node* pnode = nullptr;
 
-    tcp_client socket;
+    t_unix_socket socket;
     string err;
     string container_id;
     string socket_path_in_container = "/tmp/dokcon.sock";
     string socket_path_on_host;  // например: /tmp/dokcon_game1_p0.sock
-    shared_ptr<emitter_on_data_decoder> decoder;
+    emitter_on_data_decoder decoder;
+
+    t_docker_api_v2() {
+        decoder.cb = [this](const string& z, const string& msg) {
+            if (z == "ai_stdout") {
+                on_stdout(string_view(msg));
+            } else if (z == "ai_stderr") {
+                on_stderr(string_view(msg));
+            } else if (z == "log") {
+                on_stderr("[CTRL] " + msg + "\n");
+            }
+        };
+    }
+    void start_reading() {
+        pnode->loop_v2.add(socket.sock, [this](int fd) {
+            char buf[4096];
+            int n = socket.read(buf, sizeof(buf));
+            if (n > 0) {
+                decoder.feed(buf, n);
+            } else {
+                // Сокет закрыт
+                on_closed_stdout();
+                on_closed_stderr();
+                pnode->loop_v2.remove(fd);
+                socket.close();
+            }
+        });
+    }
     void on_stdout(const string_view& data) override {
       pnode->on_player_stdout(*pgame, player_id, data);
     }
@@ -645,7 +672,7 @@ struct t_node:t_process,t_node_cache{
       return false;
     }
     auto*api_ptr=&api;
-    loop_v2.add_unix_socket(api.socket_path_on_host, [this,api_ptr,binary](tcp_client& client, int fd) {
+    loop_v2.add_unix_socket(api.socket_path_on_host, [this,api_ptr,binary](t_unix_socket& client) {
       api_ptr->socket = client;
 
       // 2. Отправляем команды
@@ -653,38 +680,10 @@ struct t_node:t_process,t_node_cache{
       stream_write(api_ptr->socket, "ai_start", "");
 
       // 3. Начинаем слушать
-      start_reading(*api_ptr);
+      api_ptr->start_reading();
     });
 
     return true;
-  }
-  void start_reading(t_docker_api_v2& api) {
-    auto decoder = make_shared<emitter_on_data_decoder>();
-    decoder->cb=[&api](const string& z, const string& msg) {
-      if (z == "ai_stdout") {
-        api.on_stdout(string_view(msg));
-      } else if (z == "ai_stderr") {
-        api.on_stderr(string_view(msg));
-      } else if (z == "log") {
-        // Лог контроллера
-        api.on_stderr("[CTRL] " + msg + "\n");
-      }
-    };
-    api.decoder = decoder; 
-
-    loop_v2.add(api.socket.sock, [this,decoder,&api](int fd) {
-      char buf[4096];
-      int n = api.socket.read(buf, sizeof(buf));
-      if (n > 0) {
-        decoder->feed(buf, n);
-      } else {
-        // Сокет закрыт
-        api.on_closed_stdout();
-        api.on_closed_stderr();
-        loop_v2.remove(fd);
-        close(fd);
-      }
-    });
   }
   static string config2seed(const string&config){return {};}
   vector<unique_ptr<t_runned_game>> rgarr;
@@ -798,7 +797,7 @@ struct t_node:t_process,t_node_cache{
       int fd;
       string path;  // для Unix-socket
       function<void(int fd)> on_ready;
-      function<void()> on_error;
+      //function<void()> on_error;
       bool connected = false;
     };
     vector<t_monitored_fd> fds;
@@ -808,34 +807,31 @@ struct t_node:t_process,t_node_cache{
       lock_guard<mutex> lock(mtx);
       QapCleanIf(fds, [fd](const t_monitored_fd& f) { return f.fd == fd; });
     }
-    void add(int fd, const function<void(int)>& on_ready, const function<void()>& on_error = []{}) {
+    void add(int fd, function<void(int)>&&on_ready/*, const function<void()>& on_error = []{}*/) {
       lock_guard<mutex> lock(mtx);
-      fds.push_back({fd, "", on_ready, on_error});
+      fds.push_back({fd, "", std::move(on_ready)/*, on_error*/});
     }
 
-    void add_unix_socket(const string& path,const function<void(tcp_client&, int)>& on_connect) {
-      tcp_client client;
+    void add_unix_socket(const string& path,const function<void(t_unix_socket&)>& on_connect) {
+      t_unix_socket client;
       if (!client.connect_unix(path)) {
         LOG("client.connect_unix(path) failed with "+path); 
         return;
       }
 
-      int fd = client.sock;
-
-      auto wrapper = [this, client, on_connect,fd](int) mutable {
-        if (!client.connected) {
-          int err = 0;
-          socklen_t len = sizeof(err);
-          if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0) {
-            close(fd);LOG("add_unix_socket::wrapper failed"); 
-            return;
-          }
-          client.connected = true;
-          on_connect(client, fd);
+      auto wrapper = [this, client, on_connect](int) mutable {
+        if (client.connected)return;
+        int err = 0;
+        socklen_t len = sizeof(err);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0) {
+          client.close();LOG("add_unix_socket::wrapper failed"); 
+          return;
         }
+        client.connected = true;
+        on_connect(client);
       };
 
-      add(fd, wrapper);
+      add(client.sock, wrapper);
     }
 
     void run() {
@@ -859,7 +855,7 @@ struct t_node:t_process,t_node_cache{
             if (pfd.revents & (POLLERR | POLLHUP)) {
               for (auto& f : fds) {
                 if (f.fd == pfd.fd) {
-                  if (f.on_error) f.on_error();
+                  //if (f.on_error) f.on_error();
                   close(pfd.fd);
                   remove(pfd.fd);  // удаляем из списка
                   LOG("Socket error on fd="+to_string(pfd.fd));
