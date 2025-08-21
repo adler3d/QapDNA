@@ -72,173 +72,6 @@ string generate_token(string coder_name,string timestamp) {
 }
 template<class TYPE>TYPE parse(const string_view&s){return {};}
 string serialize(...){return "nope";}
-struct t_client20250817{
-  struct t_input{
-    struct t_visible_part_of_world{};
-    struct t_allowed_cmds{};
-    t_visible_part_of_world vpow;
-    t_allowed_cmds cmds;
-    string status="ok";
-  };
-  struct t_ai{
-    struct t_cmd{};
-    t_cmd decide_next_action(t_input::t_visible_part_of_world w,t_input::t_allowed_cmds cmds){
-      return {};
-    };
-  };
-  string main_ip_port=1?local_main_ip_port:"82.208.124.191:31456";
-  t_ai ai;
-  t_net_api api;
-  void worker(string rw){
-    string line;
-    while(api.readline_from_socket(rw,line)){
-      auto inp=parse<t_input>(line);
-      if(inp.status!="ok")break;
-      auto cmd=ai.decide_next_action(inp.vpow,inp.cmds);
-      string serialized=serialize(cmd);
-      api.write_to_socket(rw,serialized+"\n");
-    }
-    api.close_socket(rw);
-  }
-  int max_games=10;
-  string token="default";
-  string coder="unk";
-  string email="email@example.com";
-  int main(){
-    load_config();
-    if(token=="default"){
-      api.write_to_socket(main_ip_port,"hi_i_default_and_idk_me_token,"+coder+","+to_string(max_games)+","+email+"\n");
-      string resp;
-      if(!api.readline_from_socket(main_ip_port,resp))return -1;
-      if(resp=="u_banned")return -2;
-      if(resp=="u_already_say_this")return -3;
-      token=resp;
-      save_config();
-    }else{
-      api.write_to_socket(main_ip_port,"hi_i_have_token,"+token+","+coder+","+to_string(max_games));
-    }
-    for(;;){
-      string line;
-      if(!api.readline_from_socket(main_ip_port,line))return 0;
-      if(line=="ok")continue;
-      if(line=="fail")return -4;
-      if(line=="req_limit_reached")return -5;
-      auto v=split(line,",");
-      if(v[0]=="game_aborted")continue;
-      auto sock=line;
-      std::thread t([&,sock](){worker(sock);});
-      t.detach();
-    }
-    return 0;
-  }
-  string config_fn="t_client.cfg";
-  void save_config(){
-    vector<string> arr;
-    arr.push_back(to_string(max_games));
-    arr.push_back(token);
-    arr.push_back(coder);
-    arr.push_back(email);
-    file_put_contents(config_fn,join(arr,","));
-  }
-  void load_config(){
-    auto s=file_get_contents(config_fn);
-    auto arr=split(s,",");
-    if(arr.size()!=4)return;
-    max_games=std::stoi(arr[0]);
-    token=arr[1];
-    coder=arr[2];
-    email=arr[3];
-  }
-};
-struct t_main20250817{
-  struct t_coder{
-    string coder;
-    string token="def";
-    string email;
-    int max_games=10;
-    string ip;
-    int total_games=0;
-    vector<string> sources;
-  };
-  struct t_game_rec{
-    struct t_slot{string coder;double score=0;string err;string status;};
-    vector<t_slot> arr;
-    string cdn_file;
-    int tick=0;
-  };
-  vector<t_game_rec> garr;
-  t_server_api server{31465};
-  map<string,bool> ip2ban;
-  map<string,t_coder> coder2acc;
-  map<int,string> cid2ip;
-  map<string,int> ip2n;
-  int main(){
-    server.onClientConnected=[&](int client_id,socket_t socket,const std::string&ip){
-      std::cout << "[" << client_id << "] connected from IP " << ip << "\n";
-      if(ip2ban[ip]){
-        std::string greeting="u_banned\n";
-        send(socket,greeting.c_str(),static_cast<int>(greeting.size()),0);
-        server.disconnect_clients_by_ip(ip);
-        return;
-      }
-      cid2ip[client_id]=ip;
-    };
-
-    server.onClientDisconnected = [&](int client_id) {
-      std::cout << "[" << client_id << "] disconnected\n";
-    };
-    const int max_games=16;
-    server.onClientData=[&](int client_id,const std::string& data,std::function<void(const std::string&)> send){
-      std::cout << "[" << client_id << "] received: " << data;
-      auto v=split(data,",");
-      if(v[0]=="hi_i_default_and_idk_me_token"){
-        #define NO_WAY(ANSWER){send(string(ANSWER)+"\n");server.disconnect_clients_by_ip(cid2ip[client_id]);return;}
-        if(v.size()!=4){NO_WAY("wrong_number_of_params");}
-        if(v[1].empty()){NO_WAY("your_name_is_empty");}
-        if(v[1].size()>42){NO_WAY("your_name_is_too_long");}
-        if(v[3].empty()){NO_WAY("your_email_is_empty");}
-        if(v[3].size()>42){NO_WAY("your_email_is_too_long");}
-        //(имя_кодера,сколько_одновременно_игр_он_тянет,email)
-        auto&acc=coder2acc[v[1]];
-        if(!acc.coder.empty()){NO_WAY("coder_name_already_used");}
-        auto&ip=cid2ip[client_id];
-        if(ip2n[ip]){NO_WAY("u_already_say_this");}
-        ip2n[ip]++;
-        acc.max_games=std::max(1,std::min(max_games,std::stoi(v[2])));
-        acc.email=v[3];
-        acc.ip=ip;
-        acc.token=generate_token(acc.coder,"2025.08.16 22:05:03.625"+acc.ip);
-        return;
-      }else if(v[0]=="hi_i_have_token"){
-        //(токен,имя_кодера,сколько_одновременно_игр_он_тянет)
-        if(v.size()!=4){NO_WAY("wrong_number_of_params");}
-        auto it=find_if(coder2acc.begin(),coder2acc.end(),[&](auto&p){
-          return p.second.token==v[1];
-        });
-        if(it==coder2acc.end()){NO_WAY("invalid_token");}
-        auto&acc=it->second;
-        if(acc.coder!=v[2]){NO_WAY("wrong_coder");}
-        acc.max_games=std::max(1,std::min(max_games,std::stoi(v[3])));
-        send("ok\n");
-        return;
-        #undef NO_WAY
-      }
-
-      send("Message received\n");
-    };
-
-    server.start();
-
-    std::cout << "Press Enter to stop server...\n";
-    std::string dummy;
-    std::getline(std::cin, dummy);
-
-    std::cout << "Disconnecting clients from IP 127.0.0.1\n";
-    server.disconnect_clients_by_ip("127.0.0.1");
-
-    server.stop();
-  }
-};
 
 struct t_process{
   string machine;
@@ -281,16 +114,7 @@ struct t_main:t_process{
     return 0;
   }
 };
-//struct t_player{
-//  string coder;
-//  string app;
-//};
-//struct t_game{
-//  vector<t_player> players;
-//  string config;
-//  int tick=0;
-//  int maxtick=20000;
-//};
+
 #ifdef _WIN32
 static FILE*popen(...){return nullptr;}
 static int mkfifo(...){return 0;}
@@ -621,79 +445,7 @@ struct emitter_on_data_decoder{
   }
 };
 
-/*struct emitter_on_data_decoder {
-  using callback_t = function<void(const string& z, const string& msg)>;
-
-  tcp_client* client;
-  string buffer;
-  callback_t cb;
-
-  emitter_on_data_decoder(tcp_client* c, callback_t f) : client(c), cb(f) {}
-
-  void update() {
-    string chunk = client->read_chunk();
-    if (chunk.empty()) {
-      if (client->is_closed()) {
-        // Сокет закрыт
-        on_error("socket closed");
-      }
-      return; // нет данных — норма
-    }
-
-    buffer += chunk;
-
-    while (true) {
-      auto e1 = buffer.find('\0');
-      if (e1 == string::npos) break;
-
-      string len_str = buffer.substr(0, e1);
-      if (!is_numeric(len_str)) { on_error("invalid length"); return; }
-      int len = stoi(len_str);
-
-      auto e2 = buffer.find('\0', e1 + 1);
-      if (e2 == string::npos) break;
-
-      int total_header = e2 + 1;
-      if (buffer.size() < total_header + len) break;
-
-      string z = buffer.substr(e1 + 1, e2 - e1 - 1);
-      string payload = buffer.substr(total_header, len);
-      buffer.erase(0, total_header + len);
-
-      cb(z, payload);
-    }
-
-    if (buffer.size() > 1024 * 1024*64) {
-      on_error("buffer overflow");
-    }
-  }
-  void on_error(...){}
-};
-*/
 struct t_node:t_process,t_node_cache{
-  struct t_pipe_names{
-    string in;   // /tmp/ai_in_{game_id}_{player_id}
-    string out;  // /tmp/ai_out_{game_id}_{player_id}
-    string err;  // /tmp/ai_err_{game_id}_{player_id}
-  };
-  t_pipe_names make_pipe_names(int game_id,int player_id){
-    return {
-      "/tmp/ai_in_" +to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand()),
-      "/tmp/ai_out_"+to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand()),
-      "/tmp/ai_err_"+to_string(game_id)+"_"+to_string(player_id)+"_"+to_string(rand())
-    };
-  }
-  static void cleanup_pipes(const t_pipe_names&names){
-    unlink(names.in.c_str());
-    unlink(names.out.c_str());
-    unlink(names.err.c_str());
-  }
-  static bool create_pipes(const t_pipe_names&names){
-    if(mkfifo(names.in.c_str(), 0666)==-1&&errno!=EEXIST)return false;
-    if(mkfifo(names.out.c_str(),0666)==-1&&errno!=EEXIST)return false;
-    if(mkfifo(names.err.c_str(),0666)==-1&&errno!=EEXIST)return false;
-    return true;
-  }
   struct i_output{
     virtual void on_stdout(const string_view&data)=0;
     virtual void on_stderr(const string_view&data)=0;
@@ -748,7 +500,7 @@ struct t_node:t_process,t_node_cache{
     t_runned_game*pgame=nullptr;
     t_node*pnode=nullptr;
     string err;
-    string conid;
+    string conid; // TODO: uninizialized
     vector<double> time_log;
     void on_stdout(const string_view&data)override{
       pnode->on_player_stdout(*pgame,player_id,data);
@@ -784,7 +536,6 @@ struct t_node:t_process,t_node_cache{
     vector<int> ready_sent;
     vector<string> slot2bin;
     t_world w;
-    vector<t_pipe_names> pipes;
     void init(){
       slot2cmd.resize(gd.arr.size());
       slot2status.resize(gd.arr.size());
@@ -792,7 +543,7 @@ struct t_node:t_process,t_node_cache{
       ready_sent.resize(gd.arr.size());
       slot2bin.resize(gd.arr.size());
     }
-    void free(){for(auto&ex:pipes)cleanup_pipes(ex);pipes.clear();}
+    void free(){}// TODO: free socket_path_on_host foreach t_docker_api_v2
     ~t_runned_game(){free();}
     void new_tick(){for(auto&ex:slot2ready)ex=false;}
     bool all_ready(){
@@ -866,50 +617,6 @@ struct t_node:t_process,t_node_cache{
     }
   };
   t_container_monitor container_monitor;
-  bool spawn_docker_old(const string&fn,t_docker_api&api,int game_id,int player_id,t_runned_game&g){
-    string container_id="game_"+to_string(game_id)+"_p"+to_string(player_id)+"_"+to_string(rand());
-    api.output->conid=container_id;
-    auto names=make_pipe_names(game_id,player_id);
-    if(!create_pipes(names)){
-      api.output->on_stderr("create_pipes failed\n");
-      return false;
-    }
-    string binary;
-    if(!download_binary(fn,binary)){
-      api.output->on_stderr("download failed\n");
-      return false;
-    }
-    g.slot2bin[player_id]=binary;
-    g.pipes.push_back(names);
-    add_to_event_loop(names.out,&g,player_id,true);
-    add_to_event_loop(names.err,&g,player_id,false);
-    string itag="universal-runner:latest";//get_image_tag(fn);
-    string cmd = "docker run -i --rm "
-                 "--name " + container_id + " "
-                 "--memory=512m --cpus=1 --network=none --read-only "
-                 "--mount type=pipe,src=" + names.in  + ",dst=/dev/stdin "
-                 "--mount type=pipe,src=" + names.out + ",dst=/dev/stdout "
-                 "--mount type=pipe,src=" + names.err + ",dst=/dev/stderr "
-                 +itag;
-    int result=system(cmd.c_str());
-    if(result!=0){
-      api.output->on_stderr("docker run failed\n");
-      return false;
-    }
-    struct t_stdin_writer:i_input{
-      int fd=-1;
-      void send_to_player(const string&data){
-        if(fd==-1)return;
-        write(fd,data.c_str(),data.size());
-      }
-      void write_stdin(const string&data){send_to_player(data);};
-      void close_stdin(){if(fd==-1)return;close(fd);fd=-1;};
-    };
-    auto inp=make_unique<t_stdin_writer>();
-    inp->fd=open(names.in.c_str(),O_WRONLY|O_NONBLOCK);
-    api.input=std::move(inp);
-    return true;
-  }
   bool spawn_docker(const string& cdn_url, t_docker_api_v2& api, int game_id, int player_id, t_runned_game& g) {
     // 1. Генерируем уникальный ID и пути
     api.container_id = "game_" + to_string(game_id) + "_p" + to_string(player_id) + "_" + to_string(rand());
@@ -934,20 +641,9 @@ struct t_node:t_process,t_node_cache{
 
     int result = system(cmd.c_str());
     if (result != 0) {
-      // Отправить ошибку в i_output
       api.on_stderr("docker run failed: " + to_string(result) + "\n");
       return false;
     }
-    /*
-    // 3. Запускаем в фоне
-    thread([cmd, api, this, &g, player_id, game_id]() mutable {
-      int result = system(cmd.c_str());
-      if (result != 0) {
-        // Отправить ошибку в i_output
-        api.on_stderr("docker run failed: " + to_string(result) + "\n");
-        return;
-      }
-    }).detach();*/
     auto*api_ptr=&api;
     loop_v2.add_unix_socket(api.socket_path_on_host, [this,api_ptr,binary](tcp_client& client, int fd) {
       api_ptr->socket = client;
@@ -960,18 +656,6 @@ struct t_node:t_process,t_node_cache{
       start_reading(*api_ptr);
     });
 
-    /*
-    // 4. Планируем подключение к сокету (не ждём!)
-    loop.add_connect_task(api.socket_path_on_host, [api,binary](bool ok){
-      if (!ok) {
-        api.on_stderr("connect to socket failed\n");
-        return;
-      }
-      // Успешно подключились
-      stream_write_encoder(api.socket, "ai_binary")(binary);
-      stream_write_encoder(api.socket, "ai_start")("");
-      start_message_stream(api); // начинаем слушать
-    });*/
     return true;
   }
   void start_reading(t_docker_api_v2& api) {
@@ -1197,120 +881,7 @@ struct t_node:t_process,t_node_cache{
       }
     }
   };
-  struct t_event_loop{/*
-    struct t_connect_task {
-      t_node*pnode=nullptr;
-      string path;
-      function<void(bool)> cb;
-      int attempts = 0;
-      void try_connect() {
-        tcp_client tmp;
-        if (tmp.connect_unix(path)) {
-          cb(true);
-          return;
-        }
-        tmp.close();
-        if (++attempts > 50) { // 50 попыток × 10мс = 500мс
-          cb(false);
-          return;
-        }
-        // Перепланировать
-        pnode->loop.add_immediate([this] { try_connect(); });
-      }
-    };
-    void add_connect_task(const string& path, function<void(bool)> cb) {
-      t_connect_task task{pnode,path, cb};
-      connect_tasks.push_back(move(task));
-      connect_tasks.back().try_connect(); // начать попытки
-    }*/
-    struct t_monitored_pipe{
-      int fd;
-      string path;
-      t_runned_game*game;
-      int player_id;
-      bool active;
-    };
-    struct t_fd_info{
-      t_runned_game*g;
-      int pid;
-      bool out;
-    };
-    //vector<t_connect_task> connect_tasks;
-    vector<t_monitored_pipe> pipes;
-    map<int,t_fd_info> fd2info;
-    mutex mtx;
-    t_node*pnode=nullptr;
-    void add(const string&path,t_runned_game*g,int pid,bool out){
-      int fd=open(path.c_str(),O_RDONLY|O_NONBLOCK);
-      if(fd==-1)return;
-      lock_guard<mutex> lock(mtx);
-      pipes.push_back({fd,path,g,pid,true});
-      auto&i=fd2info[fd];
-      i.g=g;i.pid=pid;i.out=out;
-    }
-    void run(t_node*pn){
-      pnode=pn;
-      pnode->container_monitor.pnode=pn;
-      vector<pollfd> fds;
-      for(;;){
-        pnode->container_monitor.update();
-        fds.clear();
-        {
-          lock_guard<mutex> lock(mtx);
-          for(auto&p:pipes){
-            if(p.active&&p.fd!=-1){
-              fds.push_back(make_pollin(p.fd));
-            }
-          }
-        }
-        int ready=poll(fds.data(),fds.size(),10);
-        if(ready<=0)continue;
-        bool need_clean=false;
-        for(auto&ex:fds){
-          if(!(ex.revents&POLLIN))continue;
-          char buf[buff_size];
-          int n=read(ex.fd,buf,sizeof(buf)-1);
-          t_fd_info i;
-          {
-            lock_guard<mutex> lock(mtx);
-            i=fd2info[ex.fd];
-          }
-          auto&o=*i.g->slot2api[i.pid]->output.get();
-          if(n>0){
-            if(i.out){
-              o.on_stdout(string_view(buf,n));
-            }else{
-              o.on_stderr(string_view(buf,n));
-            }
-          }else{
-            {
-              lock_guard<mutex> lock(mtx);
-              fd2info.erase(ex.fd);
-            }
-            close(ex.fd);
-            if(i.out){
-              o.on_closed_stdout();
-            }else{
-              o.on_closed_stderr();
-            }
-            for(auto&p:pipes){
-              if(p.fd!=ex.fd)continue;
-              p.active=false;
-              need_clean=true;
-            }
-          }
-        }
-        if(!need_clean)continue;
-        lock_guard<mutex> lock(mtx);
-        QapCleanIf(pipes,[](t_monitored_pipe&p){return !p.active;});
-      }
-      int gg=1;
-    }
-  };
-  t_event_loop loop;t_event_loop_v2 loop_v2;
-  void add_to_event_loop(const string&path,t_runned_game*g,int pid,bool out){
-    loop.add(path,g,pid,out);
-  }
+  t_event_loop_v2 loop_v2;
   void periodic_cleanup(){
     thread t([this](){
       while (true) {
@@ -1322,7 +893,6 @@ struct t_node:t_process,t_node_cache{
   }
   int main(){
     periodic_cleanup();
-    loop.pnode=this;
 
     // new_game(...) — где-то вызывается
 
