@@ -446,26 +446,16 @@ struct emitter_on_data_decoder{
 };
 
 struct t_node:t_process,t_node_cache{
-  struct i_output{
-    virtual void on_stdout(const string_view&data)=0;
-    virtual void on_stderr(const string_view&data)=0;
-    virtual void on_closed_stdout()=0;
-    virtual void on_closed_stderr()=0;
-    virtual void on_stdin_open()=0;
-  };
-  struct i_input{
-    virtual void write_stdin(const string&data)=0;
-    virtual void close_stdin()=0;
-  };
   struct t_runned_game;
-  struct t_docker_api_v2 : i_input, i_output {
+  struct t_docker_api_v2{
     int player_id;
     t_runned_game* pgame = nullptr;
     t_node* pnode = nullptr;
 
     t_unix_socket socket;
     string err;
-    string container_id;
+    string conid;
+    vector<double> time_log;
     string socket_path_in_container = "/tmp/dokcon.sock";
     string socket_path_on_host;  // например: /tmp/dokcon_game1_p0.sock
     emitter_on_data_decoder decoder;
@@ -496,53 +486,30 @@ struct t_node:t_process,t_node_cache{
             }
         });
     }
-    void on_stdout(const string_view& data) override {
+    void on_stdout(const string_view& data) {
       pnode->on_player_stdout(*pgame, player_id, data);
     }
 
-    void on_stderr(const string_view& data) override {
+    void on_stderr(const string_view& data) {
       if (data.size() + err.size() < pgame->gd.stderr_max)
         err += data;
     }
 
-    void on_closed_stdout() override {}
-    void on_closed_stderr() override {}
-    void on_stdin_open() override {}
+    void on_closed_stdout() {}
+    void on_closed_stderr() {}
+    void on_stdin_open() {}
 
-    void write_stdin(const string& data) override {
+    void write_stdin(const string& data) {
       if (socket.connected) {
         stream_write(socket, "ai_stdin",data);
       }
     }
 
-    void close_stdin() override {
+    void close_stdin() {
       if (socket.connected) {
         stream_write(socket, "ai_stdin","EOF\n");
       }
     }
-  };
-  struct t_player_ctx:i_output{
-    int player_id;
-    string coder;
-    t_runned_game*pgame=nullptr;
-    t_node*pnode=nullptr;
-    string err;
-    string conid; // TODO: uninizialized
-    vector<double> time_log;
-    void on_stdout(const string_view&data)override{
-      pnode->on_player_stdout(*pgame,player_id,data);
-    }
-    void on_stderr(const string_view&data)override{
-      if(data.size()+err.size()<pgame->gd.stderr_max)err+=data;
-    }
-    void on_closed_stderr()override{}
-    void on_closed_stdout()override{}
-    void on_stdin_open()override{}
-  };
-  struct t_docker_api{
-    unique_ptr<i_input>  input;
-    unique_ptr<t_player_ctx> output;
-    void send(const string&data){if(input)input->write_stdin(data);}
   };
   struct t_status{bool TL=false;bool PF=false;bool ok()const{return !TL&&!PF;}};
   struct t_cmd{bool valid=true;};
@@ -555,19 +522,16 @@ struct t_node:t_process,t_node_cache{
     t_game_decl gd;
     int tick=0;
     bool started=false;
-    vector<unique_ptr<t_docker_api>> slot2api;
     vector<unique_ptr<t_docker_api_v2>> slot2v2;
     vector<t_cmd> slot2cmd;
     vector<t_status> slot2status;
     vector<int> slot2ready;
-    vector<int> ready_sent;
     vector<string> slot2bin;
     t_world w;
     void init(){
       slot2cmd.resize(gd.arr.size());
       slot2status.resize(gd.arr.size());
       slot2ready.resize(gd.arr.size());
-      ready_sent.resize(gd.arr.size());
       slot2bin.resize(gd.arr.size());
     }
     void free(){}// TODO: free socket_path_on_host foreach t_docker_api_v2
@@ -600,7 +564,7 @@ struct t_node:t_process,t_node_cache{
   }
   struct t_container_monitor{
     static void kill(t_runned_game&g,int pid){
-      auto&conid=g.slot2api[pid]->output.get()->conid;
+      auto&conid=g.slot2v2[pid]->conid;
       t_node::kill(conid);
     }
     struct t_task{
@@ -614,7 +578,7 @@ struct t_node:t_process,t_node_cache{
         ms=clock.MS()-started_at;
         get().time_log.push_back(ms);
       }
-      t_player_ctx&get(){return *pgame->slot2api[player_id]->output.get();}
+      t_docker_api_v2&get(){return *pgame->slot2v2[player_id];}
       void kill_if_TL(double ms){
         auto&gd=pgame->gd;
         auto TL=pgame->tick?gd.TL:gd.TL0;
@@ -646,8 +610,8 @@ struct t_node:t_process,t_node_cache{
   t_container_monitor container_monitor;
   bool spawn_docker(const string& cdn_url, t_docker_api_v2& api, int game_id, int player_id, t_runned_game& g) {
     // 1. Генерируем уникальный ID и пути
-    api.container_id = "game_" + to_string(game_id) + "_p" + to_string(player_id) + "_" + to_string(rand());
-    api.socket_path_on_host = "/tmp/dokcon_" + api.container_id + ".sock";
+    api.conid = "game_" + to_string(game_id) + "_p" + to_string(player_id) + "_" + to_string(rand());
+    api.socket_path_on_host = "/tmp/dokcon_" + api.conid + ".sock";
 
     // Удаляем старый сокет, если есть
     unlink(api.socket_path_on_host.c_str());
@@ -661,7 +625,7 @@ struct t_node:t_process,t_node_cache{
     g.slot2bin[player_id] = binary;
 
     string cmd = "docker run -d --rm "
-                 "--name " + api.container_id + " "
+                 "--name " + api.conid + " "
                  "--mount type=bind,src=" + api.socket_path_on_host + ",dst=/tmp/dokcon.sock "
                  "--mount type=tmpfs,tmpfs-size=64m,destination=/tmpfs "
                  "dokcon-runner:latest";
@@ -697,17 +661,6 @@ struct t_node:t_process,t_node_cache{
     int i=-1;
     for(auto&ex:gd.arr){
       i++;
-      auto&b=qap_add_back(g.slot2api);
-      b=make_unique<t_docker_api>();
-      auto pc=make_unique<t_player_ctx>();
-      auto&o=*pc.get();
-      o.coder=ex.coder;
-      o.player_id=i;
-      o.pnode=this;
-      o.pgame=&g;
-      b->output=std::move(pc);
-      auto&c=*b.get();
-      //spawn_docker(ex.cdn_bin_file,c,gd.game_id,i,g);
       auto&b2=qap_add_back(g.slot2v2);
       b2=make_unique<t_docker_api_v2>();
       t_docker_api_v2&v2=*b2.get();
@@ -731,33 +684,20 @@ struct t_node:t_process,t_node_cache{
         return;
       }
     }
-    for(int i=0;i<game.slot2api.size();i++){
+    for(int i=0;i<game.slot2v2.size();i++){
       if(!game.slot2status[i].ok())continue;
       string vpow=serialize(game.w,i);
-      auto&api=game.slot2api[i];
-      api->send("vpow,"+vpow+"\n");
+      auto&api=game.slot2v2[i];
+      api->write_stdin("vpow,"+vpow+"\n");
       container_monitor.add(&game,i);
     }
   }
   void on_player_stdout(t_runned_game&g,int player_id,const string_view&data){
     string s(data);
-    if(!g.started&&!g.ready_sent[player_id]){
-      if(s.find("HI")==string::npos){
-        auto&api=g.slot2api[player_id];
-        api->output->on_stderr("\nERROR DETECTED: YOU MUST SAY HI IN FIRST MSG TO GET BINARY!!!\n");
-        return;
-      }
-      auto&bin=g.slot2bin[player_id];
-      g.slot2api[player_id]->send(bin);
-      g.ready_sent[player_id]=true;
-      bin.clear();
-      return;
-    }
-    if(!g.ready_sent[player_id])return;// TODO: remove this because this is use less check?
     if(!g.started){
       if(s.find("READY")==string::npos){
-        auto&api=g.slot2api[player_id];
-        api->output->on_stderr("\nERROR DETECTED: YOU MUST SAY READY BEFORE FIRST ACTION!!!\n");
+        auto&api=g.slot2v2[player_id];
+        api->on_stderr("\nERROR DETECTED: YOU MUST SAY READY BEFORE FIRST ACTION!!!\n");
         return;
       }
       g.slot2ready[player_id]=true;
@@ -771,12 +711,12 @@ struct t_node:t_process,t_node_cache{
     if(move.valid){
       g.slot2cmd[player_id]=move;
       auto&r=g.slot2ready[player_id];
-      if(r){g.slot2api[player_id]->output->on_stderr("\nERROR DETECTED: ANSWER AFTER ANSWER!!!\n");}
+      if(r){g.slot2v2[player_id]->on_stderr("\nERROR DETECTED: ANSWER AFTER ANSWER!!!\n");}
       r=true;
       for(auto&ex:container_monitor.tasks)if(ex.player_id==player_id)ex.on_done(container_monitor.clock);
     }else{
-      auto&api=g.slot2api[player_id];
-      api->output->on_stderr("INVALID_MOVE: parsing failed\n");
+      auto&api=g.slot2v2[player_id];
+      api->on_stderr("INVALID_MOVE: parsing failed\n");
       container_monitor.kill(g,player_id);
       g.slot2status[player_id].PF=true;
     }
