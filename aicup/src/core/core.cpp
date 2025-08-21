@@ -534,7 +534,14 @@ struct t_node:t_process,t_node_cache{
       slot2ready.resize(gd.arr.size());
       slot2bin.resize(gd.arr.size());
     }
-    void free(){}// TODO: free socket_path_on_host foreach t_docker_api_v2
+    void free(){
+      for (auto& api : slot2v2) {
+        if (api) {
+          api->pnode->loop_v2.remove(api->socket.sock);
+          api->socket.close();
+        }
+      }
+    }// TODO: free socket_path_on_host foreach t_docker_api_v2
     ~t_runned_game(){free();}
     void new_tick(){for(auto&ex:slot2ready)ex=false;}
     bool all_ready(){
@@ -636,7 +643,7 @@ struct t_node:t_process,t_node_cache{
       return false;
     }
     auto*api_ptr=&api;
-    loop_v2.add_unix_socket(api.socket_path_on_host, [this,api_ptr,binary](t_unix_socket& client) {
+    loop_v2.connect_to_container_socket(api.socket_path_on_host, [this,api_ptr,binary](t_unix_socket& client) {
       api_ptr->socket = client;
 
       // 2. Отправляем команды
@@ -752,7 +759,7 @@ struct t_node:t_process,t_node_cache{
       fds.push_back({fd, "", std::move(on_ready)/*, on_error*/});
     }
 
-    void add_unix_socket(const string& path,const function<void(t_unix_socket&)>& on_connect) {
+    void connect_to_container_socket(const string& path,const function<void(t_unix_socket&)>& on_connect) {
       t_unix_socket client;
       if (!client.connect_unix(path)) {
         LOG("client.connect_unix(path) failed with "+path); 
@@ -764,7 +771,7 @@ struct t_node:t_process,t_node_cache{
         int err = 0;
         socklen_t len = sizeof(err);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0) {
-          client.close();LOG("add_unix_socket::wrapper failed"); 
+          client.close();LOG("connect_to_container_socket::wrapper failed"); 
           return;
         }
         client.connected = true;
