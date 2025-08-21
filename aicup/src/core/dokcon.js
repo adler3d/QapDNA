@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 
 const AI_BIN_NAME = 'ai.bin';
 const TMP_DIR = '.'; // можно на /tmpfs
-const SOCKET_PATH = '/tmp/nodejs-controller.sock';
+const SOCKET_PATH = '/tmp/dokcon.sock';
 
 // === ВСТАВКА emitter_on_data_decoder и stream_write_encoder ===
 var emitter_on_data_decoder = (emitter, cb) => {
@@ -65,7 +65,7 @@ var stream_write_encoder = (stream, z) => data => {
 async function handleConnection(socket) {
   console.log('Client connected');
   let aiProcess = null;
-
+  socket.setNoDelay(true);
   socket.on('close', () => {
     if (aiProcess) {
       console.log('Killing AI process due to socket close');
@@ -73,7 +73,6 @@ async function handleConnection(socket) {
       aiProcess = null;
     }
   });
-
   socket.on('error', err => {
     console.error('Socket error:', err);
     if (aiProcess) {
@@ -81,14 +80,12 @@ async function handleConnection(socket) {
       aiProcess = null;
     }
   });
-
   emitter_on_data_decoder(socket, async (z, msg, bz, bmsg) => {
     if (aiProcess) {
       // Пересылаем в stdin AI
       aiProcess.stdin.write(bmsg); // бинарно!
       return;
     }
-
     switch (z) {
       case 'ai_binary':
         console.log(`Saving binary of length ${bmsg.length}`);
@@ -112,7 +109,7 @@ async function handleConnection(socket) {
           break;
         }
         console.log('Starting AI process');
-        aiProcess = spawn(aiBin, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+        aiProcess = spawn(aiBin,[],{stdio:['pipe','pipe','pipe'],windowsHide:true});
 
         // Перенаправляем stdout/stderr через стрим-протокол
         aiProcess.stdout.on('data', stream_write_encoder(socket, 'ai_stdout'));

@@ -10,7 +10,7 @@ int main( int argc, char * argv[] )
   _setmode( _fileno( stdout ),  _O_BINARY );
   _setmode( _fileno( stderr ),  _O_BINARY );
   for(int i=0;;i++){
-    //cout<<"CMD"<<i<<endl;
+    cout<<"CMD"<<i<<endl;
     cerr<<"ERR"<<i<<endl;
     //cout<<"TYPE ANY INT"<<endl;
     Sleep(16);
