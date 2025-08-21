@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
-const AI_BIN_NAME = 'aibin.exe';
+const AI_BIN_NAME = 'ai.bin';
 const TMP_DIR = '.'; // можно на /tmpfs
 const SOCKET_PATH = '/tmp/nodejs-controller.sock';
 
@@ -30,6 +30,15 @@ var emitter_on_data_decoder = (emitter, cb) => {
   });
 };
 
+var stream_write_encoder=(stream,z)=>data=>{
+  var sep=Buffer.from([0]);
+  stream.write(Buffer.concat([
+    Buffer.from(!data?"0":(data.length+""),"binary"),sep,
+    Buffer.from(z,"binary"),sep,
+    Buffer.from(data?data:"","binary")
+  ]));
+};
+/*
 var stream_write_encoder = (stream, z) => data => {
   var sep = Buffer.from([0]);
 
@@ -48,7 +57,7 @@ var stream_write_encoder = (stream, z) => data => {
     zBuf, sep,
     payload
   ]));
-};
+};*/
 // === КОНЕЦ ВСТАВКИ ===
 
 // --- Сервер (управляющая программа) ---
@@ -242,4 +251,5 @@ if (process.argv[2] === 'server_unix') {
   runClient(host, port, file).catch(console.error);
 } else {
   console.log('Usage: node dokcon.js [server_unix|server_tcp|client_tcp <host> <port> <file>]');
+  //node dokcon.js client_tcp 127.0.0.1 4000 ai.exe
 }
