@@ -459,7 +459,12 @@ struct t_node:t_process,t_node_cache{
     string socket_path_in_container = "/tmp/dokcon.sock";
     string socket_path_on_host;  // например: /tmp/dokcon_game1_p0.sock
     emitter_on_data_decoder decoder;
-
+    ~t_docker_api_v2() {
+        socket.close();
+        if (!socket_path_on_host.empty()) {
+            unlink(socket_path_on_host.c_str());
+        }
+    }
     t_docker_api_v2() {
         decoder.cb = [this](const string& z, const string& msg) {
             if (z == "ai_stdout") {
