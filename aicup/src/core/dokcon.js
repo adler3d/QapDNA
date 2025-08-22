@@ -93,6 +93,7 @@ async function handleConnection(socket) {
         try {
           await fs.promises.writeFile(filePath, bmsg, { mode: 0o755 });
           stream_write_encoder(socket, 'log')('Binary saved');
+          stream_write_encoder(socket, 'ai_binary_ack')(bmsg.length+"");
         } catch (err) {
           stream_write_encoder(socket, 'log')(`Write error: ${err.message}`);
         }

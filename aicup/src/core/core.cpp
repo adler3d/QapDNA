@@ -1,6 +1,7 @@
 #include "netapi.h"
 #include "FromQapEng.h"
 #include "thirdparty/picosha2.h"
+#include "thirdparty/httplib.h"//13
 #include <vector>
 #include <cmath>
 #include <string>
@@ -120,12 +121,12 @@ static FILE*popen(...){return nullptr;}
 static int mkfifo(...){return 0;}
 static int open(...){return 0;}
 static int write(...){return 0;}
-static int close(...){return 0;}
+static int qap_close(...){return 0;}
 static int read(...){return 0;}
 static int poll(...){return 0;}
-static constexpr int O_WRONLY=0;
+//static constexpr int O_WRONLY=0;
 static constexpr int O_NONBLOCK=0;
-static constexpr int O_RDONLY=0;
+//static constexpr int O_RDONLY=0;
 static inline pollfd make_pollin(...){return {};}
 static inline pollfd make_pollinout(...){return {};}
 #define unlink(...)
@@ -133,6 +134,7 @@ static inline pollfd make_pollinout(...){return {};}
 #else
 static inline pollfd make_pollin(int fd){return pollfd{fd,POLLIN,0};}
 static inline pollfd make_pollinout(int fd){return pollfd{fd,POLLIN|POLLOUT,0};}
+#define qap_close close
 #endif
 
 // t_main.cpp
@@ -344,7 +346,7 @@ struct t_unix_socket {
     strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
 
     if (::connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-      close();
+      qap_close();
       return false;
     }
     return true;
@@ -367,18 +369,18 @@ struct t_unix_socket {
   string read_chunk() {
     char buf[4096];
     int n = recv(sock, buf, sizeof(buf)-1, 0);
-    if (n <= 0) { close(); return ""; }
+    if (n <= 0) { qap_close(); return ""; }
     return string(buf, n);
   }
 
   int read(char*buf,int size) {
     int n = recv(sock, buf, size, 0);
-    if (n <= 0) { close();}
+    if (n <= 0) { qap_close();}
     return n;
   }
 
-  void close() {
-    if (sock != -1) { ::close(sock); sock = -1; }
+  void qap_close() {
+    if (sock != -1) { ::qap_close(sock); sock = -1; }
   }
 };
 struct stream_write_encoder {
@@ -460,7 +462,7 @@ struct t_node:t_process,t_node_cache{
     string socket_path_on_host;  // например: /tmp/dokcon_game1_p0.sock
     emitter_on_data_decoder decoder;
     ~t_docker_api_v2() {
-        socket.close();
+        socket.qap_close();
         if (!socket_path_on_host.empty()) {
             unlink(socket_path_on_host.c_str());
         }
@@ -473,6 +475,8 @@ struct t_node:t_process,t_node_cache{
                 on_stderr(string_view(msg));
             } else if (z == "log") {
                 on_stderr("[CTRL] " + msg + "\n");
+            } else if(z=="ai_binary_ack"){
+              pnode->send_vpow(*pgame,player_id);
             }
         };
     }
@@ -487,7 +491,7 @@ struct t_node:t_process,t_node_cache{
                 on_closed_stdout();
                 on_closed_stderr();
                 pnode->loop_v2.remove(fd);
-                socket.close();
+                socket.qap_close();
             }
         });
     }
@@ -516,22 +520,46 @@ struct t_node:t_process,t_node_cache{
       }
     }
   };
-  struct t_status{bool TL=false;bool PF=false;bool ok()const{return !TL&&!PF;}};
+  struct t_status{
+    bool TL=false;
+    bool PF=false;
+    bool ok()const{return !TL&&!PF;}
+    string to_str(){if(ok())return "ok";string out=TL?"TL":"";if(PF)out+="PF";return out;}
+  };
   struct t_cmd{bool valid=true;};
   struct t_world{
     void use(int player_id,const t_cmd&cmd){}
     void step(){};
     bool finished(){return false;}
+    vector<double> slot2score;
+  };
+  struct t_finished_game{
+    int game_id;
+    vector<double> slot2score;
+    vector<string> slot2status; // OK, TL, PF, stderr
+    int tick=0;
+    //string reason; // "maxtick", "crash", "TL", "PF"
+    //double duration_sec;
+    //time_t finished_at;
+  };
+  struct t_cdn_game:t_finished_game{
+    struct t_player{
+      string err;
+      vector<double> tick2ms;
+    };
+    vector<t_player> slot2player;
+    vector<vector<t_cmd>> tick2cmds;
   };
   struct t_runned_game{
     t_game_decl gd;
     int tick=0;
-    bool started=false;
-    vector<unique_ptr<t_docker_api_v2>> slot2v2;
+    bool started=true;
+    vector<unique_ptr<t_docker_api_v2>> slot2api;
     vector<t_cmd> slot2cmd;
     vector<t_status> slot2status;
     vector<int> slot2ready;
     vector<string> slot2bin;
+    vector<vector<t_cmd>> tick2cmds;
     t_world w;
     void init(){
       slot2cmd.resize(gd.arr.size());
@@ -540,15 +568,15 @@ struct t_node:t_process,t_node_cache{
       slot2bin.resize(gd.arr.size());
     }
     void free(){
-      for (auto& api : slot2v2) {
+      for (auto& api : slot2api) {
         if (api) {
           api->pnode->loop_v2.remove(api->socket.sock);
-          api->socket.close();
+          api->socket.qap_close();
         }
       }
-    }// TODO: free socket_path_on_host foreach t_docker_api_v2
+    }
     ~t_runned_game(){free();}
-    void new_tick(){for(auto&ex:slot2ready)ex=false;}
+    void new_tick(){for(auto&ex:slot2ready)ex=false;for(auto&ex:slot2cmd)ex={};}
     bool all_ready(){
       for(int i=0;i<slot2cmd.size();i++){
         if(slot2ready[i]||!slot2status[i].ok())continue;
@@ -556,10 +584,32 @@ struct t_node:t_process,t_node_cache{
       }
       return true;
     }
+    t_cdn_game mk_cg(){
+      t_cdn_game out;
+      (t_finished_game&)out=mk_fg();
+      for(int i=0;i<gd.arr.size();i++){
+        auto&p=out.slot2player[i];auto&a=*slot2api[i];
+        p.tick2ms=a.time_log;
+        p.err=a.err;
+      }
+      out.tick2cmds=tick2cmds;
+      return out;
+    }
+    t_finished_game mk_fg(){
+      t_finished_game out;
+      out.game_id=gd.game_id;
+      out.slot2score=w.slot2score;
+      for(auto&ex:slot2status){
+        out.slot2status.push_back(ex.to_str());
+      }
+      out.tick=tick;
+      //out.reason="ok";
+      return out;
+    }
   };
   static constexpr int buff_size=1024*64;
   bool download_binary(const string& cdn_url, string& out_binary) {
-    string tmp_file = "/tmp/ai_bin_" + to_string(rand());
+    string tmp_file = "/tmp/ai_bin_" + sha256(cdn_url);
     string cmd = "curl -s -f -o " + tmp_file + " " + cdn_url;
     int result = system(cmd.c_str());
     if (result != 0) {
@@ -571,12 +621,15 @@ struct t_node:t_process,t_node_cache{
     return true;
   }
   static void kill(const string&conid){
-    string cmd="docker kill "+conid;
-    system(cmd.c_str());
+    thread t([&](){
+      string cmd="docker kill "+conid;
+      system(cmd.c_str());
+    });
+    t.detach();
   }
   struct t_container_monitor{
     static void kill(t_runned_game&g,int pid){
-      auto&conid=g.slot2v2[pid]->conid;
+      auto&conid=g.slot2api[pid]->conid;
       t_node::kill(conid);
     }
     struct t_task{
@@ -585,18 +638,21 @@ struct t_node:t_process,t_node_cache{
       double started_at;
       double ms;
       bool done=false;
+      bool deaded=false;
       void on_done(QapClock&clock){
         done=true;
         ms=clock.MS()-started_at;
         get().time_log.push_back(ms);
       }
-      t_docker_api_v2&get(){return *pgame->slot2v2[player_id];}
-      void kill_if_TL(double ms){
+      t_docker_api_v2&get(){return *pgame->slot2api[player_id];}
+      bool kill_if_TL(double ms){
         auto&gd=pgame->gd;
         auto TL=pgame->tick?gd.TL:gd.TL0;
-        if(ms<=TL)return;
+        if(ms<=TL)return false;
         kill(*pgame,player_id);
         pgame->slot2status[player_id].TL=true;
+        deaded=true;
+        return true;
       }
     };
     vector<t_task> tasks;
@@ -605,18 +661,20 @@ struct t_node:t_process,t_node_cache{
     void add(t_runned_game*pgame,int player_id) {
       tasks.push_back({pgame,player_id,clock.MS()});
     }
-    //static constexpr int MAX_TICK_TIME=50;
-    void donekiller(){
-      for(auto&t:tasks)if(t.done){
-        t.kill_if_TL(t.ms);
-      }
+    void clear(int game_id){
+      QapCleanIf(tasks,[&](const t_task&t){return t.pgame->gd.game_id==game_id;});
     }
     void update(){
-      donekiller();
+      bool frag=false;
+      for(auto&t:tasks)if(t.done){
+        frag=frag||t.kill_if_TL(t.ms);
+      }
       auto now=clock.MS();
       for(auto&t:tasks)if(!t.done){
-        t.kill_if_TL(now-t.started_at);
+        frag=frag||t.kill_if_TL(now-t.started_at);
       }
+      //if(!frag)return;
+      //QapCleanIf(tasks,[](const t_task&t){return t.deaded;});
     }
   };
   t_container_monitor container_monitor;
@@ -640,7 +698,7 @@ struct t_node:t_process,t_node_cache{
                  "--name " + api.conid + " "
                  "--mount type=bind,src=" + api.socket_path_on_host + ",dst=/tmp/dokcon.sock "
                  "--mount type=tmpfs,tmpfs-size=64m,destination=/tmpfs "
-                 "dokcon-runner:latest";
+                 "universal-runner:latest";
 
     int result = system(cmd.c_str());
     if (result != 0) {
@@ -648,14 +706,9 @@ struct t_node:t_process,t_node_cache{
       return false;
     }
     auto*api_ptr=&api;
-    loop_v2.connect_to_container_socket(api.socket_path_on_host, [this,api_ptr,binary](t_unix_socket& client) {
-      api_ptr->socket = client;
-
-      // 2. Отправляем команды
+    loop_v2.connect_to_container_socket(api,[this,api_ptr,binary](){
       stream_write(api_ptr->socket, "ai_binary", binary);
       stream_write(api_ptr->socket, "ai_start", "");
-
-      // 3. Начинаем слушать
       api_ptr->start_reading();
     });
 
@@ -673,7 +726,7 @@ struct t_node:t_process,t_node_cache{
     int i=-1;
     for(auto&ex:gd.arr){
       i++;
-      auto&b2=qap_add_back(g.slot2v2);
+      auto&b2=qap_add_back(g.slot2api);
       b2=make_unique<t_docker_api_v2>();
       t_docker_api_v2&v2=*b2.get();
       v2.pnode=this;
@@ -689,26 +742,31 @@ struct t_node:t_process,t_node_cache{
   void game_tick(t_runned_game&game){
     if(game.started){
       for(int i=0;i<game.slot2cmd.size();i++)game.w.use(i,game.slot2cmd[i]);
+      game.tick2cmds.push_back(game.slot2cmd);
       game.w.step();
       if(game.w.finished()||game.tick>=game.gd.maxtick){
         send_game_result(game);
         for(int i=0;i<game.gd.arr.size();i++)container_monitor.kill(game,i);
+        container_monitor.clear(game.gd.game_id);
         return;
       }
     }
-    for(int i=0;i<game.slot2v2.size();i++){
+    for(int i=0;i<game.slot2api.size();i++){
       if(!game.slot2status[i].ok())continue;
-      string vpow=serialize(game.w,i);
-      auto&api=game.slot2v2[i];
-      api->write_stdin("vpow,"+vpow+"\n");
-      container_monitor.add(&game,i);
+      send_vpow(game,i);
     }
+  }
+  void send_vpow(t_runned_game&game,int i){
+    string vpow=serialize(game.w,i);
+    auto&api=game.slot2api[i];
+    api->write_stdin("vpow,"+vpow+"\n");
+    container_monitor.add(&game,i);
   }
   void on_player_stdout(t_runned_game&g,int player_id,const string_view&data){
     string s(data);
     if(!g.started){
       if(s.find("READY")==string::npos){
-        auto&api=g.slot2v2[player_id];
+        auto&api=g.slot2api[player_id];
         api->on_stderr("\nERROR DETECTED: YOU MUST SAY READY BEFORE FIRST ACTION!!!\n");
         return;
       }
@@ -723,11 +781,11 @@ struct t_node:t_process,t_node_cache{
     if(move.valid){
       g.slot2cmd[player_id]=move;
       auto&r=g.slot2ready[player_id];
-      if(r){g.slot2v2[player_id]->on_stderr("\nERROR DETECTED: ANSWER AFTER ANSWER!!!\n");}
+      if(r){g.slot2api[player_id]->on_stderr("\nERROR DETECTED: ANSWER AFTER ANSWER!!!\n");}
       r=true;
       for(auto&ex:container_monitor.tasks)if(ex.player_id==player_id)ex.on_done(container_monitor.clock);
     }else{
-      auto&api=g.slot2v2[player_id];
+      auto&api=g.slot2api[player_id];
       api->on_stderr("INVALID_MOVE: parsing failed\n");
       container_monitor.kill(g,player_id);
       g.slot2status[player_id].PF=true;
@@ -737,8 +795,8 @@ struct t_node:t_process,t_node_cache{
     }
   }
   void tick(t_runned_game&g){
-    container_monitor.donekiller();
-    container_monitor.tasks.clear();
+    container_monitor.update();
+    container_monitor.clear(g.gd.game_id);
     game_tick(g);
     if(g.started)g.tick++;
     g.new_tick();
@@ -764,26 +822,26 @@ struct t_node:t_process,t_node_cache{
       fds.push_back({fd, "", std::move(on_ready)/*, on_error*/});
     }
 
-    void connect_to_container_socket(const string& path,const function<void(t_unix_socket&)>& on_connect) {
-      t_unix_socket client;
-      if (!client.connect_unix(path)) {
-        LOG("client.connect_unix(path) failed with "+path); 
+    void connect_to_container_socket(t_docker_api_v2&api,function<void()>&&on_connect) {
+      auto&client=api.socket;
+      if (!client.connect_unix(api.socket_path_on_host)) {
+        LOG("client.connect_unix(path) failed with "+api.socket_path_on_host); 
         return;
       }
 
-      auto wrapper = [this, client, on_connect](int) mutable {
+      auto wrapper = [this,&client,on_connect](int){
         if (client.connected)return;
         int err = 0;
         socklen_t len = sizeof(err);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0) {
-          client.close();LOG("connect_to_container_socket::wrapper failed"); 
+          client.qap_close();LOG("connect_to_container_socket::wrapper failed"); 
           return;
         }
         client.connected = true;
-        on_connect(client);
+        on_connect();
       };
 
-      add(client.sock, wrapper);
+      add(client.sock,move(wrapper));
     }
 
     void run() {
@@ -808,7 +866,7 @@ struct t_node:t_process,t_node_cache{
               for (auto& f : fds) {
                 if (f.fd == pfd.fd) {
                   //if (f.on_error) f.on_error();
-                  close(pfd.fd);
+                  qap_close(pfd.fd);
                   remove(pfd.fd);  // удаляем из списка
                   LOG("Socket error on fd="+to_string(pfd.fd));
                   break;
