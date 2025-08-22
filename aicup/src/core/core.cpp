@@ -11,6 +11,30 @@
 using namespace std;
 using namespace std::chrono;
 
+int http_put_with_auth(const string& path, const string& body, const string& token) {
+  try {
+    httplib::Client cli("http://t_cdn:8080"); // ← вынеси в конфиг
+    cli.set_connection_timeout(5);  // 5 сек
+    cli.set_read_timeout(10);       // 10 сек
+    cli.set_write_timeout(10);
+
+    auto res = cli.Put(
+      ("/" + path).c_str(),
+      {{"Authorization", "Bearer " + token}},
+      body,
+      "application/octet-stream"
+    );
+
+    if (res && res->status == 200) {
+      return 200;
+    } else {
+      return res ? res->status : 500;
+    }
+  } catch (const exception& e) {
+    return 500;
+  }
+}
+
 string sha256(const string&s){
   std::vector<unsigned char> hash(picosha2::k_digest_size);
   picosha2::hash256(s.begin(),s.end(),hash.begin(),hash.end());
@@ -541,6 +565,7 @@ struct t_node:t_process,t_node_cache{
     //string reason; // "maxtick", "crash", "TL", "PF"
     //double duration_sec;
     //time_t finished_at;
+    string serialize()const{return {};}
   };
   struct t_cdn_game:t_finished_game{
     struct t_player{
@@ -549,6 +574,7 @@ struct t_node:t_process,t_node_cache{
     };
     vector<t_player> slot2player;
     vector<vector<t_cmd>> tick2cmds;
+    string serialize()const{return {};}
   };
   struct t_runned_game{
     t_game_decl gd;
@@ -560,6 +586,7 @@ struct t_node:t_process,t_node_cache{
     vector<int> slot2ready;
     vector<string> slot2bin;
     vector<vector<t_cmd>> tick2cmds;
+    string cdn_upload_token="under_construction";
     t_world w;
     void init(){
       slot2cmd.resize(gd.arr.size());
@@ -716,7 +743,42 @@ struct t_node:t_process,t_node_cache{
   }
   static string config2seed(const string&config){return {};}
   vector<unique_ptr<t_runned_game>> rgarr;
-  int game_n=0;
+  // Асинхронная отправка
+  void t_cdn_api_upload_async(
+      const string& path,
+      const t_cdn_game& data,
+      const string& token,
+      function<void(const string& error)> on_done
+  ) {
+    thread([path, data, token, on_done = move(on_done)]() {
+      string error;
+      try {
+        auto s=http_put_with_auth(path, data.serialize(),token);
+        if(s!=200)error="HTTP error "+to_string(s);
+      } catch (const exception& e) {
+        error = string("Exception in http_put_with_auth:") + e.what();
+      }
+      on_done(error);
+    }).detach();
+  }
+  struct t_game_uploaded_ack{
+    int game_id;
+    string err;
+  };
+  t_net_api capi;
+  void t_main_api_send(const string& z, const t_finished_game& ref) {
+    string payload = "game_result," + to_string(ref.game_id) + "," + serialize(ref);
+    capi.write_to_socket(local_main_ip_port, payload + "\n");
+  }
+
+  void t_main_api_send(const string& z, const t_game_uploaded_ack& ref) {
+    string payload = "game_uploaded," + to_string(ref.game_id);
+    if (!ref.err.empty()) {
+        payload += ",error=" + ref.err;
+    }
+    capi.write_to_socket(local_main_ip_port, payload + "\n");
+  }
+  int game_n=0;mutex rgarr_mutex;
   void new_game(const t_game_decl&gd){
     auto&gu=qap_add_back(rgarr);
     gu=make_unique<t_runned_game>();
@@ -736,8 +798,22 @@ struct t_node:t_process,t_node_cache{
     }
     game_n++;
   }
-  void send_game_result(t_runned_game&game){
-
+  void send_game_result(t_runned_game& game) {
+    auto game_id = game.gd.game_id;
+    auto finished_game = game.mk_fg();
+    auto cdn_game = game.mk_cg();
+    auto token = game.cdn_upload_token;
+    t_main_api_send("game_result",finished_game);
+    t_cdn_api_upload_async("replay/" + to_string(game_id), cdn_game, token,
+      [this,game_id](const string&error){
+        t_game_uploaded_ack a;
+        a.game_id=game_id;
+        a.err=error;
+        t_main_api_send("game_uploaded",a);
+        lock_guard<mutex> lock(rgarr_mutex);
+        QapCleanIf(rgarr,[&](const auto&g){return g&&g->gd.game_id==game_id;});
+      }
+    );
   }
   void game_tick(t_runned_game&game){
     if(game.started){
