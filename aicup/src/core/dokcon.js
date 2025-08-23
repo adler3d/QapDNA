@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 
 const AI_BIN_NAME = 'ai.bin';
 const TMP_DIR = '.'; // можно на /tmpfs
-const SOCKET_PATH = '/tmp/dokcon.sock';
+const SOCKET_PATH = process.env.SOCKET_PATH || '/tmp/dokcon.sock';
 
 // === ВСТАВКА emitter_on_data_decoder и stream_write_encoder ===
 var emitter_on_data_decoder = (emitter, cb) => {

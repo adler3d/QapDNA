@@ -222,6 +222,11 @@ struct t_cdn{
           LOGWAY();
       });
       svr.Get(R"(/images/([^/]+\.tar))", [&](const httplib::Request& req, httplib::Response& res) {
+          if (!rate_limiter.is_allowed(req.remote_addr)) {
+              res.set_content("Rate limit exceeded", "text/plain");
+              res.status = 429;
+              return;
+          }
           //if (!is_authorized(req)) {res.status = 403;return;}
           auto filename = req.matches[1].str();
           auto path = CDN_DATA_DIR + "images/" + filename;

@@ -7,16 +7,22 @@
 #include <string>
 #include <chrono>
 #include <future>
-#include "t_cdn.hpp"
 using namespace std;
 using namespace std::chrono;
+#include "t_cdn.hpp"
+const string DOCKERFILE_PATH = "./docker/universal-runner/Dockerfile"; //TODO: check this file must exists!
+const string IMAGE_NAME = "universal-runner:latest";
+const string ARCHIVE_NAME = "/tmp/universal-runner.tar";
+const string CDN_HOSTPORT = "localhost:"+to_string(t_cdn::CDN_PORT);
+const string CDN_URL="http://"+CDN_HOSTPORT;
+const string CDN_URL_IMAGES=CDN_URL+"/images/"; //TODO: replace to t_main "ip:port/images/"
 
 int http_put_with_auth(const string& path, const string& body, const string& token) {
   try {
-    httplib::Client cli("http://t_cdn:8080"); // ← вынеси в конфиг
-    cli.set_connection_timeout(5);  // 5 сек
-    cli.set_read_timeout(10);       // 10 сек
-    cli.set_write_timeout(10);
+    httplib::Client cli(CDN_URL);
+    cli.set_connection_timeout(60);
+    cli.set_read_timeout(60);
+    cli.set_write_timeout(60);
 
     auto res = cli.Put(
       ("/" + path).c_str(),
@@ -318,11 +324,6 @@ static inline pollfd make_pollinout(int fd){return pollfd{fd,POLLIN|POLLOUT,0};}
 
 namespace fs = std::filesystem;
 
-const string DOCKERFILE_PATH = "./docker/universal-runner/Dockerfile"; //TODO: check this file must exists!
-const string IMAGE_NAME = "universal-runner:latest";
-const string ARCHIVE_NAME = "/tmp/universal-runner.tar";
-const string CDN_URL = "http://cdn.your-system.com/images/"; //TODO: replace to t_main "ip:port/images/"
-
 bool build_image() {
   cout << "[t_main] Building Docker image...\n";
   string cmd = "docker build -t " + IMAGE_NAME + " -f " + DOCKERFILE_PATH + " .";
@@ -351,7 +352,7 @@ bool upload_to_cdn() {
   cout << "[t_main] Uploading to CDN...\n";
   string cmd = "curl -X PUT -T " + ARCHIVE_NAME + " "
                "-H 'Authorization: Bearer " + UPLOAD_TOKEN + "' "
-               + CDN_URL + "images/universal-runner.tar";
+               + CDN_URL_IMAGES + "images/universal-runner.tar";
   int result = system(cmd.c_str());
   if (result != 0) {
     cerr << "[t_main] Failed to upload to CDN\n";
@@ -374,7 +375,7 @@ void publish_runner_image() {
 
 bool download_image_from_cdn() {
   cout << "[t_node] Downloading runner image from CDN...\n";
-  string cmd = "curl -o /tmp/universal-runner.tar " + string(CDN_URL) + "universal-runner.tar";
+  string cmd = "curl -o /tmp/universal-runner.tar " + string(CDN_URL_IMAGES) + "universal-runner.tar";
   int result = system(cmd.c_str());
   if (result != 0) {
     cerr << "[t_node] Failed to download image\n";
@@ -568,8 +569,8 @@ struct t_node:t_process,t_node_cache{
     string err;
     string conid;
     vector<double> time_log;
-    string socket_path_in_container = "/tmp/dokcon.sock";
-    string socket_path_on_host;  // например: /tmp/dokcon_game1_p0.sock
+    string socket_path_in_container="/tmp/dokcon.sock";
+    string socket_path_on_host;
     emitter_on_data_decoder decoder;
     ~t_docker_api_v2() {
         socket.qap_close();
@@ -766,24 +767,24 @@ struct t_node:t_process,t_node_cache{
   };
   t_container_monitor container_monitor;
   bool spawn_docker(const string& cdn_url, t_docker_api_v2& api, int game_id, int player_id, t_runned_game& g) {
-    // 1. Генерируем уникальный ID и пути
-    api.conid = "game_" + to_string(game_id) + "_p" + to_string(player_id) + "_" + to_string(rand());
-    api.socket_path_on_host = "/tmp/dokcon_" + api.conid + ".sock";
-
-    // Удаляем старый сокет, если есть
+    api.conid = "game_" + to_string(game_id) + "_p" + to_string(player_id) + "_" + to_string((rand()<<16)+rand());
+    //api.socket_path_on_host = "/tmp/dokcon_" + api.conid + ".sock";
+    string socketDir = "/tmp/dokcon_sockets";
+    api.socket_path_on_host=socketDir+"/dokcon_"+api.conid+".sock";
+    api.socket_path_in_container="/tmp/dokcon_"+api.conid+".sock";
     unlink(api.socket_path_on_host.c_str());
-
-    // 2. Скачиваем бинарник
     string binary;
     if (!download_binary(cdn_url, binary)) {
       api.on_stderr("download failed\n");
       return false;
     }
     g.slot2bin[player_id] = binary;
-
-    string cmd = "docker run -d --rm "
+    system(("mkdir -p " + socketDir).c_str());
+    string cmd = "docker run -d --rm --memory=512m --memory-swap=512m --network=none "
+                 "-e SOCKET_PATH="+api.socket_path_in_container+" "
                  "--name " + api.conid + " "
-                 "--mount type=bind,src=" + api.socket_path_on_host + ",dst=/tmp/dokcon.sock "
+                 "--mount type=bind,src="+socketDir+",dst=/tmp "
+               //"--mount type=bind,src=" + api.socket_path_on_host + ",dst=/tmp/dokcon.sock "
                  "--mount type=tmpfs,tmpfs-size=64m,destination=/tmpfs "
                  "universal-runner:latest";
 
@@ -793,13 +794,13 @@ struct t_node:t_process,t_node_cache{
       return false;
     }
     auto*api_ptr=&api;
-    loop_v2.connect_to_container_socket(api,[this,api_ptr,binary](){
+    bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr,binary](){
       stream_write(api_ptr->socket, "ai_binary", binary);
       stream_write(api_ptr->socket, "ai_start", "");
       api_ptr->start_reading();
     });
 
-    return true;
+    return ok;
   }
   static string config2seed(const string&config){return {};}
   vector<unique_ptr<t_runned_game>> rgarr;
@@ -830,7 +831,6 @@ struct t_node:t_process,t_node_cache{
     string payload = "game_result," + to_string(ref.game_id) + "," + serialize(ref);
     capi.write_to_socket(local_main_ip_port, payload + "\n");
   }
-
   void t_main_api_send(const string& z, const t_game_uploaded_ack& ref) {
     string payload = "game_uploaded," + to_string(ref.game_id);
     if (!ref.err.empty()) {
@@ -839,10 +839,10 @@ struct t_node:t_process,t_node_cache{
     capi.write_to_socket(local_main_ip_port, payload + "\n");
   }
   int game_n=0;mutex rgarr_mutex;
-  void new_game(const t_game_decl&gd){
-    auto&gu=qap_add_back(rgarr);
-    gu=make_unique<t_runned_game>();
-    auto&g=*gu.get();
+  bool new_game(const t_game_decl&gd){
+    t_runned_game*pgame=nullptr;
+    {lock_guard<mutex> lock(rgarr_mutex);auto&gu=qap_add_back(rgarr);gu=make_unique<t_runned_game>();pgame=gu.get();}
+    auto&g=*pgame;
     g.gd=gd;
     g.init();
     int i=-1;
@@ -854,7 +854,16 @@ struct t_node:t_process,t_node_cache{
       v2.pnode=this;
       v2.player_id=i;
       v2.pgame=&g;
-      spawn_docker(ex.cdn_bin_file,v2,gd.game_id,i,g);
+      bool ok=spawn_docker(ex.cdn_bin_file,v2,gd.game_id,i,g);
+      if(!ok){
+        for(auto&api:g.slot2api){
+          kill(api->conid);
+        }
+        LOG("game aborted due to spawn_docker error:"+v2.conid);
+        lock_guard<mutex> lock(rgarr_mutex);
+        QapCleanIf(rgarr,[&](auto&ref){return ref->gd.game_id==gd.game_id;});
+        return false;
+      }
     }
     game_n++;
   }
@@ -957,12 +966,23 @@ struct t_node:t_process,t_node_cache{
       lock_guard<mutex> lock(mtx);
       fds.push_back({fd, "", std::move(on_ready)/*, on_error*/});
     }
-
-    void connect_to_container_socket(t_docker_api_v2&api,function<void()>&&on_connect) {
+    void wait_for_socket(const std::string& socket_path, int max_wait_ms=1024, int poll_interval_ms=16) {
+        namespace fs = std::filesystem;
+        int waited = 0;
+        while (!fs::exists(socket_path) && waited < max_wait_ms) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
+            waited += poll_interval_ms;
+        }
+        if (!fs::exists(socket_path)) {
+          LOG("Socket file not created after waiting: "+socket_path);
+        }
+    }
+    bool connect_to_container_socket(t_docker_api_v2&api,function<void()>&&on_connect) {
+      wait_for_socket(api.socket_path_on_host);
       auto&client=api.socket;
       if (!client.connect_unix(api.socket_path_on_host)) {
         LOG("client.connect_unix(path) failed with "+api.socket_path_on_host); 
-        return;
+        return false;
       }
 
       auto wrapper = [this,&client,on_connect](int){
@@ -978,6 +998,7 @@ struct t_node:t_process,t_node_cache{
       };
 
       add(client.sock,move(wrapper));
+      return true;
     }
 
     void run() {
