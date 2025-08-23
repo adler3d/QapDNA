@@ -217,7 +217,17 @@ static bool file_put_contents(const string&fn,const string&mem){
 }
 #else
 static bool file_put_contents(const string&FN,const string&mem){std::fstream f(FN,std::ios::binary|std::ios::out|std::ios::trunc);f<<mem;return true;}
-static string file_get_contents(const string&fn){std::ifstream file(fn,std::ios::binary);return std::string((std::istreambuf_iterator<char>(file)),(std::istreambuf_iterator<char>()));}
+static string file_get_contents_slow(const string&fn){std::ifstream file(fn,std::ios::binary);return std::string((std::istreambuf_iterator<char>(file)),(std::istreambuf_iterator<char>()));}
+static std::string file_get_contents(const std::string&fn){
+  std::ifstream file(fn,std::ios::binary|std::ios::ate);
+  if(!file.is_open()){return {};}
+  std::streamsize size=file.tellg();
+  file.seekg(0,std::ios::beg);
+  std::string buffer(size,'\0');
+  if(file.read(&buffer[0],size)){return buffer;}
+  return {};
+}
+
 #endif
 
 template<class TYPE>
@@ -1145,4 +1155,29 @@ string get_path(const string&fn){
     if(bpos>apos)split_by("\\");
   }else if(apos==string::npos){split_by("\\");}else split_by("/");
   return s;
+}
+
+static std::string local_cur_date_str_v4() {
+  using namespace std::chrono;
+
+  system_clock::time_point now = system_clock::now();
+  auto duration = now.time_since_epoch();
+    
+  auto sec = duration_cast<seconds>(duration);
+  auto millis = duration_cast<milliseconds>(duration - sec);
+
+  std::time_t t_c = sec.count();
+
+  std::tm local_tm;
+  #if defined(_WIN32) || defined(_WIN64)
+  localtime_s(&local_tm, &t_c);
+  #else
+  localtime_r(&t_c, &local_tm);
+  #endif
+
+  std::ostringstream oss;
+  oss << std::put_time(&local_tm, "%Y.%m.%d %H:%M:%S")
+      << '.' << std::setfill('0') << std::setw(3) << millis.count();
+
+  return oss.str();
 }

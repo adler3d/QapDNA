@@ -7,7 +7,7 @@
 #include <string>
 #include <chrono>
 #include <future>
-
+#include "t_cdn.hpp"
 using namespace std;
 using namespace std::chrono;
 
@@ -98,6 +98,72 @@ string generate_token(string coder_name,string timestamp) {
 template<class TYPE>TYPE parse(const string_view&s){return {};}
 string serialize(...){return "nope";}
 
+/*
+struct stream_write_encoder {
+  t_unix_socket& socket;
+  stream_write_encoder(t_unix_socket& s) : socket(s) {}
+
+  void operator()(const string& z, const string& data) {
+    string strData = data.empty() ? "" : data;
+    string lenStr = to_string(strData.length());
+
+    socket.write(lenStr);
+    socket.write("\0", 1);
+    socket.write(z);
+    socket.write("\0", 1);
+    socket.write(strData);
+  }
+
+  void operator()(const string& z, const void* data, size_t len) {
+    string lenStr = to_string(len);
+    socket.write(lenStr);
+    socket.write("\0", 1);
+    socket.write(z);
+    socket.write("\0", 1);
+    socket.write((const char*)data, len);
+  }
+};*/
+template<class t_unix_socket>
+void stream_write(t_unix_socket& client, const string& z, const string& data) {
+  string strData = data;
+  string lenStr = to_string(strData.length());
+
+  client.write(lenStr.c_str(), lenStr.length());
+  client.write("\0", 1);
+  client.write(z.c_str(), z.length());
+  client.write("\0", 1);
+  client.write(strData.c_str(), strData.length());
+}
+
+struct emitter_on_data_decoder{
+  function<void(const string&, const string&)> cb;
+  string buffer;
+
+  void feed(const char* data, size_t len) {
+    buffer.append(data, len);
+    while (true) {
+      auto e1 = buffer.find('\0');
+      if (e1 == string::npos) break;
+
+      string len_str = buffer.substr(0, e1);
+      if (!all_of(len_str.begin(), len_str.end(), ::isdigit)) break;
+      int len = stoi(len_str);
+
+      auto e2 = buffer.find('\0', e1 + 1);
+      if (e2 == string::npos) break;
+
+      int total = e2 + 1 + len;
+      if (buffer.size() < total) break;
+
+      string z = buffer.substr(e1 + 1, e2 - e1 - 1);
+      string payload = buffer.substr(e2 + 1, len);
+      buffer.erase(0, total);
+
+      cb(z, payload);
+    }
+  }
+};
+
 struct t_process{
   string machine;
   string name;
@@ -127,7 +193,7 @@ struct t_game_decl{
   double TL=50.0;
   double TL0=1000.0;
 };
-struct t_main:t_process{
+struct t_main_v0:t_process{
   vector<t_coder_rec> carr;
   vector<t_game_rec> garr;
   map<string,string> node2ipport;
@@ -136,6 +202,91 @@ struct t_main:t_process{
     capi.write_to_socket(node2ipport[node],"new_game,"+serialize(gd)+"\n");
   }
   int main(){
+    return 0;
+  }
+};
+struct t_cmd{bool valid=true;};
+struct t_world{
+  void use(int player_id,const t_cmd&cmd){}
+  void step(){};
+  bool finished(){return false;}
+  vector<double> slot2score;
+};
+struct t_finished_game{
+  int game_id;
+  vector<double> slot2score;
+  vector<string> slot2status; // OK, TL, PF, stderr
+  int tick=0;
+  //string reason; // "maxtick", "crash", "TL", "PF"
+  //double duration_sec;
+  //time_t finished_at;
+  string serialize()const{return {};}
+};
+struct t_cdn_game:t_finished_game{
+  struct t_player{
+    string err;
+    vector<double> tick2ms;
+  };
+  vector<t_player> slot2player;
+  vector<vector<t_cmd>> tick2cmds;
+  string serialize()const{return {};}
+};
+struct t_main : t_process {
+  vector<t_coder_rec> carr;
+  vector<t_game_rec> garr;
+  map<string, string> node2ipport;
+  t_net_api capi;
+  map<int, emitter_on_data_decoder> client_decoders;mutex cds_mtx;mutex n2i_mtx;
+  void on_client_data(int client_id, const string& data, function<void(const string&)> send) {
+    lock_guard<mutex> lock(cds_mtx);
+    auto& decoder = client_decoders[client_id];
+    if (!decoder.cb) {
+      decoder.cb = [this, client_id, send](const string& z, const string& payload) {
+        if (z == "new_game") {
+          t_game_decl gd = parse<t_game_decl>(payload);
+          //create_new_game_on_node("node1", gd); // или по IP
+          //send("ok,game_received\n");
+        }
+        if (z == "game_finished") {
+          auto result = parse<t_finished_game>(payload);
+          //update_elo(result);
+          //send("ok,result_received\n");
+        } else {
+          //send("error,unknown_command\n");
+        }
+      };
+    }
+    decoder.feed(data.data(), data.size());
+  }
+  static string node(int client_id){return "node"+to_string(client_id);}
+  void on_client_connected(int client_id, socket_t sock, const string& ip) {
+    cout << "[t_main] client connected: " << ip << " (id=" << client_id << ")\n";
+    //lock_guard<mutex> lock(n2i_mtx);node2ipport[node(client_id)] = ip + ":31456";
+  }
+  void on_client_disconnected(int client_id) {
+    cout << "[t_main] Node disconnected: " << client_id << "\n";
+    {lock_guard<mutex> lock(cds_mtx);client_decoders.erase(client_id);}
+    //{lock_guard<mutex> lock(n2i_mtx);node2ipport.erase(node(client_id));}
+  }
+  int port=31456;
+  int main(){
+    t_server_api server(port);
+    server.onClientConnected = [this](int id, socket_t sock, const string& ip) {
+      on_client_connected(id, sock, ip);
+    };
+    server.onClientDisconnected = [this](int id) {
+      on_client_disconnected(id);
+    };
+    server.onClientData = [this](int id, const string& data, function<void(const string&)> send) {
+      on_client_data(id, data, send);
+    };
+    server.start();//server.
+    cout << "[t_main] Server started on port "+to_string(port)+"\n";
+    cout << "Press Enter to stop...\n";
+    string dummy;
+    getline(cin, dummy);
+
+    server.stop();
     return 0;
   }
 };
@@ -161,8 +312,6 @@ static inline pollfd make_pollinout(int fd){return pollfd{fd,POLLIN|POLLOUT,0};}
 #define qap_close close
 #endif
 
-// t_main.cpp
-
 #include <cstdlib>
 #include <iostream>
 #include <filesystem>
@@ -172,7 +321,7 @@ namespace fs = std::filesystem;
 const string DOCKERFILE_PATH = "./docker/universal-runner/Dockerfile"; //TODO: check this file must exists!
 const string IMAGE_NAME = "universal-runner:latest";
 const string ARCHIVE_NAME = "/tmp/universal-runner.tar";
-const string CDN_URL = "https://cdn.your-system.com/images/"; //TODO: replace to t_main "ip:port/images/"
+const string CDN_URL = "http://cdn.your-system.com/images/"; //TODO: replace to t_main "ip:port/images/"
 
 bool build_image() {
   cout << "[t_main] Building Docker image...\n";
@@ -198,9 +347,11 @@ bool save_image() {
   return true;
 }
 
-/*bool upload_to_cdn() {
+bool upload_to_cdn() {
   cout << "[t_main] Uploading to CDN...\n";
-  string cmd = "curl -X PUT -T " + ARCHIVE_NAME + " " + CDN_URL + "universal-runner.tar";
+  string cmd = "curl -X PUT -T " + ARCHIVE_NAME + " "
+               "-H 'Authorization: Bearer " + UPLOAD_TOKEN + "' "
+               + CDN_URL + "images/universal-runner.tar";
   int result = system(cmd.c_str());
   if (result != 0) {
     cerr << "[t_main] Failed to upload to CDN\n";
@@ -208,7 +359,7 @@ bool save_image() {
   }
   cout << "[t_main] Image uploaded to CDN\n";
   return true;
-}*/
+}
 
 void publish_runner_image() {
   if (!fs::exists(DOCKERFILE_PATH)) {
@@ -217,11 +368,9 @@ void publish_runner_image() {
   }
   if (!build_image()) return;
   if (!save_image()) return;
-  //if (!upload_to_cdn()) return;
+  if (!upload_to_cdn()) return;
   cout << "[t_main] Runner image published and ready for t_node\n";
 }
-
-// t_node.cpp
 
 bool download_image_from_cdn() {
   cout << "[t_node] Downloading runner image from CDN...\n";
@@ -407,69 +556,6 @@ struct t_unix_socket {
     if (sock != -1) { ::qap_close(sock); sock = -1; }
   }
 };
-struct stream_write_encoder {
-  t_unix_socket& socket;
-  stream_write_encoder(t_unix_socket& s) : socket(s) {}
-
-  void operator()(const string& z, const string& data) {
-    string strData = data.empty() ? "" : data;
-    string lenStr = to_string(strData.length());
-
-    socket.write(lenStr);
-    socket.write("\0", 1);
-    socket.write(z);
-    socket.write("\0", 1);
-    socket.write(strData);
-  }
-
-  void operator()(const string& z, const void* data, size_t len) {
-    string lenStr = to_string(len);
-    socket.write(lenStr);
-    socket.write("\0", 1);
-    socket.write(z);
-    socket.write("\0", 1);
-    socket.write((const char*)data, len);
-  }
-};
-void stream_write(t_unix_socket& client, const string& z, const string& data) {
-  string strData = data;
-  string lenStr = to_string(strData.length());
-
-  client.write(lenStr.c_str(), lenStr.length());
-  client.write("\0", 1);
-  client.write(z.c_str(), z.length());
-  client.write("\0", 1);
-  client.write(strData.c_str(), strData.length());
-}
-
-struct emitter_on_data_decoder{
-  function<void(const string&, const string&)> cb;
-  string buffer;
-
-  void feed(const char* data, size_t len) {
-    buffer.append(data, len);
-    while (true) {
-      auto e1 = buffer.find('\0');
-      if (e1 == string::npos) break;
-
-      string len_str = buffer.substr(0, e1);
-      if (!all_of(len_str.begin(), len_str.end(), ::isdigit)) break;
-      int len = stoi(len_str);
-
-      auto e2 = buffer.find('\0', e1 + 1);
-      if (e2 == string::npos) break;
-
-      int total = e2 + 1 + len;
-      if (buffer.size() < total) break;
-
-      string z = buffer.substr(e1 + 1, e2 - e1 - 1);
-      string payload = buffer.substr(e2 + 1, len);
-      buffer.erase(0, total);
-
-      cb(z, payload);
-    }
-  }
-};
 
 struct t_node:t_process,t_node_cache{
   struct t_runned_game;
@@ -550,32 +636,6 @@ struct t_node:t_process,t_node_cache{
     bool ok()const{return !TL&&!PF;}
     string to_str(){if(ok())return "ok";string out=TL?"TL":"";if(PF)out+="PF";return out;}
   };
-  struct t_cmd{bool valid=true;};
-  struct t_world{
-    void use(int player_id,const t_cmd&cmd){}
-    void step(){};
-    bool finished(){return false;}
-    vector<double> slot2score;
-  };
-  struct t_finished_game{
-    int game_id;
-    vector<double> slot2score;
-    vector<string> slot2status; // OK, TL, PF, stderr
-    int tick=0;
-    //string reason; // "maxtick", "crash", "TL", "PF"
-    //double duration_sec;
-    //time_t finished_at;
-    string serialize()const{return {};}
-  };
-  struct t_cdn_game:t_finished_game{
-    struct t_player{
-      string err;
-      vector<double> tick2ms;
-    };
-    vector<t_player> slot2player;
-    vector<vector<t_cmd>> tick2cmds;
-    string serialize()const{return {};}
-  };
   struct t_runned_game{
     t_game_decl gd;
     int tick=0;
@@ -586,7 +646,7 @@ struct t_node:t_process,t_node_cache{
     vector<int> slot2ready;
     vector<string> slot2bin;
     vector<vector<t_cmd>> tick2cmds;
-    string cdn_upload_token="under_construction";
+    string cdn_upload_token=UPLOAD_TOKEN;
     t_world w;
     void init(){
       slot2cmd.resize(gd.arr.size());
@@ -987,8 +1047,8 @@ struct t_node:t_process,t_node_cache{
 
 int main() {
   srand(time(0));
-  if(bool prod=false){
-    string mode="none";
+  if(bool prod=true){
+    string mode="t_cdn";
     if("t_main"==mode){
       publish_runner_image();
       t_main m;
@@ -997,6 +1057,10 @@ int main() {
     if("t_node"==mode){
       if(!ensure_runner_image())return -3145601;
       t_node n;
+      return n.main();
+    }
+    if("t_cdn"==mode){
+      t_cdn n;
       return n.main();
     }
   }

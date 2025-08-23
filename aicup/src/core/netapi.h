@@ -321,6 +321,32 @@ private:
         WSACleanup();
 #endif
     }
+    bool send_to_client(int client_id, const string& data) {
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        auto it = clientSockets.find(client_id);
+        if (it == clientSockets.end()) return false;
+
+        socket_t sock = it->second;
+        int len = static_cast<int>(data.size());
+        const char* ptr = data.data();
+
+        while (len > 0) {
+            int sent = ::send(sock, ptr, len, 0);
+            if (sent <= 0) return false;
+            ptr += sent;
+            len -= sent;
+        }
+
+        return true;//::send(sock, "\n", 1, 0) == 1;
+    }
+    void disconnect_client(int client_id) {
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        auto it = clientSockets.find(client_id);
+        if (it != clientSockets.end()) {
+            CLOSESOCKET(it->second);
+            clientSockets.erase(it);
+        }
+    }
 };
 
 
