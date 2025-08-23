@@ -194,9 +194,9 @@ struct t_game_decl{
   vector<t_game_slot> arr;
   string config;
   int game_id=0;
-  int maxtick=20000;
+  int maxtick=20000;// or 6000 * 0.050 == 5*60
   int stderr_max=1024*64;
-  double TL=50.0;
+  double TL=20.0;
   double TL0=1000.0;
 };
 struct t_main_v0:t_process{
@@ -274,9 +274,19 @@ struct t_main : t_process {
     {lock_guard<mutex> lock(cds_mtx);client_decoders.erase(client_id);}
     //{lock_guard<mutex> lock(n2i_mtx);node2ipport.erase(node(client_id));}
   }
-  int port=31456;
-  int main(){
-    t_server_api server(port);
+  void send_sources_to_cdn_and_local(const string& coder_id, const string& elf_version, const string& source_code, const string& token) {
+    string path = "source/" + coder_id + "_" + elf_version + ".cpp";
+    int status = http_put_with_auth(path, source_code, token);
+    if (status != 200) {
+      // Обработка ошибки, лог
+    }
+  }
+  void new_source(const string&coder_id,const string&src){
+
+  }
+  t_server_api server{31456};
+  int main(int port=31456){
+    server.port=port;
     server.onClientConnected = [this](int id, socket_t sock, const string& ip) {
       on_client_connected(id, sock, ip);
     };

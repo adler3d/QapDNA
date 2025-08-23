@@ -202,6 +202,9 @@ struct t_cdn{
       system(("mkdir -p "+CDN_DATA_DIR).c_str());
       system(("mkdir -p "+CDN_DATA_DIR+"images/").c_str());
       system(("mkdir -p "+CDN_DATA_DIR+"static/").c_str());
+      system(("mkdir -p "+CDN_DATA_DIR+"replay/").c_str());
+      system(("mkdir -p "+CDN_DATA_DIR+"binary/").c_str());
+      system(("mkdir -p "+CDN_DATA_DIR+"source/").c_str());
       #define LOGWAY()cout<<local_cur_date_str_v4()<<" "<<"["<<req.remote_addr<<"] "<<req.path/*<<" "<<req.path_params*/<<endl;
       svr.Get("/metrics", [&](const httplib::Request& req, httplib::Response& res) {
           res.set_content(g_metrics.to_prometheus(), "text/plain");
@@ -339,7 +342,7 @@ struct t_cdn{
 
       add_content_handlers(svr, "replay", "replay",false,
           [this](const auto& req, auto& res, const string& name) {
-              auto path = CDN_DATA_DIR + "replay_" + name + ".bin";
+              auto path = CDN_DATA_DIR + "replay/" + name + ".bin";
               {
                   lock_guard<mutex> lock(fs_mutex);
                   if (!file_put_contents(path, req.body)) {
@@ -351,7 +354,7 @@ struct t_cdn{
               LOGWAY();
           },
           [this](const auto& req, auto& res, const string& name) {
-              auto path = CDN_DATA_DIR + "replay_" + name + ".bin";
+              auto path = CDN_DATA_DIR + "replay/" + name + ".bin";
               string data;
               {
                   lock_guard<mutex> lock(fs_mutex);
@@ -368,7 +371,7 @@ struct t_cdn{
 
       add_content_handlers(svr, "source", "source",true,
           [this](const auto& req, auto& res, const string& name) {
-              auto path = CDN_DATA_DIR + "source_" + name;
+              auto path = CDN_DATA_DIR + "source/" + name;
               {
                   lock_guard<mutex> lock(fs_mutex);
                   if (!file_put_contents(path, req.body)) {
@@ -380,7 +383,7 @@ struct t_cdn{
               LOGWAY();
           },
           [this](const auto& req, auto& res, const string& name) {
-              auto path = CDN_DATA_DIR + "source_" + name;
+              auto path = CDN_DATA_DIR + "source/" + name;
               string data;
               {
                   lock_guard<mutex> lock(fs_mutex);
@@ -397,7 +400,7 @@ struct t_cdn{
 
       add_content_handlers(svr, "binary", "binary",false,
           [this](const auto& req, auto& res, const string& name) {
-              auto path = CDN_DATA_DIR + "binary_" + name;
+              auto path = CDN_DATA_DIR + "binary/" + name;
               {
                   lock_guard<mutex> lock(fs_mutex);
                   if (!file_put_contents(path, req.body)) {
@@ -409,7 +412,7 @@ struct t_cdn{
               LOGWAY();
           },
           [this](const auto& req, auto& res, const string& name) {
-              auto path = CDN_DATA_DIR + "binary_" + name;
+              auto path = CDN_DATA_DIR + "binary/" + name;
               string data;
               {
                   lock_guard<mutex> lock(fs_mutex);
