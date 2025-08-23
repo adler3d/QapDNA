@@ -8,6 +8,11 @@
 #include <string>
 #include <chrono>
 #include <future>
+#include <queue>
+#include <condition_variable>
+#include <thread>
+#include <atomic>
+#include <mutex>
 using namespace std;
 using namespace std::chrono;
 using json = nlohmann::json;
@@ -198,6 +203,61 @@ struct emitter_on_data_decoder{
   }
 };
 
+struct CompileJob {
+  //string coder;
+  //string source_code;
+  string json;
+  string src;
+  string cdn_src_url;
+  std::function<void(int)> on_uploaderror;
+  std::function<void(t_post_resp&)> on_complete;
+};
+
+struct CompileQueue {
+  std::queue<CompileJob> jobs;
+  std::mutex mtx;
+  std::condition_variable cv;
+  std::atomic<bool> stopping{false};
+  std::thread worker_thread;
+  CompileQueue() {
+    worker_thread = std::thread([this](){ this->worker_loop(); });
+  }
+  ~CompileQueue() {
+    stopping = true;
+    cv.notify_all();
+    worker_thread.join();
+  }
+
+  void push_job(const CompileJob& job) {
+    if(job.json.empty())return;
+    {
+      unique_lock<mutex> lock(mtx);
+      jobs.push(job);
+    }
+    cv.notify_one();
+  }
+
+private:
+  void worker_loop() {
+    while (!stopping) {
+      CompileJob job;
+      {
+        unique_lock<mutex> lock(mtx);
+        cv.wait(lock, [this](){ return stopping || !jobs.empty(); });
+        if (stopping||jobs.empty()) break;
+        job=jobs.front();
+        jobs.pop();
+      }
+      auto s=http_put_with_auth(job.cdn_src_url,job.src,UPLOAD_TOKEN);
+      if(s!=200){job.on_uploaderror(s);continue;}
+      auto resp=http_post_json_with_auth("compile",job.json,UPLOAD_TOKEN,COMPILER_URL);
+      job.on_complete(resp);
+      this_thread::sleep_for(chrono::milliseconds(16));
+    }
+  }
+};
+
+
 struct t_process{
   string machine;
   string name;
@@ -210,7 +270,7 @@ struct t_coder_rec{
     string cdn_bin_url;
     string time;
     string prod_time;
-    string err;
+    string status;
   };
   string id;
   string name;
@@ -287,6 +347,7 @@ struct t_main : t_process,t_http_base {
   map<string, string> node2ipport;
   t_net_api capi;
   map<int, emitter_on_data_decoder> client_decoders;mutex cds_mtx;mutex n2i_mtx;
+  CompileQueue compq;
   void on_client_data(int client_id, const string& data, function<void(const string&)> send) {
     lock_guard<mutex> lock(cds_mtx);
     auto& decoder = client_decoders[client_id];
@@ -321,10 +382,59 @@ struct t_main : t_process,t_http_base {
   t_coder_rec*coder2rec(const string&coder){for(auto&ex:carr){if(ex.name!=coder)continue;return &ex;}return nullptr;}
   t_coder_rec*email2rec(const string&email){for(auto&ex:carr){if(ex.email!=email)continue;return &ex;}return nullptr;}
   // t_site->t_main
+  CompileJob new_source_job(const string&coder,const string&src){
+    CompileJob out;
+    t_coder_rec*p=nullptr;
+    {
+      lock_guard<mutex> lock(carr_mtx);
+      auto*p=coder2rec(coder);
+      if(!p)return out;
+    }
+    int src_id=-1;
+    {
+      lock_guard<mutex> lock(*p->sarr_mtx);
+      src_id=p->sarr.size();
+    }
+    string v=to_string(src_id);
+    t_coder_rec::t_source b;
+    b.time=qap_time();
+    b.cdn_src_url="source/"+p->id+"_"+v+".cpp";
+    b.cdn_bin_url="binary/"+p->id+"_"+v+".cpp";
+    {lock_guard<mutex> lock(*p->sarr_mtx);p->sarr.push_back(b);}
+    json body_json;
+    body_json["coder_id"] = p->id;
+    body_json["elf_version"] = v;
+    body_json["source_code"] = src;
+    body_json["timeout_ms"] = 20000;
+    body_json["memory_limit_mb"] = 512;
+    out.src=src;
+    out.json=body_json.dump();
+    out.on_uploaderror=[&](int s){
+      if(s==200)return;
+      lock_guard<mutex> lock(*p->sarr_mtx);
+      auto&src=p->sarr[src_id];
+      src.status="http_upload_err:"+to_string(s);
+      src.prod_time=qap_time();
+    };
+    out.on_complete=[&](t_post_resp&resp){
+      lock_guard<mutex> lock(*p->sarr_mtx);
+      if(resp.status!=200){
+        auto&src=p->sarr[src_id];
+        src.status="compile_err:"+resp.body;
+        src.prod_time=qap_time();
+        return;
+      }
+      auto&src=p->sarr[src_id];
+      src.status="ok:"+resp.body;
+      src.prod_time=qap_time();
+    };
+    return std::move(out);
+  }
   struct t_new_src_resp{
     string v,time;
     string err;
   };
+  /*
   t_new_src_resp new_source(const string&coder,const string&src){
     auto*p=coder2rec(coder);if(!p){LOG("coder_rec not found for "+coder);return {"", "", "coder_rec_not_found"};}
     string v=to_string(p->sarr.size());
@@ -364,7 +474,7 @@ struct t_main : t_process,t_http_base {
       src.err="ok";
     }
     return {v,b.time};
-  }
+  }*/
   struct t_new_coder_resp{
     string err;
     string id;
@@ -491,14 +601,17 @@ struct t_main : t_process,t_http_base {
           res.set_content("Missing required fields: coder or src or token", "text/plain");
           return;
         }
-        lock_guard<mutex> lock(carr_mtx);
-        auto*p=coder2rec(coder);
-        if(!p){res.status=404;res.set_content("not found","text/plain");return;}
-        if(p->token!=token){res.status=403;res.set_content("unauthorized","text/plain");return;}
-        if(!p->allowed_next_src_upload()){res.status=429;res.set_content("rate limit exceeded","text/plain");return;}
-        thread([this,coder,src](){
-          new_source(coder,src);
-        }).detach();
+        {
+          lock_guard<mutex> lock(carr_mtx);
+          auto*p=coder2rec(coder);
+          if(!p){res.status=404;res.set_content("not found","text/plain");return;}
+          if(p->token!=token){res.status=403;res.set_content("unauthorized","text/plain");return;}
+          if(!p->allowed_next_src_upload()){res.status=429;res.set_content("rate limit exceeded","text/plain");return;}
+        }
+        compq.push_job(std::move(new_source_job(coder,src)));
+        //thread([this,coder,src](){
+        //  new_source(coder,src);
+        //}).detach();
         /*
         auto resp = new_source(coder, src);
         if (!resp.err.empty()) {
