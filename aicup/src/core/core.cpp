@@ -780,7 +780,7 @@ struct t_node:t_process,t_node_cache{
     }
     g.slot2bin[player_id] = binary;
     system(("mkdir -p " + socketDir).c_str());
-    string cmd = "docker run -d --rm --memory=512m --memory-swap=512m --network=none "
+    string cmd = "docker run -d --rm --memory=512m --memory-swap=512m --network=none --cpus=\"1.0\" "
                  "-e SOCKET_PATH="+api.socket_path_in_container+" "
                  "--name " + api.conid + " "
                  "--mount type=bind,src="+socketDir+",dst=/tmp "
