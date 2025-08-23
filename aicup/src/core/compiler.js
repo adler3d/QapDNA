@@ -69,11 +69,11 @@ async function uploadToCdn(path, dataBuffer, token) {
 
 // Компиляция с песочницей
 async function compileSource(data) {
-  const { coder_id, elf_version, source_code, timeout_ms, memory_limit_mb, output_path } = data;
+  const { coder_id, elf_version, source_code, timeout_ms, memory_limit_mb } = data;
 
   const tempDir = path.join(TEMP_DIR, `${coder_id}_${elf_version}_${Date.now()}`);
   const sourcePath = path.join(tempDir, 'ai.cpp');
-  const binaryPath = output_path; // прямой путь от сервера
+  const binaryPath = path.join(tempDir, 'ai.bin');//output_path; // прямой путь от сервера
 
   try {
     // 1. Создать временную папку
@@ -178,9 +178,9 @@ app.post('/compile', async (req, res) => {
   const job = req.body;
 
   // Валидация
-  if (!job.coder_id || !job.elf_version || !job.source_code || !job.output_path) {
+  if (!job.coder_id || !job.elf_version || !job.source_code ) {
     return res.status(400).json({
-      error: 'Missing required fields: coder_id, elf_version, source_code, output_path'
+      error: 'Missing required fields: coder_id, elf_version, source_code'
     });
   }
 
