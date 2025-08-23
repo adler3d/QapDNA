@@ -18,15 +18,80 @@ static const string CDN_DATA_DIR = "./";
 static const string CDN_DATA_DIR = "/tmp/cdn/"; // Позже можно на /var/lib/cdn
 #endif
 static const string UPLOAD_TOKEN = "s3cr3t_t0k3n_f0r_cdn_uploads_2025"; // < вынеси в аргументы
-struct t_cdn{
-  static const int CDN_PORT = 12346;
-
-  mutex fs_mutex;
-
-  bool is_authorized(const httplib::Request& req) {
+struct t_http_base{
+  static bool is_authorized(const httplib::Request& req) {
       auto auth = req.get_header_value("Authorization");
       return auth == "Bearer " + UPLOAD_TOKEN;
   }
+  struct RateLimiter {
+      struct ClientInfo {
+          int count = 0;
+          time_t first_request = 0;
+          time_t blocked_until = 0;
+      };
+
+      mutex mtx;
+      map<string, ClientInfo> clients;
+      set<string> whitelist; // белый список
+
+      bool is_allowed(const string& ip) {
+          lock_guard<mutex> lock(mtx);
+
+          // Пропускаем белые IP
+          if (whitelist.count(ip)) return true;
+
+          auto now = time(0);
+          auto& info = clients[ip];
+
+          if (info.blocked_until > now) {
+              return false;
+          }
+
+          if (now - info.first_request > 10) {
+              // Сброс за 10 секунд
+              info.count = 1;
+              info.first_request = now;
+          } else {
+              info.count++;
+              if (info.count > 25) {
+                  info.blocked_until = now + 30;
+                  return false;
+              }
+          }
+
+          return true;
+      }
+
+      void add_to_whitelist(const string& ip) {
+          lock_guard<mutex> lock(mtx);
+          whitelist.insert(ip);
+      }
+
+      void remove_from_whitelist(const string& ip) {
+          lock_guard<mutex> lock(mtx);
+          whitelist.erase(ip);
+      }
+  };
+  void cleanup_old_clients() {
+      lock_guard<mutex> lock(rate_limiter.mtx);
+      auto&arr=rate_limiter.clients;
+      auto now = time(0);
+      for (auto it = arr.begin(); it != arr.end(); ) {
+          // Если неактивен > 10 минут и не забанен — удаляем
+          if (now - it->second.first_request > 600 && it->second.blocked_until == 0) {
+              it = arr.erase(it);
+          } else {
+              ++it;
+          }
+      }
+  }
+  RateLimiter rate_limiter;
+};
+
+struct t_cdn:t_http_base{
+  static const int CDN_PORT = 12346;
+
+  mutex fs_mutex;
 
   struct t_metrics {
       std::atomic<uint64_t> bytes_uploaded{0};
@@ -86,55 +151,8 @@ struct t_cdn{
               "cdn_requests_image " + std::to_string(requests_image) + "\n";
       }
   };
-  struct RateLimiter {
-      struct ClientInfo {
-          int count = 0;
-          time_t first_request = 0;
-          time_t blocked_until = 0;
-      };
 
-      mutex mtx;
-      map<string, ClientInfo> clients;
-      set<string> whitelist; // белый список
-
-      bool is_allowed(const string& ip) {
-          lock_guard<mutex> lock(mtx);
-
-          // Пропускаем белые IP
-          if (whitelist.count(ip)) return true;
-
-          auto now = time(0);
-          auto& info = clients[ip];
-
-          if (info.blocked_until > now) {
-              return false;
-          }
-
-          if (now - info.first_request > 10) {
-              // Сброс за 10 секунд
-              info.count = 1;
-              info.first_request = now;
-          } else {
-              info.count++;
-              if (info.count > 25) {
-                  info.blocked_until = now + 30;
-                  return false;
-              }
-          }
-
-          return true;
-      }
-
-      void add_to_whitelist(const string& ip) {
-          lock_guard<mutex> lock(mtx);
-          whitelist.insert(ip);
-      }
-
-      void remove_from_whitelist(const string& ip) {
-          lock_guard<mutex> lock(mtx);
-          whitelist.erase(ip);
-      }
-  };
+  t_metrics g_metrics;
 
   void add_content_handlers(
       httplib::Server& svr,
@@ -177,22 +195,7 @@ struct t_cdn{
           }
       });
   }
-  void cleanup_old_clients() {
-      lock_guard<mutex> lock(rate_limiter.mtx);
-      auto&arr=rate_limiter.clients;
-      auto now = time(0);
-      for (auto it = arr.begin(); it != arr.end(); ) {
-          // Если неактивен > 10 минут и не забанен — удаляем
-          if (now - it->second.first_request > 600 && it->second.blocked_until == 0) {
-              it = arr.erase(it);
-          } else {
-              ++it;
-          }
-      }
-  }
-  RateLimiter rate_limiter;
 
-  t_metrics g_metrics;
   httplib::Server svr;
   int main() {
       thread([&](){

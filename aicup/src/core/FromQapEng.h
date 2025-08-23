@@ -1201,3 +1201,21 @@ string qap_time(){
   oss << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S")<< '.' << std::setfill('0') << std::setw(3) << millis.count();
   return oss.str();
 }
+chrono::time_point<chrono::system_clock> parse_qap_time(const std::string& s) {
+  using namespace chrono;
+  std::tm tm = {};
+  int millis;
+  std::istringstream iss(s);
+  iss >> std::get_time(&tm, "%Y.%m.%d %H:%M:%S");
+  char dot;iss >> dot >> millis;
+  tm.tm_hour -= 3;
+  std::time_t time = std::mktime(&tm);
+  auto tp = system_clock::from_time_t(time);
+  tp += milliseconds(millis);
+  return tp;
+}
+long long qap_time_diff(const std::string&t1,const std::string&t2){
+  auto tp1=parse_qap_time(t1);
+  auto tp2=parse_qap_time(t2);
+  return chrono::duration_cast<chrono::milliseconds>(tp2-tp1).count();
+}

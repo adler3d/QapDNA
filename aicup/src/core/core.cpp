@@ -10,6 +10,7 @@
 #include <future>
 using namespace std;
 using namespace std::chrono;
+using json = nlohmann::json;
 #include "t_cdn.hpp"
 const string DOCKERFILE_PATH = "./docker/universal-runner/Dockerfile"; //TODO: check this file must exists!
 const string IMAGE_NAME = "universal-runner:latest";
@@ -44,7 +45,11 @@ int http_put_with_auth(const string& path, const string& body, const string& tok
     return 500;
   }
 }
-int http_post_json_with_auth(const string& path, const string& body, const string& token,const string&cdn=CDN_URL) {
+struct t_post_resp{
+  int status;
+  string body;
+};
+t_post_resp http_post_json_with_auth(const string& path, const string& body, const string& token,const string&cdn=CDN_URL) {
   try {
     httplib::Client cli(cdn);
     cli.set_connection_timeout(60);
@@ -58,13 +63,9 @@ int http_post_json_with_auth(const string& path, const string& body, const strin
       "application/json"
     );
 
-    if (res && res->status == 200) {
-      return 200;
-    } else {
-      return res ? res->status : 500;
-    }
+    return res?t_post_resp{res->status,res->body}:t_post_resp{500,"no http_post response"};
   } catch (const exception& e) {
-    return 500;
+    return {500,e.what()};
   }
 }
 
@@ -209,6 +210,7 @@ struct t_coder_rec{
     string cdn_bin_url;
     string time;
     string prod_time;
+    string err;
   };
   string id;
   string name;
@@ -218,6 +220,12 @@ struct t_coder_rec{
   unique_ptr<mutex> sarr_mtx;
   vector<t_source> sarr;
   int total_games=0;
+  bool allowed_next_src_upload()const{
+    lock_guard<mutex> lock(*sarr_mtx);
+    if(sarr.empty())return true;
+    if(sarr.back().prod_time.empty())return false;
+    return qap_time_diff(sarr.back().time,qap_time())>60*1000;
+  }
 };
 struct t_game_rec{
   struct t_slot{string coder;double score=0;string err;string status;};
@@ -273,7 +281,7 @@ struct t_cdn_game:t_finished_game{
   vector<vector<t_cmd>> tick2cmds;
   string serialize()const{return {};}
 };
-struct t_main : t_process {
+struct t_main : t_process,t_http_base {
   vector<t_coder_rec> carr;
   vector<t_game_rec> garr;
   map<string, string> node2ipport;
@@ -323,23 +331,37 @@ struct t_main : t_process {
     t_coder_rec::t_source b;
     b.time=qap_time();
     b.cdn_src_url="source/"+p->id+"_"+v+".cpp";
-    auto s=http_put_with_auth(b.cdn_src_url,src,UPLOAD_TOKEN);
-    if(s!=200)return {v,b.time,to_string(s)};
     b.cdn_bin_url="binary/"+p->id+"_"+v+".cpp";
     int src_id=-1;
     {lock_guard<mutex> lock(*p->sarr_mtx);src_id=p->sarr.size();p->sarr.push_back(b);}
-    using json = nlohmann::json;
+    auto s=http_put_with_auth(b.cdn_src_url,src,UPLOAD_TOKEN);
+    if(s!=200){
+      lock_guard<mutex> lock(*p->sarr_mtx);
+      auto&src=p->sarr[src_id];
+      src.err="http_upload_err:"+to_string(s);
+      src.prod_time=qap_time();
+      return {v,b.time,to_string(s)};
+    }
     json body_json;
     body_json["coder_id"] = p->id;
     body_json["elf_version"] = v;
     body_json["source_code"] = src;
     body_json["timeout_ms"] = 20000;
     body_json["memory_limit_mb"] = 512;
-    s=http_post_json_with_auth("compile",body_json.dump(),UPLOAD_TOKEN,COMPILER_URL);
-    if(s!=200)return {v,b.time,"compile_api_error_"+to_string(s)};
+    auto resp=http_post_json_with_auth("compile",body_json.dump(),UPLOAD_TOKEN,COMPILER_URL);
+    if(resp.status!=200){
+      lock_guard<mutex> lock(*p->sarr_mtx);
+      auto&src=p->sarr[src_id];
+      src.err="compile:"+resp.body;
+      src.prod_time=qap_time();
+      return {v,b.time,"compile_api_error_"+to_string(s)};
+    }
     {
       lock_guard<mutex> lock(*p->sarr_mtx);
-      p->sarr[src_id].prod_time=qap_time();
+      auto&src=p->sarr[src_id];
+      src.err=resp.body;
+      src.prod_time=qap_time();
+      src.err="ok";
     }
     return {v,b.time};
   }
@@ -377,6 +399,7 @@ struct t_main : t_process {
     server.onClientData = [this](int id, const string& data, function<void(const string&)> send) {
       on_client_data(id, data, send);
     };
+    http_server_main();
     server.start();//server.
     cout << "[t_main] Server started on port "+to_string(port)+"\n";
     cout << "Press Enter to stop...\n";
@@ -386,6 +409,119 @@ struct t_main : t_process {
     server.stop();
     return 0;
   }
+
+  httplib::Server srv;
+  void http_server_main(){
+    thread([&](){
+      this_thread::sleep_for(600s);
+      cleanup_old_clients();
+    }).detach();
+    thread([this](){
+      setup_routes();
+      if(!srv.listen("0.0.0.0",80)){
+        cerr << "[t_site] Failed to start server\n";
+        return -1;
+      }
+      return 0;
+    }).detach();;
+  }
+  void setup_routes(){
+    srv.Post("/coder/new",[this](const httplib::Request& req, httplib::Response& res) {
+    try {
+      auto j = json::parse(req.body);
+
+      string name = j.value("name", "");
+      string email = j.value("email", "");
+
+      if (name.empty() || email.empty()) {
+        res.status = 400;
+        res.set_content("Missing required fields: name or email", "text/plain");
+        return;
+      }
+
+      {
+        lock_guard<mutex> lock(carr_mtx);
+        // Проверяем уникальность имени и email
+        for (const auto& c : carr) {
+          if (c.name == name) {
+            res.status = 409;
+            res.set_content("Duplicate coder name", "text/plain");
+            return;
+          }
+          if (c.email == email) {
+            res.status = 409;
+            res.set_content("Duplicate coder email", "text/plain");
+            return;
+          }
+        }
+        // Создаем запись нового кодера
+        t_coder_rec b;
+        b.id = to_string(carr.size());
+        b.time = qap_time();
+        b.name = name;
+        b.email = email;
+        b.token = sha256(b.time + name + email + to_string((rand() << 16) + rand()) + "2025.08.23 15:10:42.466");
+        b.sarr_mtx = make_unique<mutex>();
+
+        carr.push_back(move(b));
+      }
+
+      // Возвращаем информацию о новом кодере
+      json resp_json;
+      resp_json["id"] = carr.back().id;
+      resp_json["token"] = carr.back().token;
+      resp_json["time"] = carr.back().time;
+
+      res.status = 200;
+      res.set_content(resp_json.dump(), "application/json");
+    }
+    catch (const exception& e) {
+      res.status = 500;
+      res.set_content(string("Exception: ") + e.what(), "text/plain");
+    }
+    });
+    srv.Post("/source/new",[this](const httplib::Request& req, httplib::Response& res) {
+      try {
+        auto j = json::parse(req.body);
+        string coder = j.value("coder", "");
+        string src = j.value("src", "");
+        string token = j.value("token", "");
+        if (coder.empty() || src.empty()|| token.empty()) {
+          res.status = 400;
+          res.set_content("Missing required fields: coder or src or token", "text/plain");
+          return;
+        }
+        lock_guard<mutex> lock(carr_mtx);
+        auto*p=coder2rec(coder);
+        if(!p){res.status=404;res.set_content("not found","text/plain");return;}
+        if(p->token!=token){res.status=403;res.set_content("unauthorized","text/plain");return;}
+        if(!p->allowed_next_src_upload()){res.status=429;res.set_content("rate limit exceeded","text/plain");return;}
+        thread([this,coder,src](){
+          new_source(coder,src);
+        }).detach();
+        /*
+        auto resp = new_source(coder, src);
+        if (!resp.err.empty()) {
+          res.status = 500;
+          res.set_content("Error: " + resp.err, "text/plain");
+          return;
+        }
+        json resp_json;
+        resp_json["version"] = resp.v;
+        resp_json["time"] = resp.time;
+        res.status = 200;
+        res.set_content(resp_json.dump(), "application/json");
+        */
+        res.status = 200;
+        res.set_content("ok","text/plain");
+      }
+      catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(std::string("Exception: ") + e.what(), "text/plain");
+      }
+    });
+  }
+
 };
 
 #ifdef _WIN32

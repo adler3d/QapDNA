@@ -146,7 +146,7 @@ async function compileSource(data) {
 
       return {
         success: false,
-        log: `Compilation error: ${msg.split('\n')[0].trim().slice(0, 200)}`,
+        log: `Compilation error: ${msg.slice(0,16384)}`,
         error_type: 'compile',
         error_detail: 'compiler_error'
       };
