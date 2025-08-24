@@ -178,24 +178,174 @@ struct emitter_on_data_decoder{
   }
 };
 
+struct t_game_slot{string coder;string cdn_bin_file;};
+struct t_game_decl{
+  vector<t_game_slot> arr;
+  string config;
+  int game_id=0;
+  int maxtick=20000;// or 6000 * 0.050 == 5*60
+  int stderr_max=1024*64;
+  double TL=20.0;
+  double TL0=1000.0;
+};
+
+struct QueuedGame {
+  t_game_decl decl;
+  string submitted;
+  string status = "queued"; // queued, scheduled, failed
+};
+
+struct GameQueue {
+  queue<QueuedGame> games;
+  mutex mtx;
+  condition_variable cv;
+  atomic<bool> stopping{false};
+
+  // Просто добавляем игру
+  void push(const t_game_decl& gd) {
+    unique_lock<mutex> lock(mtx);
+    games.push({gd, qap_time(), "queued"});
+    cv.notify_one();
+  }
+
+  // Блокирующее извлечение первой игры (если есть)
+  optional<QueuedGame> wait_and_pop() {
+    unique_lock<mutex> lock(mtx);
+    cv.wait(lock, [this] { return stopping || !games.empty(); });
+    if (stopping || games.empty()) return nullopt;
+
+    auto game = move(games.front());
+    games.pop();
+    return game;
+  }
+
+  // Неблокирующая проверка
+  bool is_empty(){
+    lock_guard<mutex> lock(mtx);
+    return games.empty();
+  }
+
+  size_t size(){
+    lock_guard<mutex> lock(mtx);
+    return games.size();
+  }
+};
+
+struct t_node_info {
+  string name;
+  int total_cores = 0;
+  int used_cores = 0;
+  bool online = false;
+  string last_heartbeat = 0;
+  int available() const { return online ? (total_cores - used_cores) : 0; }
+  bool can_run(int players) { return available() >= players; }
+};
+
+struct Scheduler {
+  t_net_api& capi;
+  mutex mtx;
+  map<string, t_node_info> nodes;
+  vector<t_node_info> narr;
+  map<int, queue<t_game_decl>> c2rarr;
+  void add_cores(const string& node, int n) {
+    lock_guard<mutex> lock(mtx);
+    for (auto& ex : narr) {
+      if (ex.name == node) {
+        ex.used_cores = max(0, ex.used_cores - n);
+        return;
+      }
+    }
+    LOG("add_cores call from unk node: "+node);
+  }
+  void main() {
+    cleanup_old_nodes();
+    while (true) {
+      this_thread::sleep_for(16ms);
+      for (auto& [cores_needed, q] : c2rarr) {
+        if (q.empty()) continue;
+        t_node_info* target = nullptr;
+        {
+          lock_guard<mutex> lock(mtx);
+          for (auto& node : narr) {
+            if (node.online && (node.total_cores - node.used_cores) >= cores_needed) {
+              target = &node;
+              break;
+            }
+          }
+          if (!target) continue;
+        }
+        auto game = q.front(); q.pop();
+        target->used_cores += cores_needed;
+        capi.write_to_socket(target->name,"new_game,"+UPLOAD_TOKEN+","+serialize(game)+"\n");
+        LOG("Scheduled game on node: ", target->name);
+      }
+    }
+  }
+  void on_game_finished(const string&node,int players){ // TODO: call this from t_main
+    add_cores(node,players);
+  }
+  // "node_up,8,token"
+  bool on_node_up(const string&payload,const string&node) {// TODO: call this from t_main
+    auto parts=split(payload,",");
+    if(parts.size()!=3)return false;
+    if(parts[0]!="node_up")return false;
+    int cores=stoi(parts[1]);
+    string token=parts[2];
+    if (token!=UPLOAD_TOKEN) {
+      LOG("Auth failed for node");
+      return false;
+    }
+    if (cores <= 0 || cores > 128){LOG("more than 128 cores??? cores=="+to_string(cores));cores = 8;}
+    lock_guard<mutex> lock(mtx);
+    nodes[node]={node,cores,0,true,qap_time()};
+    return true;
+  }
+  void on_node_down(const string&node){
+    lock_guard<mutex> lock(mtx);
+    nodes[node].online=false;
+  }
+  void on_ping(const string&node){// TODO: call this from t_main
+    lock_guard<mutex> lock(mtx);
+    if(nodes.count(node)==0)return;
+    nodes[node].last_heartbeat=qap_time();
+  }
+  void cleanup_old_nodes() {
+    thread([this] {
+      while (true) {
+        this_thread::sleep_for(30s);
+        auto now = qap_time();
+        lock_guard<mutex> lock(mtx);
+        for (auto it = nodes.begin(); it != nodes.end(); ) {
+          if (qap_time_diff(it->second.last_heartbeat,now) > 60*1000) {
+            LOG("Node timeout: ", it->first);
+            it = nodes.erase(it);
+          } else {
+            ++it;
+          }
+        }
+      }
+    }).detach();
+  }
+};
+
 struct CompileJob {
   //string coder;
   //string source_code;
   string json;
   string src;
   string cdn_src_url;
-  std::function<void(int)> on_uploaderror;
-  std::function<void(t_post_resp&)> on_complete;
+  function<void(int)> on_uploaderror;
+  function<void(t_post_resp&)> on_complete;
 };
 
 struct CompileQueue {
-  std::queue<CompileJob> jobs;
-  std::mutex mtx;
-  std::condition_variable cv;
-  std::atomic<bool> stopping{false};
-  std::thread worker_thread;
+  queue<CompileJob> jobs;
+  mutex mtx;
+  condition_variable cv;
+  atomic<bool> stopping{false};
+  thread worker_thread;
   CompileQueue() {
-    worker_thread = std::thread([this](){ this->worker_loop(); });
+    worker_thread = thread([this](){ this->worker_loop(); });
   }
   ~CompileQueue() {
     stopping = true;
@@ -255,6 +405,7 @@ struct t_coder_rec{
   unique_ptr<mutex> sarr_mtx;
   vector<t_source> sarr;
   int total_games=0;
+  double elo=1500;
   bool allowed_next_src_upload()const{
     lock_guard<mutex> lock(*sarr_mtx);
     if(sarr.empty())return true;
@@ -270,16 +421,6 @@ struct t_game_rec{
   string cdn_file;
   int tick=0;
 };*/
-struct t_game_slot{string coder;string cdn_bin_file;};
-struct t_game_decl{
-  vector<t_game_slot> arr;
-  string config;
-  int game_id=0;
-  int maxtick=20000;// or 6000 * 0.050 == 5*60
-  int stderr_max=1024*64;
-  double TL=20.0;
-  double TL0=1000.0;
-};
 struct t_main_v0:t_process{
   vector<t_coder_rec> carr;
   //vector<t_game_rec> garr;
@@ -642,26 +783,33 @@ struct t_main : t_process,t_http_base {
     });
     srv.Get("/top", [this](const httplib::Request& req, httplib::Response& res) {
       try {
-        vector<json> top_list;
-
+        struct t_id_with_elo{
+          int i=0;
+          double elo=0;
+        };
+        vector<t_id_with_elo> top;
         {
           lock_guard<mutex> lock(carr_mtx);
-          for (auto& c : carr) {
-            if (c.sarr.empty()) continue;
-            double rating = c.sarr.back().ok() ? t_elo_score{}.get() : 0; // заглушка
-            top_list.push_back({
-              {"id", c.id},
-              {"name", c.name},
-              {"rating", rating},
-              {"games", c.total_games}
-            });
+          int i=-1;
+          for(auto&c:carr){
+            i++;
+            if(c.sarr.empty())continue;
+            top.push_back({i,c.elo});
           }
         }
-
-        // Сортировка по рейтингу (заглушка)
-        sort(top_list.begin(), top_list.end(), [](const json& a, const json& b) {
-          return a.value("rating", 0.0) > b.value("rating", 0.0);
+        sort(top.begin(),top.end(),[](const t_id_with_elo&a,const t_id_with_elo&b) {
+          return a.elo>b.elo;
         });
+        vector<json> top_list;
+        for(auto&ex:top){
+          auto&c=carr[ex.i];
+          top_list.push_back({
+            {"id",c.id},
+            {"name",c.name},
+            {"rating",c.elo},
+            {"games",c.total_games}
+          });
+        }
         res.status=200;
         res.set_content(json(top_list).dump(2), "application/json");
       } catch (const exception& e) {
@@ -726,7 +874,6 @@ struct t_main : t_process,t_http_base {
       res.set_content(json(games).dump(2), "application/json");
     });
   }
-
 };
 
 #ifdef _WIN32
