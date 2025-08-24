@@ -157,19 +157,19 @@ struct emitter_on_data_decoder{
   function<void(const string&, const string&)> cb;
   string buffer;
 
-  void feed(const char* data, size_t len) {
+  bool feed(const char* data, size_t len) {
     buffer.append(data, len);
     while (true) {
       auto e1 = buffer.find('\0');
       if (e1 == string::npos) break;
 
       string len_str = buffer.substr(0, e1);
-      if (len_str.size()>=7||!all_of(len_str.begin(), len_str.end(), ::isdigit)) break;// TODO: ban him
+      if (len_str.size()>=7||!all_of(len_str.begin(), len_str.end(), ::isdigit)) return false;
       int len = stoi(len_str);
 
       auto e2 = buffer.find('\0', e1 + 1);
       if (e2 == string::npos) break;
-      if(e2>512)break;// TODO: ban him
+      if(e2>512)return false;
       int total = e2 + 1 + len;
       if (buffer.size() < total) break;
 
@@ -179,6 +179,7 @@ struct emitter_on_data_decoder{
 
       cb(z, payload);
     }
+    return true;
   }
 };
 
@@ -481,7 +482,7 @@ struct t_main : t_process,t_http_base {
   vector<t_coder_rec> carr;mutex carr_mtx;
   vector<t_game> garr;mutex garr_mtx;
   //map<string, string> node2ipport;
-  t_net_api capi;
+  //t_net_api capi;
   map<int, emitter_on_data_decoder> client_decoders;mutex cds_mtx;//mutex n2i_mtx;
   CompileQueue compq;
   void on_client_data(int client_id, const string& data, function<void(const string&)> send) {
@@ -519,7 +520,8 @@ struct t_main : t_process,t_http_base {
         }
       };
     }
-    decoder.feed(data.data(), data.size());
+    bool ok=decoder.feed(data.data(), data.size());
+    if(!ok)server.disconnect_client(client_id);
   }
   void client_killer(){
     thread([&]{
