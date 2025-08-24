@@ -244,7 +244,7 @@ struct t_node_info {
 struct Scheduler {
   t_net_api& capi;
   mutex mtx;
-  map<string, t_node_info> nodes;
+  //map<string, t_node_info> nodes;
   vector<t_node_info> narr;
   map<int, queue<t_game_decl>> c2rarr;
   void add_cores(const string& node, int n) {
@@ -257,24 +257,25 @@ struct Scheduler {
     }
     LOG("add_cores call from unk node: "+node);
   }
+  //not thread safe!
+  t_node_info*node2i(const string&node,int cores_needed=-1){
+    //lock_guard<mutex> lock(mtx);
+    for(auto&ex:narr){
+      if(cores_needed<0){if(node==ex.name)return &ex;continue;}
+      if(!ex.online||(ex.total_cores-ex.used_cores)<cores_needed)continue;
+      return &ex;
+    }
+    return nullptr;
+  };
   void main() {
     cleanup_old_nodes();
     while (true) {
       this_thread::sleep_for(16ms);
       for (auto& [cores_needed, q] : c2rarr) {
         if (q.empty()) continue;
-        t_node_info* target = nullptr;
-        {
-          lock_guard<mutex> lock(mtx);
-          for (auto& node : narr) {
-            if (node.online && (node.total_cores - node.used_cores) >= cores_needed) {
-              target = &node;
-              break;
-            }
-          }
-          if (!target) continue;
-        }
-        auto game = q.front(); q.pop();
+        lock_guard<mutex> lock(mtx);
+        t_node_info*target=node2i({},cores_needed);
+        auto game=q.front();q.pop();
         target->used_cores += cores_needed;
         capi.write_to_socket(target->name,"new_game,"+UPLOAD_TOKEN+","+serialize(game)+"\n");
         LOG("Scheduled game on node: ", target->name);
@@ -297,17 +298,23 @@ struct Scheduler {
     }
     if (cores <= 0 || cores > 128){LOG("more than 128 cores??? cores=="+to_string(cores));cores = 8;}
     lock_guard<mutex> lock(mtx);
-    nodes[node]={node,cores,0,true,qap_time()};
+    if(auto*p=node2i(node)){
+      LOG("node already under control: "+node);
+      *p={node,cores,0,true,qap_time()};
+      return true;
+    }
+    qap_add_back(narr)={node,cores,0,true,qap_time()};
     return true;
   }
-  void on_node_down(const string&node){
-    lock_guard<mutex> lock(mtx);
-    nodes[node].online=false;
-  }
+  //void on_node_down(const string&node){
+  //  lock_guard<mutex> lock(mtx);
+  //  nodes[node].online=false;
+  //}
   void on_ping(const string&node){// TODO: call this from t_main
     lock_guard<mutex> lock(mtx);
-    if(nodes.count(node)==0)return;
-    nodes[node].last_heartbeat=qap_time();
+    auto*p=node2i(node);
+    if(!p){LOG("ping from unk node: "+node);return;}
+    p->last_heartbeat=qap_time();
   }
   void cleanup_old_nodes() {
     thread([this] {
@@ -315,10 +322,10 @@ struct Scheduler {
         this_thread::sleep_for(30s);
         auto now = qap_time();
         lock_guard<mutex> lock(mtx);
-        for (auto it = nodes.begin(); it != nodes.end(); ) {
-          if (qap_time_diff(it->second.last_heartbeat,now) > 60*1000) {
-            LOG("Node timeout: ", it->first);
-            it = nodes.erase(it);
+        for (auto it = narr.begin(); it != narr.end(); ) {
+          if (qap_time_diff(it->last_heartbeat,now) > 60*1000) {
+            LOG("Node timeout: ", it->name);
+            it = narr.erase(it);
           } else {
             ++it;
           }
