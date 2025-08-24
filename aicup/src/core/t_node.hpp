@@ -275,8 +275,12 @@ struct t_node:t_process,t_node_cache{
       t_finished_game out;
       out.game_id=gd.game_id;
       out.slot2score=w.slot2score;
+      int i=-1;
       for(auto&ex:slot2status){
+        i++;
         out.slot2status.push_back(ex.to_str());
+        double ms=0;auto&a=*slot2api[i];for(auto&t:a.time_log)ms+=t;
+        out.slot2ms.push_back(ms);
       }
       out.tick=tick;
       //out.reason="ok";

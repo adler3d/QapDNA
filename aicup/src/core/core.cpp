@@ -137,31 +137,6 @@ string generate_token(string coder_name,string time) {
 template<class TYPE>TYPE parse(const string_view&s){return {};}
 string serialize(...){return "nope";}
 
-/*
-struct stream_write_encoder {
-  t_unix_socket& socket;
-  stream_write_encoder(t_unix_socket& s) : socket(s) {}
-
-  void operator()(const string& z, const string& data) {
-    string strData = data.empty() ? "" : data;
-    string lenStr = to_string(strData.length());
-
-    socket.write(lenStr);
-    socket.write("\0", 1);
-    socket.write(z);
-    socket.write("\0", 1);
-    socket.write(strData);
-  }
-
-  void operator()(const string& z, const void* data, size_t len) {
-    string lenStr = to_string(len);
-    socket.write(lenStr);
-    socket.write("\0", 1);
-    socket.write(z);
-    socket.write("\0", 1);
-    socket.write((const char*)data, len);
-  }
-};*/
 template<class t_unix_socket>
 void stream_write(t_unix_socket& client, const string& z, const string& data) {
   string strData = data;
@@ -229,7 +204,7 @@ struct CompileQueue {
   }
 
   void push_job(const CompileJob& job) {
-    if(job.json.empty())return;
+    if(job.json.empty()||stopping)return;
     {
       unique_lock<mutex> lock(mtx);
       jobs.push(job);
@@ -243,16 +218,15 @@ private:
       CompileJob job;
       {
         unique_lock<mutex> lock(mtx);
-        cv.wait(lock, [this](){ return stopping || !jobs.empty(); });
-        if (stopping||jobs.empty()) break;
-        job=jobs.front();
+        cv.wait(lock,[this](){return stopping||!jobs.empty();});
+        if(stopping)break;
+        job=std::move(jobs.front());
         jobs.pop();
       }
       auto s=http_put_with_auth(job.cdn_src_url,job.src,UPLOAD_TOKEN);
       if(s!=200){job.on_uploaderror(s);continue;}
       auto resp=http_post_json_with_auth("compile",job.json,UPLOAD_TOKEN,COMPILER_URL);
       job.on_complete(resp);
-      this_thread::sleep_for(chrono::milliseconds(16));
     }
   }
 };
@@ -271,6 +245,7 @@ struct t_coder_rec{
     string time;
     string prod_time;
     string status;
+    bool ok(){return status.substr(0,3)=="ok:";}
   };
   string id;
   string name;
@@ -287,12 +262,14 @@ struct t_coder_rec{
     return qap_time_diff(sarr.back().time,qap_time())>60*1000;
   }
 };
+/*
 struct t_game_rec{
   struct t_slot{string coder;double score=0;string err;string status;};
   vector<t_slot> arr;
+  int game_id=0;
   string cdn_file;
   int tick=0;
-};
+};*/
 struct t_game_slot{string coder;string cdn_bin_file;};
 struct t_game_decl{
   vector<t_game_slot> arr;
@@ -305,7 +282,7 @@ struct t_game_decl{
 };
 struct t_main_v0:t_process{
   vector<t_coder_rec> carr;
-  vector<t_game_rec> garr;
+  //vector<t_game_rec> garr;
   map<string,string> node2ipport;
   t_net_api capi;
   void create_new_game_on_node(const string&node,const t_game_decl&gd){
@@ -324,12 +301,14 @@ struct t_world{
 };
 struct t_finished_game{
   int game_id;
+  vector<double> slot2ms;
   vector<double> slot2score;
   vector<string> slot2status; // OK, TL, PF, stderr
   int tick=0;
   //string reason; // "maxtick", "crash", "TL", "PF"
   //double duration_sec;
   //time_t finished_at;
+  string cdn_file()const{return to_string(game_id);};
   string serialize()const{return {};}
 };
 struct t_cdn_game:t_finished_game{
@@ -341,9 +320,15 @@ struct t_cdn_game:t_finished_game{
   vector<vector<t_cmd>> tick2cmds;
   string serialize()const{return {};}
 };
+struct t_game{
+  t_game_decl gd;
+  t_finished_game fg;
+  string status;
+  string author;
+};
 struct t_main : t_process,t_http_base {
-  vector<t_coder_rec> carr;
-  vector<t_game_rec> garr;
+  vector<t_coder_rec> carr;mutex carr_mtx;
+  vector<t_game> garr;mutex garr_mtx;
   map<string, string> node2ipport;
   t_net_api capi;
   map<int, emitter_on_data_decoder> client_decoders;mutex cds_mtx;mutex n2i_mtx;
@@ -353,11 +338,6 @@ struct t_main : t_process,t_http_base {
     auto& decoder = client_decoders[client_id];
     if (!decoder.cb) {
       decoder.cb = [this, client_id, send](const string& z, const string& payload) {
-        if (z == "new_game") {
-          t_game_decl gd = parse<t_game_decl>(payload);
-          //create_new_game_on_node("node1", gd); // или по IP
-          //send("ok,game_received\n");
-        }
         if (z == "game_finished") {
           auto result = parse<t_finished_game>(payload);
           //update_elo(result);
@@ -434,53 +414,11 @@ struct t_main : t_process,t_http_base {
     string v,time;
     string err;
   };
-  /*
-  t_new_src_resp new_source(const string&coder,const string&src){
-    auto*p=coder2rec(coder);if(!p){LOG("coder_rec not found for "+coder);return {"", "", "coder_rec_not_found"};}
-    string v=to_string(p->sarr.size());
-    t_coder_rec::t_source b;
-    b.time=qap_time();
-    b.cdn_src_url="source/"+p->id+"_"+v+".cpp";
-    b.cdn_bin_url="binary/"+p->id+"_"+v+".cpp";
-    int src_id=-1;
-    {lock_guard<mutex> lock(*p->sarr_mtx);src_id=p->sarr.size();p->sarr.push_back(b);}
-    auto s=http_put_with_auth(b.cdn_src_url,src,UPLOAD_TOKEN);
-    if(s!=200){
-      lock_guard<mutex> lock(*p->sarr_mtx);
-      auto&src=p->sarr[src_id];
-      src.err="http_upload_err:"+to_string(s);
-      src.prod_time=qap_time();
-      return {v,b.time,to_string(s)};
-    }
-    json body_json;
-    body_json["coder_id"] = p->id;
-    body_json["elf_version"] = v;
-    body_json["source_code"] = src;
-    body_json["timeout_ms"] = 20000;
-    body_json["memory_limit_mb"] = 512;
-    auto resp=http_post_json_with_auth("compile",body_json.dump(),UPLOAD_TOKEN,COMPILER_URL);
-    if(resp.status!=200){
-      lock_guard<mutex> lock(*p->sarr_mtx);
-      auto&src=p->sarr[src_id];
-      src.err="compile:"+resp.body;
-      src.prod_time=qap_time();
-      return {v,b.time,"compile_api_error_"+to_string(s)};
-    }
-    {
-      lock_guard<mutex> lock(*p->sarr_mtx);
-      auto&src=p->sarr[src_id];
-      src.err=resp.body;
-      src.prod_time=qap_time();
-      src.err="ok";
-    }
-    return {v,b.time};
-  }*/
   struct t_new_coder_resp{
     string err;
     string id;
     string time;
   };
-  mutex carr_mtx;
   t_new_coder_resp new_coder(const string&coder,const string&email){
     t_new_coder_resp out;
     lock_guard<mutex> lock(carr_mtx);
@@ -519,7 +457,7 @@ struct t_main : t_process,t_http_base {
     server.stop();
     return 0;
   }
-
+  map<string,string> coder2lgt; mutex coder2lgt_mtx;
   httplib::Server srv;
   void http_server_main(){
     thread([&](){
@@ -533,7 +471,7 @@ struct t_main : t_process,t_http_base {
         return -1;
       }
       return 0;
-    }).detach();;
+    }).detach();
   }
   void setup_routes(){
     srv.Post("/coder/new",[this](const httplib::Request& req, httplib::Response& res) {
@@ -551,7 +489,6 @@ struct t_main : t_process,t_http_base {
 
       {
         lock_guard<mutex> lock(carr_mtx);
-        // Проверяем уникальность имени и email
         for (const auto& c : carr) {
           if (c.name == name) {
             res.status = 409;
@@ -564,7 +501,6 @@ struct t_main : t_process,t_http_base {
             return;
           }
         }
-        // Создаем запись нового кодера
         t_coder_rec b;
         b.id = to_string(carr.size());
         b.time = qap_time();
@@ -609,28 +545,97 @@ struct t_main : t_process,t_http_base {
           if(!p->allowed_next_src_upload()){res.status=429;res.set_content("rate limit exceeded","text/plain");return;}
         }
         compq.push_job(std::move(new_source_job(coder,src)));
-        //thread([this,coder,src](){
-        //  new_source(coder,src);
-        //}).detach();
-        /*
-        auto resp = new_source(coder, src);
-        if (!resp.err.empty()) {
-          res.status = 500;
-          res.set_content("Error: " + resp.err, "text/plain");
-          return;
-        }
-        json resp_json;
-        resp_json["version"] = resp.v;
-        resp_json["time"] = resp.time;
-        res.status = 200;
-        res.set_content(resp_json.dump(), "application/json");
-        */
         res.status = 200;
         res.set_content("ok","text/plain");
       }
       catch (const std::exception& e) {
         res.status = 500;
         res.set_content(std::string("Exception: ") + e.what(), "text/plain");
+      }
+    });
+    srv.Post("/game/mk", [this](const httplib::Request& req, httplib::Response& res) {
+      try {
+        if(req.body.size()>1024*128){res.status=500;res.set_content("req.body too long","text/plain");return;}
+        auto j = json::parse(req.body);
+        string author = j.value("author", "");
+        string token = j.value("token", "");
+        string config = j.value("config", "");
+        auto players_json = j.value("players", json::array());
+        if (author.empty() || token.empty() || config.empty() || players_json.empty()) {
+          res.status = 400;
+          res.set_content("Missing required fields", "text/plain");
+          return;
+        }
+        t_coder_rec* auth_rec = nullptr;
+        {
+          lock_guard<mutex> lock(carr_mtx);
+          auth_rec = coder2rec(author);
+          if(!auth_rec){res.status=404;res.set_content("author not found","text/plain");return;}
+          if(auth_rec->token!=token){res.status=403;res.set_content("invalid token","text/plain");return;}
+        }
+        map<string,string>&last_game_time=coder2lgt;
+        {
+          auto t=qap_time();
+          lock_guard<mutex> lock(coder2lgt_mtx);
+          if (last_game_time.count(author) && (qap_time_diff(last_game_time[author],t)) < 5 * 60*1000) {
+            res.status = 429;
+            res.set_content("Rate limit: one game per 5 minutes", "text/plain");
+            return;
+          }
+          last_game_time[author]=t;
+        }
+        vector<t_game_slot> slots;
+        {
+          string err;
+          for (auto& p : players_json) {
+            string coder = p.value("coder", "");
+            string version = p.value("version", "latest");
+            lock_guard<mutex> lock(carr_mtx);
+            if(carr.empty()){err="under_construction";break;}
+            t_coder_rec*rec=coder.empty()?&carr[rand()%carr.size()]:coder2rec(coder);
+            if(!rec){err="not found coder with name: "+coder;break;}
+            lock_guard<mutex> lock2(*rec->sarr_mtx);
+            auto&sarr=rec->sarr;
+            int ver=(version=="latest"||version.empty())?(int)sarr.size()-1:stoi(version);
+            auto fail=[&](int v){return v<0||v>=(int)sarr.size();};
+            while(!fail(ver)&&!sarr[ver].ok())ver--;
+            if(fail(ver)){err="wrong version for coder: "+coder;break;}
+            t_game_slot slot;
+            slot.coder=coder;
+            slot.cdn_bin_file=rec->sarr[ver].cdn_bin_url;
+            slots.push_back(slot);
+          }
+          if(!err.empty()){
+            res.status=404;res.set_content(err,"text/plain");return;
+          }
+        }
+        if (slots.size() < 2) {
+          res.status = 400;
+          res.set_content("At least 2 players required", "text/plain");
+          return;
+        }
+        t_game_decl gd;
+        {
+          lock_guard<mutex> lock(garr_mtx);
+          gd.arr=slots;
+          gd.config=config;
+          gd.game_id=garr.size();
+          t_game&g=qap_add_back(garr);
+          g.fg.game_id=-1;
+          g.gd=gd;
+          g.status="new";
+          g.author="coder:"+author;
+        }
+        if (!node2ipport.empty()) {
+          auto node = node2ipport.begin()->first;
+          capi.write_to_socket(node2ipport[node], "new_game," + serialize(gd) + "\n");
+        }
+        json resp = {{"game_id", gd.game_id}, {"status", "scheduled"}};
+        res.status = 200;
+        res.set_content(resp.dump(), "application/json");
+      } catch (const exception& e) {
+        res.status = 500;
+        res.set_content(string("Exception: ") + e.what(), "text/plain");
       }
     });
   }
