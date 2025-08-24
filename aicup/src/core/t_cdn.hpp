@@ -33,7 +33,9 @@ struct t_http_base{
       mutex mtx;
       map<string, ClientInfo> clients;
       set<string> whitelist; // белый список
-
+      bool is_allowed(const string& ip,const string&route,int limit=25) {
+        return is_allowed(ip);
+      }
       bool is_allowed(const string& ip) {
           lock_guard<mutex> lock(mtx);
 

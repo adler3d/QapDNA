@@ -689,60 +689,70 @@ struct t_main : t_process,t_http_base {
       return 0;
     }).detach();
   }
+  RateLimiter rate_limiter;
   void setup_routes(){
+    #define RATE_LIMITER(LIMIT)\
+      if (!rate_limiter.is_allowed(req.remote_addr,req.matched_route,LIMIT)) {\
+        res.set_content("Rate limit exceeded", "text/plain");\
+        res.status = 429;\
+        return;\
+      }\
+    //RATE_LIMITER
     srv.Post("/coder/new",[this](const httplib::Request& req, httplib::Response& res) {
-    try {
-      auto j = json::parse(req.body);
+      RATE_LIMITER(25);
+      try {
+        auto j = json::parse(req.body);
 
-      string name = j.value("name", "");
-      string email = j.value("email", "");
+        string name = j.value("name", "");
+        string email = j.value("email", "");
 
-      if (name.empty() || email.empty()) {
-        res.status = 400;
-        res.set_content("Missing required fields: name or email", "text/plain");
-        return;
-      }
-
-      {
-        lock_guard<mutex> lock(carr_mtx);
-        for (const auto& c : carr) {
-          if (c.name == name) {
-            res.status = 409;
-            res.set_content("Duplicate coder name", "text/plain");
-            return;
-          }
-          if (c.email == email) {
-            res.status = 409;
-            res.set_content("Duplicate coder email", "text/plain");
-            return;
-          }
+        if (name.empty() || email.empty()) {
+          res.status = 400;
+          res.set_content("Missing required fields: name or email", "text/plain");
+          return;
         }
-        t_coder_rec b;
-        b.id = to_string(carr.size());
-        b.time = qap_time();
-        b.name = name;
-        b.email = email;
-        b.token = sha256(b.time + name + email + to_string((rand() << 16) + rand()) + "2025.08.23 15:10:42.466");
-        b.sarr_mtx = make_unique<mutex>();
 
-        carr.push_back(move(b));
+        {
+          lock_guard<mutex> lock(carr_mtx);
+          for (const auto& c : carr) {
+            if (c.name == name) {
+              res.status = 409;
+              res.set_content("Duplicate coder name", "text/plain");
+              return;
+            }
+            if (c.email == email) {
+              res.status = 409;
+              res.set_content("Duplicate coder email", "text/plain");
+              return;
+            }
+          }
+          t_coder_rec b;
+          b.id = to_string(carr.size());
+          b.time = qap_time();
+          b.name = name;
+          b.email = email;
+          b.token = sha256(b.time + name + email + to_string((rand() << 16) + rand()) + "2025.08.23 15:10:42.466");
+          b.sarr_mtx = make_unique<mutex>();
+
+          carr.push_back(move(b));
+        }
+
+        // Возвращаем информацию о новом кодере
+        json resp_json;
+        resp_json["id"] = carr.back().id;
+        resp_json["token"] = carr.back().token;
+        resp_json["time"] = carr.back().time;
+
+        res.status = 200;
+        res.set_content(resp_json.dump(), "application/json");
       }
-
-      // Возвращаем информацию о новом кодере
-      json resp_json;
-      resp_json["id"] = carr.back().id;
-      resp_json["token"] = carr.back().token;
-      resp_json["time"] = carr.back().time;
-
-      res.status = 200;
-      res.set_content(resp_json.dump(), "application/json");
-    }
-    catch (const exception& e) {
-      res.status = 500;
-      res.set_content(string("Exception: ") + e.what(), "text/plain");
-    }
+      catch (const exception& e) {
+        res.status = 500;
+        res.set_content(string("Exception: ") + e.what(), "text/plain");
+      }
     });
     srv.Post("/source/new",[this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
       try {
         auto j = json::parse(req.body);
         string coder = j.value("coder", "");
@@ -770,6 +780,7 @@ struct t_main : t_process,t_http_base {
       }
     });
     srv.Post("/game/mk", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
       try {
         if(req.body.size()>1024*128){res.status=500;res.set_content("req.body too long","text/plain");return;}
         auto j = json::parse(req.body);
@@ -853,6 +864,7 @@ struct t_main : t_process,t_http_base {
       }
     });
     srv.Get("/top", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(5);
       try {
         struct t_id_with_elo{
           int i=0;
@@ -907,6 +919,7 @@ struct t_main : t_process,t_http_base {
       }
     };
     srv.Get("/games/latest", [this,game2json](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
       try {
         int n = req.has_param("n") ? stoi(req.get_param_value("n")) : 10;
         n = max(1, min(n, 100));
@@ -930,6 +943,7 @@ struct t_main : t_process,t_http_base {
       }
     });
     srv.Get(R"(/coder/(\w+)/games)", [this,game2json](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
       string coder = req.matches[1];
       vector<json> games;
       {
@@ -949,6 +963,7 @@ struct t_main : t_process,t_http_base {
       res.set_content(json(games).dump(2), "application/json");
     });
     srv.Get("/me", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
       try {
         string token = req.get_param_value("token");
         if (token.empty()) {
@@ -992,6 +1007,7 @@ struct t_main : t_process,t_http_base {
       }
     });
     srv.Get(R"(/coder/(\w+))", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
       string name = req.matches[1];
       t_coder_rec* rec = nullptr;
 
@@ -1018,6 +1034,7 @@ struct t_main : t_process,t_http_base {
       res.set_content(resp.dump(2), "application/json");
     });
     srv.Get(R"(/game/(\d+))", [this,game2json](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
       try {
         int game_id = stoi(req.matches[1]);
         lock_guard<mutex> lock(garr_mtx);
@@ -1039,6 +1056,7 @@ struct t_main : t_process,t_http_base {
       }
     });
     srv.Get("/status", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
       json status;
       {
         lock_guard<mutex> lock(carr_mtx);
@@ -1047,13 +1065,15 @@ struct t_main : t_process,t_http_base {
       {
         lock_guard<mutex> lock(garr_mtx);
         status["games_total"] = garr.size();
-        int running = 0, finished = 0;
+        int running = 0, finished = 0, uploaded;
         for (const auto& g : garr) {
           if (g.status == "finished") finished++;
           else if (g.status != "new") running++;
+          else if (g.status != "uploaded") uploaded++;
         }
         status["games_running"] = running;
         status["games_finished"] = finished;
+        status["games_uploaded"] = uploaded;
       }
       {
         lock_guard<mutex> lock(sch.mtx); // Scheduler's mtx
