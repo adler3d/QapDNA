@@ -313,6 +313,8 @@ struct t_finished_game{
 };
 struct t_cdn_game:t_finished_game{
   struct t_player{
+    string coder;
+    string v;
     string err;
     vector<double> tick2ms;
   };
@@ -637,6 +639,91 @@ struct t_main : t_process,t_http_base {
         res.status = 500;
         res.set_content(string("Exception: ") + e.what(), "text/plain");
       }
+    });
+    srv.Get("/top", [this](const httplib::Request& req, httplib::Response& res) {
+      try {
+        vector<json> top_list;
+
+        {
+          lock_guard<mutex> lock(carr_mtx);
+          for (auto& c : carr) {
+            if (c.sarr.empty()) continue;
+            double rating = c.sarr.back().ok() ? t_elo_score{}.get() : 0; // заглушка
+            top_list.push_back({
+              {"id", c.id},
+              {"name", c.name},
+              {"rating", rating},
+              {"games", c.total_games}
+            });
+          }
+        }
+
+        // Сортировка по рейтингу (заглушка)
+        sort(top_list.begin(), top_list.end(), [](const json& a, const json& b) {
+          return a.value("rating", 0.0) > b.value("rating", 0.0);
+        });
+        res.status=200;
+        res.set_content(json(top_list).dump(2), "application/json");
+      } catch (const exception& e) {
+        res.status = 500;
+        res.set_content(e.what(), "text/plain");
+      }
+    });
+    auto game2json=[](const t_game&g,json&j){
+      j = {
+        {"game_id", g.gd.game_id},
+        {"tick", g.fg.tick},
+        {"players", json::array()}
+      };
+      int z=-1;auto&jp=j["players"];
+      for (const auto& p : g.gd.arr) {
+        z++;
+        auto s=g.fg.slot2score.size()?g.fg.slot2score[z]:0.0;
+        auto ms=g.fg.slot2ms.size()?g.fg.slot2ms[z]:0.0;
+        jp.push_back({{"coder",p.coder},{"score",s},{"ms",ms}});
+      }
+    };
+    srv.Get("/games/latest", [this,game2json](const httplib::Request& req, httplib::Response& res) {
+      try {
+        int n = req.has_param("n") ? stoi(req.get_param_value("n")) : 10;
+        n = max(1, min(n, 100));
+
+        vector<json> recent;
+        {
+          lock_guard<mutex> lock(garr_mtx);
+          int start = max(0, (int)garr.size() - n);
+          for (int i = start; i < (int)garr.size(); ++i) {
+            const auto& g = garr[i];
+            json j;
+            game2json(g,j);
+            recent.push_back(std::move(j));
+          }
+        }
+        res.status=200;
+        res.set_content(json(recent).dump(2), "application/json");
+      } catch (const exception& e) {
+        res.status = 500;
+        res.set_content(e.what(), "text/plain");
+      }
+    });
+    srv.Get(R"(/coder/(\w+)/games)", [this,game2json](const httplib::Request& req, httplib::Response& res) {
+      string coder = req.matches[1];
+      vector<json> games;
+      {
+        lock_guard<mutex> lock(garr_mtx);
+        for (const auto& g : garr) {
+          bool found=false;
+          for (const auto& p : g.gd.arr) {
+            if (p.coder!=coder)continue;
+            found=true;
+          }
+          if(!found)continue;
+          json j;game2json(g,j);
+          games.push_back(std::move(j));
+        }
+      }
+      res.status=200;
+      res.set_content(json(games).dump(2), "application/json");
     });
   }
 
