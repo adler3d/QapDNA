@@ -416,21 +416,14 @@ struct t_node:t_process,t_node_cache{
       on_done(error);
     }).detach();
   }
-  struct t_game_uploaded_ack{
-    int game_id;
-    string err;
-  };
   t_net_api capi;
   void t_main_api_send(const string& z, const t_finished_game& ref) {
-    string payload = "game_result," + to_string(ref.game_id) + "," + serialize(ref);
-    capi.write_to_socket(local_main_ip_port, payload + "\n");
+    string payload=qap_zchan_write("game_finished:"+UPLOAD_TOKEN,serialize(ref));
+    capi.write_to_socket(local_main_ip_port,payload);
   }
   void t_main_api_send(const string& z, const t_game_uploaded_ack& ref) {
-    string payload = "game_uploaded," + to_string(ref.game_id);
-    if (!ref.err.empty()) {
-        payload += ",error=" + ref.err;
-    }
-    capi.write_to_socket(local_main_ip_port, payload + "\n");
+    string payload=qap_zchan_write("game_uploaded:"+UPLOAD_TOKEN,serialize(ref));
+    capi.write_to_socket(local_main_ip_port,payload);
   }
   int game_n=0;mutex rgarr_mutex;
   bool new_game(const t_game_decl&gd){
@@ -466,6 +459,7 @@ struct t_node:t_process,t_node_cache{
     auto finished_game = game.mk_fg();
     auto cdn_game = game.mk_cg();
     auto token = game.cdn_upload_token;
+    finished_game.size=cdn_game.size();
     t_main_api_send("game_result",finished_game);
     t_cdn_api_upload_async("replay/" + to_string(game_id), cdn_game, token,
       [this,game_id](const string&error){
@@ -640,7 +634,7 @@ struct t_node:t_process,t_node_cache{
   };
   t_event_loop_v2 loop_v2;
   void periodic_cleanup(){
-    thread t([this](){
+    thread t([this]{
       while (true) {
         this_thread::sleep_for(1h);
         lru.cleanup();
@@ -648,12 +642,24 @@ struct t_node:t_process,t_node_cache{
     });
     t.detach();
   }
+  void periodic_ping(){
+    thread t([this]{
+      while (true) {
+        this_thread::sleep_for(10s);
+        capi.write_to_socket(local_main_ip_port,qap_zchan_write("ping:"+UPLOAD_TOKEN,qap_time()));
+      }
+    });
+    t.detach();
+  }
   int main(){
     periodic_cleanup();
+    periodic_ping();
 
     // new_game(...) Ч где-то вызываетс€
 
     //loop.run(this);
+    auto cores=to_string(thread::hardware_concurrency());
+    capi.write_to_socket(local_main_ip_port,qap_zchan_write("node_up:"+UPLOAD_TOKEN,cores));
     loop_v2.pnode=this;
     loop_v2.run();
     return 0;

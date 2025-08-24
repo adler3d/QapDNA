@@ -139,7 +139,7 @@ string serialize(...){return "nope";}
 
 template<class t_unix_socket>
 void stream_write(t_unix_socket& client, const string& z, const string& data) {
-  string strData = data;
+  auto&strData=data;
   string lenStr = to_string(strData.length());
 
   client.write(lenStr.c_str(), lenStr.length());
@@ -147,6 +147,10 @@ void stream_write(t_unix_socket& client, const string& z, const string& data) {
   client.write(z.c_str(), z.length());
   client.write("\0", 1);
   client.write(strData.c_str(), strData.length());
+}
+string qap_zchan_write(const string&z,const string&data){
+  string n=to_string(data.size());auto sep=string("\0",1);
+  return n+sep+z+sep+data;
 }
 
 struct emitter_on_data_decoder{
@@ -160,12 +164,12 @@ struct emitter_on_data_decoder{
       if (e1 == string::npos) break;
 
       string len_str = buffer.substr(0, e1);
-      if (!all_of(len_str.begin(), len_str.end(), ::isdigit)) break;
+      if (len_str.size()>=7||!all_of(len_str.begin(), len_str.end(), ::isdigit)) break;// TODO: ban him
       int len = stoi(len_str);
 
       auto e2 = buffer.find('\0', e1 + 1);
       if (e2 == string::npos) break;
-
+      if(e2>512)break;// TODO: ban him
       int total = e2 + 1 + len;
       if (buffer.size() < total) break;
 
@@ -240,9 +244,12 @@ struct t_node_info {
   int available() const { return online ? (total_cores - used_cores) : 0; }
   bool can_run(int players) { return available() >= players; }
 };
-
+struct i_sch_api{
+  virtual bool assign_game(const t_game_decl&gd,const string&node){LOG("assign_game::no_way");return false;}
+};
 struct Scheduler {
-  t_net_api& capi;
+  i_sch_api*api=nullptr;
+  //t_net_api& capi;
   mutex mtx;
   //map<string, t_node_info> nodes;
   vector<t_node_info> narr;
@@ -267,27 +274,32 @@ struct Scheduler {
     }
     return nullptr;
   };
+  void add_game_decl(const t_game_decl&gd){
+    lock_guard<mutex> lock(mtx);
+    c2rarr[gd.arr.size()].push(gd);
+  }
+  vector<t_game_decl> fails;
   void main() {
     cleanup_old_nodes();
     while (true) {
       this_thread::sleep_for(16ms);
-      for (auto& [cores_needed, q] : c2rarr) {
-        if (q.empty()) continue;
-        lock_guard<mutex> lock(mtx);
+      lock_guard<mutex> lock(mtx);
+      for(auto&[cores_needed,q]:c2rarr){
+        if(q.empty())continue;
         t_node_info*target=node2i({},cores_needed);
+        if(!target)continue;
         auto game=q.front();q.pop();
-        target->used_cores += cores_needed;
-        capi.write_to_socket(target->name,"new_game,"+UPLOAD_TOKEN+","+serialize(game)+"\n");
-        LOG("Scheduled game on node: ", target->name);
+        target->used_cores+=cores_needed;
+        if(!api->assign_game(game,target->name))fails.push_back(game);
+        LOG("Scheduled game on node: "+target->name+" ; game_id:"+to_string(game.game_id));
       }
     }
   }
-  void on_game_finished(const string&node,int players){ // TODO: call this from t_main
+  void on_game_finished(const string&node,int players){
     add_cores(node,players);
   }
-  // "node_up,8,token"
-  bool on_node_up(const string&payload,const string&node) {// TODO: call this from t_main
-    auto parts=split(payload,",");
+  bool on_node_up(const string&payload,const string&node) {
+    /*auto parts=split(payload,",");
     if(parts.size()!=3)return false;
     if(parts[0]!="node_up")return false;
     int cores=stoi(parts[1]);
@@ -295,7 +307,8 @@ struct Scheduler {
     if (token!=UPLOAD_TOKEN) {
       LOG("Auth failed for node");
       return false;
-    }
+    }*/
+    int cores=stoi(payload);
     if (cores <= 0 || cores > 128){LOG("more than 128 cores??? cores=="+to_string(cores));cores = 8;}
     lock_guard<mutex> lock(mtx);
     if(auto*p=node2i(node)){
@@ -324,7 +337,7 @@ struct Scheduler {
         lock_guard<mutex> lock(mtx);
         for (auto it = narr.begin(); it != narr.end(); ) {
           if (qap_time_diff(it->last_heartbeat,now) > 60*1000) {
-            LOG("Node timeout: ", it->name);
+            LOG("Node timeout: "+it->name);
             it = narr.erase(it);
           } else {
             ++it;
@@ -420,26 +433,6 @@ struct t_coder_rec{
     return qap_time_diff(sarr.back().time,qap_time())>60*1000;
   }
 };
-/*
-struct t_game_rec{
-  struct t_slot{string coder;double score=0;string err;string status;};
-  vector<t_slot> arr;
-  int game_id=0;
-  string cdn_file;
-  int tick=0;
-};*/
-struct t_main_v0:t_process{
-  vector<t_coder_rec> carr;
-  //vector<t_game_rec> garr;
-  map<string,string> node2ipport;
-  t_net_api capi;
-  void create_new_game_on_node(const string&node,const t_game_decl&gd){
-    capi.write_to_socket(node2ipport[node],"new_game,"+serialize(gd)+"\n");
-  }
-  int main(){
-    return 0;
-  }
-};
 struct t_cmd{bool valid=true;};
 struct t_world{
   void use(int player_id,const t_cmd&cmd){}
@@ -447,12 +440,17 @@ struct t_world{
   bool finished(){return false;}
   vector<double> slot2score;
 };
+struct t_game_uploaded_ack{
+  int game_id;
+  string err;
+};
 struct t_finished_game{
   int game_id;
   vector<double> slot2ms;
   vector<double> slot2score;
   vector<string> slot2status; // OK, TL, PF, stderr
   int tick=0;
+  int size=0;
   //string reason; // "maxtick", "crash", "TL", "PF"
   //double duration_sec;
   //time_t finished_at;
@@ -469,40 +467,93 @@ struct t_cdn_game:t_finished_game{
   vector<t_player> slot2player;
   vector<vector<t_cmd>> tick2cmds;
   string serialize()const{return {};}
+  int size(){return 0;}// TODO: need return serialize().size() but optimized!
 };
 struct t_game{
   t_game_decl gd;
   t_finished_game fg;
-  string status;
+  string ordered_at;
+  string finished_at;
+  string status="new";
   string author;
 };
 struct t_main : t_process,t_http_base {
   vector<t_coder_rec> carr;mutex carr_mtx;
   vector<t_game> garr;mutex garr_mtx;
-  map<string, string> node2ipport;
+  //map<string, string> node2ipport;
   t_net_api capi;
-  map<int, emitter_on_data_decoder> client_decoders;mutex cds_mtx;mutex n2i_mtx;
+  map<int, emitter_on_data_decoder> client_decoders;mutex cds_mtx;//mutex n2i_mtx;
   CompileQueue compq;
   void on_client_data(int client_id, const string& data, function<void(const string&)> send) {
     lock_guard<mutex> lock(cds_mtx);
     auto& decoder = client_decoders[client_id];
     if (!decoder.cb) {
       decoder.cb = [this, client_id, send](const string& z, const string& payload) {
-        if (z == "game_finished") {
-          auto result = parse<t_finished_game>(payload);
+        if(z=="game_finished:"+UPLOAD_TOKEN){
+          auto result=parse<t_finished_game>(payload);
+          lock_guard<mutex> lock(garr_mtx);
+          auto gid=result.game_id;
+          if(gid<0||gid>=garr.size()){LOG("wrong game_id form ???");return;}
+          auto&g=garr[gid];
+          g.fg=result;
+          g.status="finished";
+          g.finished_at=qap_time();
+          sch.on_game_finished(node(client_id),g.gd.arr.size());
           //update_elo(result);
-          //send("ok,result_received\n");
-        } else {
-          //send("error,unknown_command\n");
+        }
+        if(z=="game_uploaded:"+UPLOAD_TOKEN){
+          auto result=parse<t_game_uploaded_ack>(payload);
+          lock_guard<mutex> lock(garr_mtx);
+          auto gid=result.game_id;
+          if(gid<0||gid>=garr.size()){LOG("wrong game_id form ???");return;}
+          auto&g=garr[gid];
+          g.status="uploaded";
+        }
+        if(z=="node_up:"+UPLOAD_TOKEN){
+          lock_guard<mutex> lock(cid2i_mtx);
+          cid2i[client_id].our=true;
+          sch.on_node_up(payload,node(client_id));
+        }
+        if(z=="ping:"+UPLOAD_TOKEN){
+          sch.on_ping(node(client_id));
         }
       };
     }
     decoder.feed(data.data(), data.size());
   }
-  static string node(int client_id){return "node"+to_string(client_id);}
+  void client_killer(){
+    thread([&]{
+      for(;;){
+        this_thread::sleep_for(1s);
+        auto now=qap_time();
+        lock_guard<mutex> lock(cid2i_mtx);
+        vector<int> darr;
+        for(auto&ex:cid2i){
+          if(ex.second.our)continue;
+          auto dt=qap_time_diff(ex.second.time,now);
+          if(dt<1000*3)continue;
+          server.disconnect_client(ex.second.cid);
+          darr.push_back(ex.first);
+        }
+        for(auto&ex:darr)cid2i.erase(ex);
+      }
+    }).detach();
+  }
+  static string node(int client_id){return /*"node"+*/to_string(client_id);}
+  static int node2cid(const string&node){return stoi(node);}
+  struct t_client_info{
+    string ip;
+    int cid;
+    socket_t sock;
+    string time;
+    bool our=false;
+  };
+  map<int,t_client_info> cid2i;mutex cid2i_mtx;
   void on_client_connected(int client_id, socket_t sock, const string& ip) {
     cout << "[t_main] client connected: " << ip << " (id=" << client_id << ")\n";
     //lock_guard<mutex> lock(n2i_mtx);node2ipport[node(client_id)] = ip + ":31456";
+    lock_guard<mutex> lock(cid2i_mtx);
+    cid2i[client_id]={ip,client_id,sock,qap_time()};
   }
   void on_client_disconnected(int client_id) {
     cout << "[t_main] Node disconnected: " << client_id << "\n";
@@ -584,8 +635,21 @@ struct t_main : t_process,t_http_base {
     b.sarr_mtx=make_unique<mutex>();
     b.token=sha256(b.time+b.name+b.email+to_string((rand()<<16)+rand())+"2025.08.23 15:10:42.466");// TODO: add more randomness
   }
+  struct t_sch_api:i_sch_api{
+    t_main*pmain=nullptr;
+    bool assign_game(const t_game_decl&game,const string&node)override{
+      auto payload=qap_zchan_write("new_game:"+UPLOAD_TOKEN,serialize(game));
+      lock_guard<mutex> lock(pmain->cid2i_mtx);
+      auto&cid=pmain->cid2i[node2cid(node)].cid;
+      return pmain->server.send_to_client(cid,payload);
+    }
+  };
   t_server_api server{31456};
+  Scheduler sch;t_sch_api sch_api;
   int main(int port=31456){
+    sch.api=&sch_api;sch_api.pmain=this;
+    thread([this]{sch.main();}).detach();
+    client_killer();
     carr.reserve(31456*3);
     server.port=port;
     server.onClientConnected = [this](int id, socket_t sock, const string& ip) {
@@ -775,12 +839,10 @@ struct t_main : t_process,t_http_base {
           g.gd=gd;
           g.status="new";
           g.author="coder:"+author;
+          g.ordered_at=qap_time();
         }
-        if (!node2ipport.empty()) {
-          auto node = node2ipport.begin()->first;
-          capi.write_to_socket(node2ipport[node], "new_game," + serialize(gd) + "\n");
-        }
-        json resp = {{"game_id", gd.game_id}, {"status", "scheduled"}};
+        sch.add_game_decl(gd);
+        json resp = {{"game_id", gd.game_id}, {"status", "scheduled"},{"time",qap_time()}};
         res.status = 200;
         res.set_content(resp.dump(), "application/json");
       } catch (const exception& e) {
@@ -828,6 +890,10 @@ struct t_main : t_process,t_http_base {
       j = {
         {"game_id", g.gd.game_id},
         {"tick", g.fg.tick},
+        {"size", g.fg.size},
+        {"ot", g.ordered_at},
+        {"ft", g.finished_at},
+        {"author", g.author},
         {"players", json::array()}
       };
       int z=-1;auto&jp=j["players"];
@@ -879,6 +945,122 @@ struct t_main : t_process,t_http_base {
       }
       res.status=200;
       res.set_content(json(games).dump(2), "application/json");
+    });
+    srv.Get("/me", [this](const httplib::Request& req, httplib::Response& res) {
+      try {
+        string token = req.get_param_value("token");
+        if (token.empty()) {
+          res.status = 400;
+          res.set_content("Missing token", "text/plain");
+          return;
+        }
+
+        t_coder_rec* rec = nullptr;
+        {
+          lock_guard<mutex> lock(carr_mtx);
+          for (auto& c : carr) {
+            if (c.token == token) {
+              rec = &c;
+              break;
+            }
+          }
+        }
+
+        if (!rec) {
+          res.status = 404;
+          res.set_content("Invalid token", "text/plain");
+          return;
+        }
+
+        json resp = {
+          {"id", rec->id},
+          {"name", rec->name},
+          {"email", rec->email},
+          {"rating", rec->elo},
+          {"total_games", rec->total_games},
+          {"last_upload", rec->sarr.empty() ? "" : rec->sarr.back().prod_time}
+        };
+
+        res.status = 200;
+        res.set_content(resp.dump(2), "application/json");
+      }
+      catch (const exception& e) {
+        res.status = 500;
+        res.set_content(string("Exception: ") + e.what(), "text/plain");
+      }
+    });
+    srv.Get(R"(/coder/(\w+))", [this](const httplib::Request& req, httplib::Response& res) {
+      string name = req.matches[1];
+      t_coder_rec* rec = nullptr;
+
+      {
+        lock_guard<mutex> lock(carr_mtx);
+        rec = coder2rec(name);
+      }
+
+      if (!rec) {
+        res.status = 404;
+        res.set_content("Coder not found", "text/plain");
+        return;
+      }
+
+      json resp = {
+        {"id", rec->id},
+        {"name", rec->name},
+        {"rating", rec->elo},
+        {"total_games", rec->total_games},
+        {"src_count", (int)rec->sarr.size()}
+      };
+
+      res.status = 200;
+      res.set_content(resp.dump(2), "application/json");
+    });
+    srv.Get(R"(/game/(\d+))", [this,game2json](const httplib::Request& req, httplib::Response& res) {
+      try {
+        int game_id = stoi(req.matches[1]);
+        lock_guard<mutex> lock(garr_mtx);
+        t_game* game = nullptr;
+        if (game_id < 0 || game_id >= (int)garr.size()) {
+          res.status = 404;
+          res.set_content("Game not found", "text/plain");
+          return;
+        }
+        game = &garr[game_id];
+        json j;
+        game2json(*game, j);
+        res.status = 200;
+        res.set_content(j.dump(2), "application/json");
+      }
+      catch (const exception& e) {
+        res.status = 500;
+        res.set_content(string("Exception: ") + e.what(), "text/plain");
+      }
+    });
+    srv.Get("/status", [this](const httplib::Request& req, httplib::Response& res) {
+      json status;
+      {
+        lock_guard<mutex> lock(carr_mtx);
+        status["coders"] = carr.size();
+      }
+      {
+        lock_guard<mutex> lock(garr_mtx);
+        status["games_total"] = garr.size();
+        int running = 0, finished = 0;
+        for (const auto& g : garr) {
+          if (g.status == "finished") finished++;
+          else if (g.status != "new") running++;
+        }
+        status["games_running"] = running;
+        status["games_finished"] = finished;
+      }
+      {
+        lock_guard<mutex> lock(sch.mtx); // Scheduler's mtx
+        status["nodes_online"] = sch.narr.size();
+      }
+      status["time"] = qap_time();
+
+      res.status = 200;
+      res.set_content(status.dump(2), "application/json");
     });
   }
 };

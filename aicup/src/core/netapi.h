@@ -212,7 +212,6 @@ public:
         // Можно очищать здесь подольше, но лучше доверять client_handler
     }
 
-private:
     void accept_loop() {
         while (isRunning) {
             sockaddr_in client_addr{};
@@ -322,11 +321,13 @@ private:
 #endif
     }
     bool send_to_client(int client_id, const string& data) {
-        std::lock_guard<std::mutex> lock(clientsMutex);
-        auto it = clientSockets.find(client_id);
-        if (it == clientSockets.end()) return false;
-
-        socket_t sock = it->second;
+        socket_t sock;
+        {
+          std::lock_guard<std::mutex> lock(clientsMutex);
+          auto it = clientSockets.find(client_id);
+          if (it == clientSockets.end()) return false;
+          sock = it->second;
+        } 
         int len = static_cast<int>(data.size());
         const char* ptr = data.data();
 
