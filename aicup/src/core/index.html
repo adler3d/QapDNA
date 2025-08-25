@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <title>t_main API Console</title>
+    <style>
+
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+
+        .form {
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 6px;
+            background: #f9f9f9;
+        }
+
+        input, textarea, button {
+            margin: 5px 0;
+            padding: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: #007cba;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+            button:hover {
+                background: #005a87;
+            }
+
+        .result {
+            margin: 10px 0;
+            padding: 10px;
+            background: #eee;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+    </style>
+    
+    <script>
+  const API = () => document.getElementById('baseUrl').value;
+
+  // Универсальная функция для поиска .result рядом с кнопкой
+  function getResultDiv(button) {
+    const form = button.closest('.form');
+    return form ? form.querySelector('.result') : null;
+  }
+
+  async function request(url, method = 'GET', body = null, resultDiv) {
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : null
+      });
+      const text = await res.text();
+      resultDiv.textContent = `${res.status} ${res.statusText}\n${text}`;
+    } catch (e) {
+      resultDiv.textContent = `Ошибка: ${e.message}`;
+    }
+  }
+
+  function registerCoder() {
+    const name = document.getElementById('coderName').value;
+    const email = document.getElementById('coderEmail').value;
+    const resultDiv = document.getElementById('resultRegister');
+    request(`${API()}/coder/new`, 'POST', { name, email }, resultDiv);
+  }
+
+  function uploadSource() {
+    const coder = document.getElementById('srcCoder').value;
+    const token = document.getElementById('srcToken').value;
+    const src = document.getElementById('srcCode').value;
+    const resultDiv = document.getElementById('resultSource');
+    request(`${API()}/source/new`, 'POST', { coder, src, token }, resultDiv);
+  }
+
+  function createGame() {
+    const author = document.getElementById('gameAuthor').value;
+    const token = document.getElementById('gameToken').value;
+    const config = document.getElementById('gameConfig').value;
+    const players = document.getElementById('gamePlayers').value;
+    const resultDiv = document.getElementById('resultGame');
+
+    try {
+      const playersJson = JSON.parse(players);
+      request(`${API()}/game/mk`, 'POST', { author, token, config: config, players: playersJson }, resultDiv);
+    } catch (e) {
+      resultDiv.textContent = `Ошибка парсинга JSON: ${e.message}`;
+    }
+  }
+
+  function getTop() {
+    const resultDiv = document.getElementById('resultTop');
+    request(`${API()}/top`, 'GET', null, resultDiv);
+  }
+
+  function getLatestGames() {
+    const resultDiv = document.getElementById('resultLatest');
+    request(`${API()}/games/latest`, 'GET', null, resultDiv);
+  }
+
+  function getProfile() {
+    const name = document.getElementById('profileName').value;
+    const resultDiv = document.getElementById('resultProfile');
+    request(`${API()}/coder/${encodeURIComponent(name)}`, 'GET', null, resultDiv);
+  }
+
+  function getStatus() {
+    const resultDiv = document.getElementById('resultStatus');
+    request(`${API()}/status`, 'GET', null, resultDiv);
+  }
+  </script>
+</head>
+<body>
+    <h1>t_main — Консоль управления конкурсами</h1>
+    <p>Базовый URL: <input type="text" id="baseUrl" value="http://localhost" placeholder="http://localhost" /></p>
+    <!-- Регистрация кодера -->
+    <div class="form">
+        <h3>1. Зарегистрировать кодера</h3>
+        <input type="text" placeholder="Имя" id="coderName" />
+        <input type="email" placeholder="Email" id="coderEmail" />
+        <button onclick="registerCoder()">Зарегистрировать</button>
+        <div class="result" id="resultRegister"></div>
+    </div>
+    <!-- Загрузка исходника -->
+    <div class="form">
+        <h3>2. Загрузить исходник</h3>
+        <input type="text" placeholder="Имя кодера" id="srcCoder" />
+        <input type="text" placeholder="Токен" id="srcToken" />
+        <textarea id="srcCode" placeholder="Ваш код..."></textarea>
+        <button onclick="uploadSource()">Загрузить</button>
+        <div class="result" id="resultSource"></div>
+    </div>
+    <!-- Создание игры -->
+    <div class="form">
+        <h3>3. Создать игру</h3>
+        <input type="text" placeholder="Автор (имя)" id="gameAuthor" />
+        <input type="text" placeholder="Токен автора" id="gameToken" />
+        <textarea id="gameConfig" placeholder='{"max_players": 4, "map_size": 100}'></textarea>
+        <textarea id="gamePlayers" placeholder='[{"coder": "bot1"}, {"coder": "bot2"}]'></textarea>
+        <button onclick="createGame()">Создать игру</button>
+        <div class="result" id="resultGame"></div>
+    </div>
+    <!-- Получить топ -->
+    <div class="form">
+        <h3>4. Показать топ игроков</h3>
+        <button onclick="getTop()">Получить топ</button>
+        <div class="result" id="resultTop"></div>
+    </div>
+    <!-- Последние игры -->
+    <div class="form">
+        <h3>5. Последние игры</h3>
+        <button onclick="getLatestGames()">Последние 10 игр</button>
+        <div class="result" id="resultLatest"></div>
+    </div>
+    <!-- Профиль кодера -->
+    <div class="form">
+        <h3>6. Профиль кодера</h3>
+        <input type="text" placeholder="Имя кодера" id="profileName" />
+        <button onclick="getProfile()">Получить профиль</button>
+        <div class="result" id="resultProfile"></div>
+    </div>
+    <!-- Статус системы -->
+    <div class="form">
+        <h3>7. Статус системы</h3>
+        <button onclick="getStatus()">Получить статус</button>
+        <div class="result" id="resultStatus"></div>
+    </div>
+</body>
+</html>

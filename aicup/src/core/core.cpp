@@ -26,6 +26,14 @@ const string CDN_URL_IMAGES=CDN_URL+"/images/"; //TODO: replace to t_main "ip:po
 const string COMPILER_URL="http://localhost:"+3000;
 
 static void LOG(...){}
+bool isValidName(const std::string& name) {
+  for (char c : name) {
+    if (!isalnum(c)&&c!='_'&&c!='.') {
+      return false;
+    }
+  }
+  return true;
+}
 
 int http_put_with_auth(const string& path, const string& body, const string& token,const string&cdn=CDN_URL) {
   try {
@@ -324,7 +332,7 @@ struct Scheduler {
   //  lock_guard<mutex> lock(mtx);
   //  nodes[node].online=false;
   //}
-  void on_ping(const string&node){// TODO: call this from t_main
+  void on_ping(const string&node){
     lock_guard<mutex> lock(mtx);
     auto*p=node2i(node);
     if(!p){LOG("ping from unk node: "+node);return;}
@@ -360,6 +368,9 @@ struct CompileJob {
 };
 
 struct CompileQueue {
+  atomic<size_t> jobs_all=0;
+  atomic<size_t> jobs_upe=0;
+  atomic<size_t> jobs_done=0;
   queue<CompileJob> jobs;
   mutex mtx;
   condition_variable cv;
@@ -376,6 +387,7 @@ struct CompileQueue {
 
   void push_job(const CompileJob& job) {
     if(job.json.empty()||stopping)return;
+    jobs_all++;
     {
       unique_lock<mutex> lock(mtx);
       jobs.push(job);
@@ -395,8 +407,9 @@ private:
         jobs.pop();
       }
       auto s=http_put_with_auth(job.cdn_src_url,job.src,UPLOAD_TOKEN);
-      if(s!=200){job.on_uploaderror(s);continue;}
+      if(s!=200){jobs_upe++;job.on_uploaderror(s);continue;}
       auto resp=http_post_json_with_auth("compile",job.json,UPLOAD_TOKEN,COMPILER_URL);
+      jobs_done++;
       job.on_complete(resp);
     }
   }
@@ -416,10 +429,13 @@ struct t_coder_rec{
     string time;
     string prod_time;
     string status;
-    bool ok(){return status.substr(0,3)=="ok:";}
+    int size=0;
+    bool ok()const{return status.substr(0,3)=="ok:";}
   };
-  string id;
-  string name;
+  string last_ip;
+  int id;
+  string sysname;
+  string visname;
   string token;
   string email;
   string time;
@@ -432,6 +448,17 @@ struct t_coder_rec{
     if(sarr.empty())return true;
     if(sarr.back().prod_time.empty())return false;
     return qap_time_diff(sarr.back().time,qap_time())>60*1000;
+  }
+  t_coder_rec&set(int id,string u,string e,string t){
+    this->id=id;sysname=LowerStr(u);visname=u;email=e;token=t;time=qap_time();
+    sarr_mtx=make_unique<mutex>();
+    return *this;
+  }
+  int try_get_last_valid_ver(int v)const{
+    auto fail=[&](int v){return v<0||v>=(int)sarr.size();};
+    if(fail(v))return -1;
+    while(!fail(v)&&!sarr[v].ok())v--;
+    return v;
   }
 };
 struct t_cmd{bool valid=true;};
@@ -479,7 +506,7 @@ struct t_game{
   string author;
 };
 struct t_main : t_process,t_http_base {
-  vector<t_coder_rec> carr;mutex carr_mtx;
+  vector<t_coder_rec> carr;mutex carr_mtx;vector<size_t> ai2cid;
   vector<t_game> garr;mutex garr_mtx;
   //map<string, string> node2ipport;
   //t_net_api capi;
@@ -562,7 +589,7 @@ struct t_main : t_process,t_http_base {
     {lock_guard<mutex> lock(cds_mtx);client_decoders.erase(client_id);}
     //{lock_guard<mutex> lock(n2i_mtx);node2ipport.erase(node(client_id));}
   }
-  t_coder_rec*coder2rec(const string&coder){for(auto&ex:carr){if(ex.name!=coder)continue;return &ex;}return nullptr;}
+  t_coder_rec*coder2rec(const string&coder){for(auto&ex:carr){if(ex.sysname!=coder)continue;return &ex;}return nullptr;}
   t_coder_rec*email2rec(const string&email){for(auto&ex:carr){if(ex.email!=email)continue;return &ex;}return nullptr;}
   // t_site->t_main
   CompileJob new_source_job(const string&coder,const string&src){
@@ -570,7 +597,7 @@ struct t_main : t_process,t_http_base {
     t_coder_rec*p=nullptr;
     {
       lock_guard<mutex> lock(carr_mtx);
-      auto*p=coder2rec(coder);
+      p=coder2rec(coder);
       if(!p)return out;
     }
     int src_id=-1;
@@ -581,8 +608,9 @@ struct t_main : t_process,t_http_base {
     string v=to_string(src_id);
     t_coder_rec::t_source b;
     b.time=qap_time();
-    b.cdn_src_url="source/"+p->id+"_"+v+".cpp";
-    b.cdn_bin_url="binary/"+p->id+"_"+v+".cpp";
+    b.cdn_src_url="source/"+to_string(p->id)+"_"+v+".cpp";
+    b.cdn_bin_url="binary/"+to_string(p->id)+"_"+v+".cpp";
+    b.size=src.size();
     {lock_guard<mutex> lock(*p->sarr_mtx);p->sarr.push_back(b);}
     json body_json;
     body_json["coder_id"] = p->id;
@@ -592,14 +620,14 @@ struct t_main : t_process,t_http_base {
     body_json["memory_limit_mb"] = 512;
     out.src=src;
     out.json=body_json.dump();
-    out.on_uploaderror=[&](int s){
+    out.on_uploaderror=[&,p,src_id](int s){
       if(s==200)return;
       lock_guard<mutex> lock(*p->sarr_mtx);
       auto&src=p->sarr[src_id];
       src.status="http_upload_err:"+to_string(s);
       src.prod_time=qap_time();
     };
-    out.on_complete=[&](t_post_resp&resp){
+    out.on_complete=[&,p,src_id](t_post_resp&resp){
       lock_guard<mutex> lock(*p->sarr_mtx);
       if(resp.status!=200){
         auto&src=p->sarr[src_id];
@@ -610,6 +638,12 @@ struct t_main : t_process,t_http_base {
       auto&src=p->sarr[src_id];
       src.status="ok:"+resp.body;
       src.prod_time=qap_time();
+      lock_guard<mutex> lock2(carr_mtx);
+      for(int i=0;i<ai2cid.size();i++){
+        auto&ex=ai2cid[i];
+        if(ex==p->id)return;
+      }
+      ai2cid.push_back(p->id);
     };
     return std::move(out);
   }
@@ -622,21 +656,21 @@ struct t_main : t_process,t_http_base {
     string id;
     string time;
   };
-  t_new_coder_resp new_coder(const string&coder,const string&email){
-    t_new_coder_resp out;
-    lock_guard<mutex> lock(carr_mtx);
-    if(coder2rec(coder)){out.err="name";return out;}
-    if(email2rec(email)){out.err="email";return out;}
-    out.id=to_string(carr.size());
-    out.time=qap_time();
-    auto&b=qap_add_back(carr);
-    b.id=out.id;
-    b.time=out.time;
-    b.name=coder;
-    b.email=email;
-    b.sarr_mtx=make_unique<mutex>();
-    b.token=sha256(b.time+b.name+b.email+to_string((rand()<<16)+rand())+"2025.08.23 15:10:42.466");// TODO: add more randomness
-  }
+  //t_new_coder_resp new_coder(const string&coder,const string&email){
+  //  t_new_coder_resp out;
+  //  lock_guard<mutex> lock(carr_mtx);
+  //  if(coder2rec(coder)){out.err="name";return out;}
+  //  if(email2rec(email)){out.err="email";return out;}
+  //  out.id=to_string(carr.size());
+  //  out.time=qap_time();
+  //  auto&b=qap_add_back(carr);
+  //  b.id=out.id;
+  //  b.time=out.time;
+  //  b.name=coder;
+  //  b.email=email;
+  //  b.sarr_mtx=make_unique<mutex>();
+  //  b.token=sha256(b.time+b.name+b.email+to_string((rand()<<16)+rand())+"2025.08.23 15:10:42.466");// TODO: add more randomness
+  //}
   struct t_sch_api:i_sch_api{
     t_main*pmain=nullptr;
     bool assign_game(const t_game_decl&game,const string&node)override{
@@ -701,36 +735,50 @@ struct t_main : t_process,t_http_base {
     srv.Post("/coder/new",[this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
       try {
+        if(req.body.size()>=1024*16){res.status=409;res.set_content("max request size is 16KB","text/plain");return;}
         auto j = json::parse(req.body);
 
         string name = j.value("name", "");
         string email = j.value("email", "");
+        string sysname = LowerStr(name);
+        string sysemail = LowerStr(email);
 
         if (name.empty() || email.empty()) {
           res.status = 400;
           res.set_content("Missing required fields: name or email", "text/plain");
           return;
         }
-
+        if(name.size()<3){res.status=409;res.set_content("min name size is 3","text/plain");return;}
+        if(name.size()>42){res.status=409;res.set_content("max name size is 42","text/plain");return;}
+        if(email.size()>42){res.status=409;res.set_content("max email size is 42","text/plain");return;}
+        if(email.find('@')==string::npos){res.status=409;res.set_content("email must contain @","text/plain");return;}
+        if(!isValidName(name)){res.status=409;res.set_content("some char in name is not allowed! allowed=gen_dips(\"azAZ09\")+\"_.\"","text/plain");return;}
         {
           lock_guard<mutex> lock(carr_mtx);
           for (const auto& c : carr) {
-            if (c.name == name) {
+            if (c.sysname == sysname) {
               res.status = 409;
               res.set_content("Duplicate coder name", "text/plain");
               return;
             }
-            if (c.email == email) {
+            if (c.email == sysemail) {
               res.status = 409;
               res.set_content("Duplicate coder email", "text/plain");
               return;
             }
+            if (c.last_ip == req.remote_addr) {
+              res.status = 409;
+              res.set_content("No way - ban by IP unordered", "text/plain");
+              return;
+            }
           }
           t_coder_rec b;
-          b.id = to_string(carr.size());
+          b.last_ip=req.remote_addr;
+          b.id = carr.size();
           b.time = qap_time();
-          b.name = name;
-          b.email = email;
+          b.visname = name;
+          b.sysname = sysname;
+          b.email = sysemail;
           b.token = sha256(b.time + name + email + to_string((rand() << 16) + rand()) + "2025.08.23 15:10:42.466");
           b.sarr_mtx = make_unique<mutex>();
 
@@ -754,8 +802,9 @@ struct t_main : t_process,t_http_base {
     srv.Post("/source/new",[this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
       try {
+        if(req.body.size()>=1024*512){res.status=409;res.set_content("max request size is 512KB","text/plain");return;}
         auto j = json::parse(req.body);
-        string coder = j.value("coder", "");
+        string coder = LowerStr(j.value("coder", ""));
         string src = j.value("src", "");
         string token = j.value("token", "");
         if (coder.empty() || src.empty()|| token.empty()) {
@@ -763,16 +812,22 @@ struct t_main : t_process,t_http_base {
           res.set_content("Missing required fields: coder or src or token", "text/plain");
           return;
         }
+        if (src.size()>=1024*256) {
+          res.status = 409;
+          res.set_content("max source size is 256KB","text/plain");
+          return;
+        }
         {
           lock_guard<mutex> lock(carr_mtx);
           auto*p=coder2rec(coder);
           if(!p){res.status=404;res.set_content("not found","text/plain");return;}
           if(p->token!=token){res.status=403;res.set_content("unauthorized","text/plain");return;}
+          p->last_ip=req.remote_addr;
           if(!p->allowed_next_src_upload()){res.status=429;res.set_content("rate limit exceeded","text/plain");return;}
         }
         compq.push_job(std::move(new_source_job(coder,src)));
         res.status = 200;
-        res.set_content("ok","text/plain");
+        res.set_content("["+qap_time()+"] - ok // size = "+to_string(src.size()),"text/plain");
       }
       catch (const std::exception& e) {
         res.status = 500;
@@ -782,9 +837,9 @@ struct t_main : t_process,t_http_base {
     srv.Post("/game/mk", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
       try {
-        if(req.body.size()>1024*128){res.status=500;res.set_content("req.body too long","text/plain");return;}
+        if(req.body.size()>=1024*128){res.status=409;res.set_content("max request size is 128KB","text/plain");return;}
         auto j = json::parse(req.body);
-        string author = j.value("author", "");
+        string author = LowerStr(j.value("author", ""));
         string token = j.value("token", "");
         string config = j.value("config", "");
         auto players_json = j.value("players", json::array());
@@ -799,6 +854,7 @@ struct t_main : t_process,t_http_base {
           auth_rec = coder2rec(author);
           if(!auth_rec){res.status=404;res.set_content("author not found","text/plain");return;}
           if(auth_rec->token!=token){res.status=403;res.set_content("invalid token","text/plain");return;}
+          auth_rec->last_ip=req.remote_addr;
         }
         map<string,string>&last_game_time=coder2lgt;
         {
@@ -815,20 +871,20 @@ struct t_main : t_process,t_http_base {
         {
           string err;
           for (auto& p : players_json) {
-            string coder = p.value("coder", "");
+            string coder = LowerStr(p.value("coder", ""));
             string version = p.value("version", "latest");
             lock_guard<mutex> lock(carr_mtx);
-            if(carr.empty()){err="under_construction";break;}
-            t_coder_rec*rec=coder.empty()?&carr[rand()%carr.size()]:coder2rec(coder);
+            if(ai2cid.empty()){err="under_construction";break;}
+            
+            t_coder_rec*rec=coder.empty()?&carr[ai2cid[rand()%ai2cid.size()]]:coder2rec(coder);
             if(!rec){err="not found coder with name: "+coder;break;}
             lock_guard<mutex> lock2(*rec->sarr_mtx);
             auto&sarr=rec->sarr;
             int ver=(version=="latest"||version.empty())?(int)sarr.size()-1:stoi(version);
-            auto fail=[&](int v){return v<0||v>=(int)sarr.size();};
-            while(!fail(ver)&&!sarr[ver].ok())ver--;
-            if(fail(ver)){err="wrong version for coder: "+coder;break;}
+            ver=rec->try_get_last_valid_ver(ver);
+            if(ver<0){err="wrong version for coder: "+coder;break;}
             t_game_slot slot;
-            slot.coder=coder;
+            slot.coder=rec->sysname;
             slot.cdn_bin_file=rec->sarr[ver].cdn_bin_url;
             slots.push_back(slot);
           }
@@ -888,7 +944,7 @@ struct t_main : t_process,t_http_base {
           auto&c=carr[ex.i];
           top_list.push_back({
             {"id",c.id},
-            {"name",c.name},
+            {"name",c.visname},
             {"rating",c.elo},
             {"games",c.total_games}
           });
@@ -944,7 +1000,7 @@ struct t_main : t_process,t_http_base {
     });
     srv.Get(R"(/coder/(\w+)/games)", [this,game2json](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
-      string coder = req.matches[1];
+      string coder = LowerStr(req.matches[1]);
       vector<json> games;
       {
         lock_guard<mutex> lock(garr_mtx);
@@ -977,6 +1033,7 @@ struct t_main : t_process,t_http_base {
           lock_guard<mutex> lock(carr_mtx);
           for (auto& c : carr) {
             if (c.token == token) {
+              c.last_ip=req.remote_addr;
               rec = &c;
               break;
             }
@@ -991,11 +1048,11 @@ struct t_main : t_process,t_http_base {
 
         json resp = {
           {"id", rec->id},
-          {"name", rec->name},
+          {"name", rec->visname},
           {"email", rec->email},
           {"rating", rec->elo},
           {"total_games", rec->total_games},
-          {"last_upload", rec->sarr.empty() ? "" : rec->sarr.back().prod_time}
+          {"last_upload", rec->sarr.empty() ? "" : rec->sarr.back().time}
         };
 
         res.status = 200;
@@ -1008,28 +1065,38 @@ struct t_main : t_process,t_http_base {
     });
     srv.Get(R"(/coder/(\w+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
-      string name = req.matches[1];
+      string name = LowerStr(req.matches[1]);
       t_coder_rec* rec = nullptr;
 
       {
         lock_guard<mutex> lock(carr_mtx);
         rec = coder2rec(name);
       }
-
       if (!rec) {
         res.status = 404;
         res.set_content("Coder not found", "text/plain");
         return;
       }
-
+      vector<json> sarr;
+      {
+        lock_guard<mutex> lock(*rec->sarr_mtx);
+        for(auto&ex:rec->sarr){
+          json j;
+          j["time"]=ex.time;
+          j["prod_time"]=ex.prod_time;
+          j["status"]=ex.status;
+          j["size"]=ex.size;
+          sarr.push_back(std::move(j));
+        }
+      }
       json resp = {
         {"id", rec->id},
-        {"name", rec->name},
+        {"name", rec->visname},
         {"rating", rec->elo},
         {"total_games", rec->total_games},
-        {"src_count", (int)rec->sarr.size()}
+        {"last_upload", rec->sarr.empty() ? "" : rec->sarr.back().time},
+        {"sarr", sarr}
       };
-
       res.status = 200;
       res.set_content(resp.dump(2), "application/json");
     });
@@ -1065,26 +1132,48 @@ struct t_main : t_process,t_http_base {
       {
         lock_guard<mutex> lock(garr_mtx);
         status["games_total"] = garr.size();
-        int running = 0, finished = 0, uploaded;
+        int running = 0, finished = 0, uploaded=0, news=0;
         for (const auto& g : garr) {
+          if (g.status == "new") news++;
           if (g.status == "finished") finished++;
-          else if (g.status != "new") running++;
-          else if (g.status != "uploaded") uploaded++;
+          if (g.status == "uploaded") uploaded++;
         }
-        status["games_running"] = running;
+        status["games_news"] = news;
+        //status["games_running"] = running;
         status["games_finished"] = finished;
         status["games_uploaded"] = uploaded;
       }
+      status["compq.jobs.size"]=compq.jobs.size();
+      status["compq.jobs_all"]=compq.jobs_all.load();
+      status["compq.jobs_upe"]=compq.jobs_upe.load();
+      status["compq.jobs_done"]=compq.jobs_done.load();
       {
-        lock_guard<mutex> lock(sch.mtx); // Scheduler's mtx
-        status["nodes_online"] = sch.narr.size();
+        lock_guard<mutex> lock(sch.mtx);
+        vector<json> narr;
+        for(auto&ex:sch.narr){
+          json j;
+          j["name"]=ex.name;
+          j["total_cores"]=ex.total_cores;
+          j["used_cores"]=ex.used_cores;
+          j["online"]=ex.online;
+          j["last_heartbeat"]=ex.last_heartbeat;
+          narr.push_back(std::move(j));
+        }
+        status["nodes_online"]=narr;
       }
       status["time"] = qap_time();
+      status["start_time"] = main_start_time;
+      status["debug_time"] = "2025.08.25 10:11:11.454";
 
       res.status = 200;
       res.set_content(status.dump(2), "application/json");
     });
+    srv.Get("/", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
+      res.set_content(file_get_contents("index.html"), "text/html");
+    });
   }
+  string main_start_time=qap_time();
 };
 
 #ifdef _WIN32
@@ -1204,10 +1293,17 @@ bool ensure_runner_image() {
 int main() {
   srand(time(0));
   if(bool prod=true){
-    string mode="t_cdn";
+    string mode="t_main";
     if("t_main"==mode){
       publish_runner_image();
       t_main m;
+      {auto&b=qap_add_back(qap_add_back(m.carr).set(0,"Adler","adler3d@gmail.com","321").sarr);
+      b.status="ok:";b.cdn_bin_url="0";b.cdn_src_url="0";b.prod_time=qap_time();
+      m.ai2cid.push_back(0);}
+      {auto&b=qap_add_back(qap_add_back(m.carr).set(1,"Dobord","dobord@example.com","123").sarr);
+      b.status="ok:";b.cdn_bin_url="1";b.cdn_src_url="1";b.prod_time=qap_time();
+      m.ai2cid.push_back(1);}
+      qap_add_back(m.carr).set(2,"Admin","admin@example.com","admin");
       return m.main();
     }
     if("t_node"==mode){
