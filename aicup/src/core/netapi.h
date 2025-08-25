@@ -288,7 +288,7 @@ public:
             // Очищаем данные клиента
             auto it = clientIps.find(client_id);
             if (it != clientIps.end()) {
-                const std::string& ip = it->second;
+                std::string ip = it->second;
                 clientIps.erase(it);
 
                 auto ipIt = ipToClientIds.find(ip);

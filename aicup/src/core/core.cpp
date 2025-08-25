@@ -20,10 +20,11 @@ using json = nlohmann::json;
 const string DOCKERFILE_PATH = "./docker/universal-runner/Dockerfile"; //TODO: check this file must exists!
 const string IMAGE_NAME = "universal-runner:latest";
 const string ARCHIVE_NAME = "/tmp/universal-runner.tar";
-const string CDN_HOSTPORT = "localhost:"+to_string(t_cdn::CDN_PORT);
+// DON'T USE LOCALHOST WITH cpp-httplib !!! THIS DON'T WORK!
+const string CDN_HOSTPORT = "127.0.0.1:"+to_string(t_cdn::CDN_PORT);
 const string CDN_URL="http://"+CDN_HOSTPORT;
 const string CDN_URL_IMAGES=CDN_URL+"/images/"; //TODO: replace to t_main "ip:port/images/"
-const string COMPILER_URL="http://localhost:"+3000;
+const string COMPILER_URL="http://127.0.0.1:"+3000;
 
 static void LOG(...){}
 bool isValidName(const std::string& name) {
@@ -618,6 +619,7 @@ struct t_main : t_process,t_http_base {
     body_json["source_code"] = src;
     body_json["timeout_ms"] = 20000;
     body_json["memory_limit_mb"] = 512;
+    out.cdn_src_url=b.cdn_src_url;
     out.src=src;
     out.json=body_json.dump();
     out.on_uploaderror=[&,p,src_id](int s){
@@ -1172,6 +1174,13 @@ struct t_main : t_process,t_http_base {
       RATE_LIMITER(25);
       res.set_content(file_get_contents("index.html"), "text/html");
     });
+    srv.set_logger([](const httplib::Request& req, const httplib::Response& res) {
+        std::cout <<"t_site["<<qap_time()<<"]: "<< "Request: " << req.method << " " << req.path;
+        if (!req.remote_addr.empty()) {
+            std::cout << " from " << req.remote_addr;
+        }
+        std::cout << " | Response Status: " << res.status << std::endl;
+    });
   }
   string main_start_time=qap_time();
 };
@@ -1296,14 +1305,22 @@ int main() {
     string mode="t_main";
     if("t_main"==mode){
       publish_runner_image();
+      thread([]{
+        t_cdn cdn;
+        return cdn.main();
+      }).detach();
       t_main m;
       {auto&b=qap_add_back(qap_add_back(m.carr).set(0,"Adler","adler3d@gmail.com","321").sarr);
       b.status="ok:";b.cdn_bin_url="0";b.cdn_src_url="0";b.prod_time=qap_time();
       m.ai2cid.push_back(0);}
       {auto&b=qap_add_back(qap_add_back(m.carr).set(1,"Dobord","dobord@example.com","123").sarr);
-      b.status="ok:";b.cdn_bin_url="1";b.cdn_src_url="1";b.prod_time=qap_time();
-      m.ai2cid.push_back(1);}
-      qap_add_back(m.carr).set(2,"Admin","admin@example.com","admin");
+      b.status="ok:";b.cdn_bin_url="1";b.cdn_src_url="1";b.prod_time=qap_time();}
+      {auto&b=qap_add_back(qap_add_back(m.carr).set(0,"Adler3D","adler3d@ya.ru","321").sarr);
+      b.status="ok:";b.cdn_bin_url="2";b.cdn_src_url="2";b.prod_time=qap_time();}
+      m.ai2cid.push_back(0);
+      m.ai2cid.push_back(1);
+      m.ai2cid.push_back(2);
+      qap_add_back(m.carr).set(3,"Admin","admin@example.com","admin");
       return m.main();
     }
     if("t_node"==mode){

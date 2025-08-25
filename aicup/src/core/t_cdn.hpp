@@ -210,13 +210,22 @@ struct t_cdn:t_http_base{
       system(("mkdir -p "+CDN_DATA_DIR+"replay/").c_str());
       system(("mkdir -p "+CDN_DATA_DIR+"binary/").c_str());
       system(("mkdir -p "+CDN_DATA_DIR+"source/").c_str());
-      #define LOGWAY()cout<<local_cur_date_str_v4()<<" "<<"["<<req.remote_addr<<"] "<<req.path/*<<" "<<req.path_params*/<<endl;
+      #define LOGWAY()//cout<<local_cur_date_str_v4()<<" "<<"["<<req.remote_addr<<"] "<<req.path/*<<" "<<req.path_params*/<<endl;
       svr.Get("/metrics", [&](const httplib::Request& req, httplib::Response& res) {
           res.set_content(g_metrics.to_prometheus(), "text/plain");
           res.status = 200;
           LOGWAY();
       });
-
+      svr.set_logger([](const httplib::Request& req, const httplib::Response& res) {
+          std::cout <<"t_cdn["<<qap_time()<<"]: "<< "Request: " << req.method << " " << req.path;
+          if (!req.remote_addr.empty()) {
+              std::cout << " from " << req.remote_addr;
+          }
+          std::cout << " | Response Status: " << res.status << std::endl;
+      });
+      svr.Put("/", [this](const httplib::Request& req, httplib::Response& res) {
+        res.set_content(file_get_contents("index.html"), "text/html");
+      });
       svr.Put(R"(/images/([^/]+\.tar))", [&](const httplib::Request& req, httplib::Response& res) {
           if (!is_authorized(req)) {res.status = 403;return;}
           auto filename = req.matches[1].str();
