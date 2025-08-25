@@ -145,7 +145,12 @@ struct t_unix_socket {
     if (sock != -1) { ::qap_close(sock); sock = -1; }
   }
 };
-
+template<>
+t_game_decl parse(const string_view&s){
+  t_game_decl out;
+  out.arr.resize(4);
+  return out;
+}
 struct t_node:t_process,t_node_cache{
   struct t_runned_game;
   struct t_docker_api_v2{
@@ -235,6 +240,7 @@ struct t_node:t_process,t_node_cache{
     vector<int> slot2ready;
     vector<string> slot2bin;
     vector<vector<t_cmd>> tick2cmds;
+    vector<emitter_on_data_decoder> slot2eodd;
     string cdn_upload_token=UPLOAD_TOKEN;
     t_world w;
     void init(){
@@ -242,6 +248,7 @@ struct t_node:t_process,t_node_cache{
       slot2status.resize(gd.arr.size());
       slot2ready.resize(gd.arr.size());
       slot2bin.resize(gd.arr.size());
+      slot2eodd.resize(gd.arr.size());
     }
     void free(){
       for (auto& api : slot2api) {
@@ -446,13 +453,15 @@ struct t_node:t_process,t_node_cache{
         for(auto&api:g.slot2api){
           kill(api->conid);
         }
-        LOG("game aborted due to spawn_docker error:"+v2.conid);
+        LOG("game("+to_string(gd.game_id)+") aborted due to spawn_docker error:"+v2.conid);
+        swd->try_write("game_aborted:"+UPLOAD_TOKEN,to_string(gd.game_id)+","+to_string(i));
         lock_guard<mutex> lock(rgarr_mutex);
         QapCleanIf(rgarr,[&](auto&ref){return ref->gd.game_id==gd.game_id;});
         return false;
       }
     }
     game_n++;
+    return true;
   }
   void send_game_result(t_runned_game& game) {
     auto game_id = game.gd.game_id;
@@ -492,7 +501,7 @@ struct t_node:t_process,t_node_cache{
   void send_vpow(t_runned_game&game,int i){
     string vpow=serialize(game.w,i);
     auto&api=game.slot2api[i];
-    api->write_stdin("vpow,"+vpow+"\n");
+    api->write_stdin(qap_zchan_write("vpow",vpow));
     container_monitor.add(&game,i);
   }
   void on_player_stdout(t_runned_game&g,int player_id,const string_view&data){
@@ -510,18 +519,32 @@ struct t_node:t_process,t_node_cache{
       }
       return;
     }
-    auto move=parse<t_cmd>(data);
-    if(move.valid){
-      g.slot2cmd[player_id]=move;
-      auto&r=g.slot2ready[player_id];
-      if(r){g.slot2api[player_id]->on_stderr("\nERROR DETECTED: ANSWER AFTER ANSWER!!!\n");}
-      r=true;
-      for(auto&ex:container_monitor.tasks)if(ex.player_id==player_id)ex.on_done(container_monitor.clock);
-    }else{
+    auto&eodd=g.slot2eodd[player_id];
+    bool deaded=false;
+    auto end=[&](const string&msg){
+      if(deaded)return;
       auto&api=g.slot2api[player_id];
-      api->on_stderr("INVALID_MOVE: parsing failed\n");
+      api->on_stderr("\nQapDNA::"+msg+"\n");
       container_monitor.kill(g,player_id);
       g.slot2status[player_id].PF=true;
+      deaded=true;
+    };
+    eodd.cb=[&](const string&z,const string&pl){
+      if(z!="cmd"){end("system_under_attack(z_chan!=cmd)!");return;}
+      auto move=parse<t_cmd>(pl);
+      if(move.valid){
+        g.slot2cmd[player_id]=move;
+        auto&r=g.slot2ready[player_id];
+        if(r){end("ERROR_DETECTED: ANSWER AFTER ANSWER!!!");}
+        r=true;
+        for(auto&ex:container_monitor.tasks)if(ex.player_id==player_id)ex.on_done(container_monitor.clock);
+      }else{
+        end("INVALID_MOVE: parsing failed!");
+      }
+    };
+    auto r=eodd.feed(data.data(),data.size());
+    if(!r.ok()){
+      end("protocol_under_attack::"+r.to_str());
     }
     if(g.all_ready()){
       tick(g);
@@ -641,7 +664,7 @@ struct t_node:t_process,t_node_cache{
       }
     });
     t.detach();
-  }
+  }/*
   void periodic_ping(){
     thread t([this]{
       while (true) {
@@ -650,16 +673,39 @@ struct t_node:t_process,t_node_cache{
       }
     });
     t.detach();
-  }
+  }*/
+  unique_ptr<SocketWithDecoder> swd;
+  string unique_token;
   int main(){
+    auto cores=to_string(thread::hardware_concurrency());
+    auto cb=[&](const string&z,const string&payload){
+      if(z=="hi"){
+        if(unique_token.empty())unique_token=payload;
+        bool ok=swd->try_write("node_up:"+UPLOAD_TOKEN,cores+","+unique_token);
+        //if(!ok)return;
+        //swd->reconnect();
+      }
+      if(z=="new_game:"+UPLOAD_TOKEN){
+        new_game(parse<t_game_decl>(payload));
+      }
+    };
+    swd=make_unique<SocketWithDecoder>(local_main_ip_port,std::move(cb));
+    thread([this]{
+      while(true){
+        this_thread::sleep_for(1s);
+        bool ok=swd->try_write("ping:"+UPLOAD_TOKEN,qap_time());
+        if(ok)continue;
+        swd->reconnect();
+      }
+    }).detach();
     periodic_cleanup();
-    periodic_ping();
+    //periodic_ping();
 
     // new_game(...) Ч где-то вызываетс€
 
     //loop.run(this);
-    auto cores=to_string(thread::hardware_concurrency());
-    capi.write_to_socket(local_main_ip_port,qap_zchan_write("node_up:"+UPLOAD_TOKEN,cores));
+    //auto cores=to_string(thread::hardware_concurrency());
+    //capi.write_to_socket(local_main_ip_port,qap_zchan_write("node_up:"+UPLOAD_TOKEN,cores));
     loop_v2.pnode=this;
     loop_v2.run();
     return 0;

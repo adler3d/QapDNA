@@ -26,7 +26,7 @@ const string CDN_URL="http://"+CDN_HOSTPORT;
 const string CDN_URL_IMAGES=CDN_URL+"/images/"; //TODO: replace to t_main "ip:port/images/"
 const string COMPILER_URL="http://127.0.0.1:"+3000;
 
-static void LOG(...){}
+static void LOG(const string&str){cout<<(str)<<endl;}
 bool isValidName(const std::string& name) {
   for (char c : name) {
     if (!isalnum(c)&&c!='_'&&c!='.') {
@@ -157,42 +157,8 @@ void stream_write(t_unix_socket& client, const string& z, const string& data) {
   client.write("\0", 1);
   client.write(strData.c_str(), strData.length());
 }
-string qap_zchan_write(const string&z,const string&data){
-  string n=to_string(data.size());auto sep=string("\0",1);
-  return n+sep+z+sep+data;
-}
 
-struct emitter_on_data_decoder{
-  function<void(const string&, const string&)> cb;
-  string buffer;
-
-  bool feed(const char* data, size_t len) {
-    buffer.append(data, len);
-    while (true) {
-      auto e1 = buffer.find('\0');
-      if (e1 == string::npos) break;
-
-      string len_str = buffer.substr(0, e1);
-      if (len_str.size()>=7||!all_of(len_str.begin(), len_str.end(), ::isdigit)) return false;
-      int len = stoi(len_str);
-
-      auto e2 = buffer.find('\0', e1 + 1);
-      if (e2 == string::npos) break;
-      if(e2>512)return false;
-      int total = e2 + 1 + len;
-      if (buffer.size() < total) break;
-
-      string z = buffer.substr(e1 + 1, e2 - e1 - 1);
-      string payload = buffer.substr(e2 + 1, len);
-      buffer.erase(0, total);
-
-      cb(z, payload);
-    }
-    return true;
-  }
-};
-
-struct t_game_slot{string coder;string cdn_bin_file;};
+struct t_game_slot{string coder;int v=0;string cdn_bin_file;};
 struct t_game_decl{
   vector<t_game_slot> arr;
   string config;
@@ -308,25 +274,20 @@ struct Scheduler {
   void on_game_finished(const string&node,int players){
     add_cores(node,players);
   }
+  void on_game_aborted(const string&node,int players){
+    add_cores(node,players);
+  }
   bool on_node_up(const string&payload,const string&node) {
-    /*auto parts=split(payload,",");
-    if(parts.size()!=3)return false;
-    if(parts[0]!="node_up")return false;
-    int cores=stoi(parts[1]);
-    string token=parts[2];
-    if (token!=UPLOAD_TOKEN) {
-      LOG("Auth failed for node");
-      return false;
-    }*/
     int cores=stoi(payload);
     if (cores <= 0 || cores > 128){LOG("more than 128 cores??? cores=="+to_string(cores));cores = 8;}
     lock_guard<mutex> lock(mtx);
     if(auto*p=node2i(node)){
       LOG("node already under control: "+node);
-      *p={node,cores,0,true,qap_time()};
+      *p={node,cores,0,true,qap_time()};//TODO: we think all cores is unused but this is not always true
       return true;
     }
-    qap_add_back(narr)={node,cores,0,true,qap_time()};
+    narr.push_back({node,cores,0,true,qap_time()});
+    //qap_add_back(narr)={node,cores,0,true,qap_time()};
     return true;
   }
   //void on_node_down(const string&node){
@@ -522,7 +483,7 @@ struct t_main : t_process,t_http_base {
           auto result=parse<t_finished_game>(payload);
           lock_guard<mutex> lock(garr_mtx);
           auto gid=result.game_id;
-          if(gid<0||gid>=garr.size()){LOG("wrong game_id form ???");return;}
+          if(gid<0||gid>=garr.size()){LOG("wrong game_id form "+to_string(client_id));return;}
           auto&g=garr[gid];
           g.fg=result;
           g.status="finished";
@@ -534,22 +495,51 @@ struct t_main : t_process,t_http_base {
           auto result=parse<t_game_uploaded_ack>(payload);
           lock_guard<mutex> lock(garr_mtx);
           auto gid=result.game_id;
-          if(gid<0||gid>=garr.size()){LOG("wrong game_id form ???");return;}
+          if(gid<0||gid>=garr.size()){LOG("wrong game_id form "+to_string(client_id));return;}
           auto&g=garr[gid];
           g.status="uploaded";
         }
+        if(z=="game_aborted:"+UPLOAD_TOKEN){
+          auto a=split(payload,",");
+          if(a.size()!=2)return;
+          auto game_id=stoi(a[0]);
+          lock_guard<mutex> lock(garr_mtx);
+          auto gid=game_id;
+          if(gid<0||gid>=garr.size()){LOG("wrong game_id form "+to_string(client_id));return;}
+          auto&g=garr[gid];
+          g.status="aborted by "+a[1];
+          g.finished_at=qap_time();
+          sch.on_game_aborted(node(client_id),g.gd.arr.size());
+        }
         if(z=="node_up:"+UPLOAD_TOKEN){
-          lock_guard<mutex> lock(cid2i_mtx);
-          cid2i[client_id].our=true;
-          sch.on_node_up(payload,node(client_id));
+          auto a=split(payload,",");
+          if(a.size()!=2)return;
+          {
+            lock_guard<mutex> lock(cid2i_mtx);
+            for(auto&ex:cid2i){
+              if(ex.second.ut!=a[1])continue;
+              auto&n=cid2i[client_id];
+              n=ex.second;n.cid=client_id;n.our=true;
+              sch.on_node_up(a[0],n.ut);
+              ex.second.deaded=true;
+              return;
+            }
+            auto&r=cid2i[client_id];
+            QapAssert(a[1].size());
+            QapAssert(!r.ut.size());
+            r.ut=a[1];
+            r.our=true;
+          }
+          sch.on_node_up(a[0],node(client_id));
         }
         if(z=="ping:"+UPLOAD_TOKEN){
-          sch.on_ping(node(client_id));
+          auto n=node(client_id,true);
+          if(n.size())sch.on_ping(n);
         }
       };
     }
-    bool ok=decoder.feed(data.data(), data.size());
-    if(!ok)server.disconnect_client(client_id);
+    auto r=decoder.feed(data.data(),data.size());
+    if(!r.ok())server.disconnect_client(client_id);
   }
   void client_killer(){
     thread([&]{
@@ -559,6 +549,7 @@ struct t_main : t_process,t_http_base {
         lock_guard<mutex> lock(cid2i_mtx);
         vector<int> darr;
         for(auto&ex:cid2i){
+          if(ex.second.deaded){darr.push_back(ex.second.cid);continue;}
           if(ex.second.our)continue;
           auto dt=qap_time_diff(ex.second.time,now);
           if(dt<1000*3)continue;
@@ -569,21 +560,36 @@ struct t_main : t_process,t_http_base {
       }
     }).detach();
   }
-  static string node(int client_id){return /*"node"+*/to_string(client_id);}
-  static int node2cid(const string&node){return stoi(node);}
+  string node(int client_id,bool can_be_empty=false){
+    lock_guard<mutex> lock(cid2i_mtx);
+    auto ut=cid2i[client_id].ut;if(!can_be_empty)QapAssert(ut.size());return ut;
+  }
+  int node2cid(const string&node){
+    lock_guard<mutex> lock(cid2i_mtx);
+    for(auto&ex:cid2i){
+      if(ex.second.ut!=node)continue;
+      return ex.second.cid;
+    }
+    QapNoWay();
+    return -1;
+  }
   struct t_client_info{
     string ip;
     int cid;
-    socket_t sock;
+    //socket_t sock;
     string time;
+    string ut;
     bool our=false;
+    bool deaded=false;
   };
   map<int,t_client_info> cid2i;mutex cid2i_mtx;
   void on_client_connected(int client_id, socket_t sock, const string& ip) {
     cout << "[t_main] client connected: " << ip << " (id=" << client_id << ")\n";
     //lock_guard<mutex> lock(n2i_mtx);node2ipport[node(client_id)] = ip + ":31456";
     lock_guard<mutex> lock(cid2i_mtx);
-    cid2i[client_id]={ip,client_id,sock,qap_time()};
+    cid2i[client_id]={ip,client_id,/*sock,*/qap_time()};
+    string ut=sha256(qap_time()+"2025.08.25 18:44:20.685"+to_string(rand()<<16+rand()));
+    server.send_to_client(client_id,qap_zchan_write("hi",ut));
   }
   void on_client_disconnected(int client_id) {
     cout << "[t_main] Node disconnected: " << client_id << "\n";
@@ -677,8 +683,9 @@ struct t_main : t_process,t_http_base {
     t_main*pmain=nullptr;
     bool assign_game(const t_game_decl&game,const string&node)override{
       auto payload=qap_zchan_write("new_game:"+UPLOAD_TOKEN,serialize(game));
-      lock_guard<mutex> lock(pmain->cid2i_mtx);
-      auto&cid=pmain->cid2i[node2cid(node)].cid;
+      auto cid=pmain->node2cid(node);
+      //lock_guard<mutex> lock(pmain->cid2i_mtx);
+      //auto&cid=pmain->cid2i[cid].cid;
       return pmain->server.send_to_client(cid,payload);
     }
   };
@@ -887,6 +894,7 @@ struct t_main : t_process,t_http_base {
             if(ver<0){err="wrong version for coder: "+coder;break;}
             t_game_slot slot;
             slot.coder=rec->sysname;
+            slot.v=ver;
             slot.cdn_bin_file=rec->sarr[ver].cdn_bin_url;
             slots.push_back(slot);
           }
@@ -965,6 +973,7 @@ struct t_main : t_process,t_http_base {
         {"size", g.fg.size},
         {"ot", g.ordered_at},
         {"ft", g.finished_at},
+        {"status", g.status},
         {"author", g.author},
         {"players", json::array()}
       };
@@ -973,7 +982,7 @@ struct t_main : t_process,t_http_base {
         z++;
         auto s=g.fg.slot2score.size()?g.fg.slot2score[z]:0.0;
         auto ms=g.fg.slot2ms.size()?g.fg.slot2ms[z]:0.0;
-        jp.push_back({{"coder",p.coder},{"score",s},{"ms",ms}});
+        jp.push_back({{"coder",p.coder},{"score",s},{"ms",ms},{"v",g.gd.arr[z].v}});
       }
     };
     srv.Get("/games/latest", [this,game2json](const httplib::Request& req, httplib::Response& res) {
@@ -1308,6 +1317,10 @@ int main() {
       thread([]{
         t_cdn cdn;
         return cdn.main();
+      }).detach();
+      thread([]{
+        t_node node;
+        return node.main();
       }).detach();
       t_main m;
       {auto&b=qap_add_back(qap_add_back(m.carr).set(0,"Adler","adler3d@gmail.com","321").sarr);

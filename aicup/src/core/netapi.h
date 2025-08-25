@@ -59,7 +59,8 @@ static WinsockInitializer winsock_init;
 #include <mutex>
 #include <unordered_map>
 #include <set>
-
+#include <string>
+typedef std::string string;
 #ifdef _WIN32
   #define WIN32_LEAN_AND_MEAN
   #include <winsock2.h>
@@ -79,6 +80,176 @@ static WinsockInitializer winsock_init;
   #define SOCKET_ERROR -1
   #define CLOSESOCKET close
 #endif
+
+string qap_zchan_write(const string&z,const string&data){
+  string n=std::to_string(data.size());auto sep=string("\0",1);
+  return n+sep+z+sep+data;
+}
+
+struct emitter_on_data_decoder{
+  typedef std::function<void(const string&, const string&)> t_cb;
+  t_cb cb;
+  string buffer;
+  struct t_parse_result{
+    size_t s='o';
+    string to_str()const{
+      if(s=='o')return "WTF?";
+      if(s=='0')return "wait_size";
+      if(s=='1')return "wait_zchan";
+      if(s=='2')return "wait_data";
+      if(s=='s')return "size_atk";
+      if(s=='d')return "digit_atk";
+      if(s=='z')return "zchan_atk";
+      if(s=='3')return "ok?";
+      return "no_impl";
+    };
+    bool ok(){switch(s){case '0':case '1':case '2':return true;}return false;}
+  };
+  static bool is_digits(const string&s){for(char c:s)if(c<'0'||c>'9')return false;return true;}
+  t_parse_result feed(const char* data, size_t len) {
+    buffer.append(data, len);
+    while (true) {
+      auto e1 = buffer.find('\0');
+      if (e1 == string::npos)return {'0'};
+      string len_str = buffer.substr(0, e1);
+      if(len_str.size()>=7)return {'s'};
+      if(!is_digits(len_str))return {'d'};
+      int len = stoi(len_str);
+      auto e2 = buffer.find('\0', e1 + 1);
+      if (e2 == string::npos)return {'1'};
+      if(e2>512)return {'z'};
+      int total = e2 + 1 + len;
+      if (buffer.size() < total)return {'2'};
+      string z = buffer.substr(e1 + 1, e2 - e1 - 1);
+      string payload = buffer.substr(e2 + 1, len);
+      buffer.erase(0, total);
+      cb(z, payload);
+    }
+    return {'3'};
+  }
+};
+
+std::pair<string, int> parse_endpoint(const string& endpoint) {
+  auto pos = endpoint.find(':');
+  if (pos == string::npos) return {endpoint, 80};
+  return {endpoint.substr(0, pos), std::stoi(endpoint.substr(pos + 1))};
+}
+
+class SocketWithDecoder {
+  std::string endpoint;
+  std::function<void(const std::string&, const std::string&)> message_cb;
+
+  SOCKET sock = INVALID_SOCKET;
+  std::atomic<bool> stopping{false};
+  std::mutex reconnect_mtx;  // защита от параллельного reconnect
+  emitter_on_data_decoder decoder;
+
+  std::thread reader_thread;
+
+  bool connect() {
+    auto [host, port] = parse_endpoint(endpoint);
+    struct addrinfo hints{}, *res = nullptr;
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    std::string port_str = std::to_string(port);
+    if (::getaddrinfo(host.c_str(), port_str.c_str(), &hints, &res) != 0) {
+      return false;
+    }
+
+    SOCKET s = ::socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (s == INVALID_SOCKET) {
+      freeaddrinfo(res);
+      return false;
+    }
+
+    if (::connect(s, res->ai_addr, static_cast<socklen_t>(res->ai_addrlen)) != 0) {
+      freeaddrinfo(res);
+      closesocket(s);
+      return false;
+    }
+
+    freeaddrinfo(res);
+    sock = s;
+    return true;
+  }
+
+  void start_reader() {
+    reader_thread = std::thread([this]() {
+      char temp[4096];
+      while (!stopping) {
+        int n = recv(sock, temp, sizeof(temp), 0);
+        if (n <= 0) {
+          // Сокет закрыт или ошибка
+          break;
+        }
+        decoder.feed(temp, n);
+      }
+
+      // Завершаем работу
+      if (sock != INVALID_SOCKET) {
+        closesocket(sock);
+        sock = INVALID_SOCKET;
+      }
+    });
+  }
+
+  void stop_reader() {
+    if (reader_thread.joinable()) {
+      stopping = true;
+      reader_thread.join();
+      stopping = false;
+    }
+  }
+
+public:
+  SocketWithDecoder(const std::string& ep, std::function<void(const std::string&, const std::string&)>&& cb)
+    : endpoint(ep)
+    , message_cb(std::move(cb))
+  {
+    decoder.cb = [this](const std::string& z, const std::string& payload) {
+      message_cb(z, payload);
+    };
+
+    if (connect()) {
+      start_reader();
+    }
+  }
+
+  ~SocketWithDecoder() {
+    close();
+  }
+
+  void close() {
+    stopping = true;
+    if (sock != INVALID_SOCKET) {
+      shutdown(sock, SD_BOTH);
+      closesocket(sock);
+      sock = INVALID_SOCKET;
+    }
+    stop_reader();
+  }
+
+  bool try_write(const std::string& z, const std::string& payload) {
+    std::lock_guard<std::mutex> lock(reconnect_mtx);
+    if (sock == INVALID_SOCKET) {
+      return false;
+    }
+
+    std::string frame = qap_zchan_write(z, payload);
+    int sent = send(sock, frame.data(), static_cast<int>(frame.size()), 0);
+    return sent == (int)frame.size();
+  }
+
+  void reconnect() {
+    std::lock_guard<std::mutex> lock(reconnect_mtx);
+    close();
+    if (connect()) {
+      start_reader();
+    }
+  }
+};
 
 class t_server_api {
 public:
@@ -409,12 +580,6 @@ int main2() {
 const int SOCKET_TIMEOUT_MS = 60*60*1000;
 const int BUFFER_SIZE = 64*1024;
 
-std::pair<string, int> parse_endpoint(const string& endpoint) {
-  auto pos = endpoint.find(':');
-  if (pos == string::npos) return {endpoint, 80};
-  return {endpoint.substr(0, pos), std::stoi(endpoint.substr(pos + 1))};
-}
-
 class Socket {
   SOCKET sock;
   bool valid;
@@ -494,7 +659,6 @@ public:
         return true;
       }
 
-      // Ќет \n Ч копируем всЄ, кроме \r
       for (size_t i = 0; i < available; ++i) {
         if (start[i] != '\r') line += start[i];
       }
