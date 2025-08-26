@@ -624,6 +624,7 @@ struct t_node:t_process,t_node_cache{
           }
         }
         pnode->container_monitor.update();
+        if(pfds.empty()){this_thread::sleep_for(16ms);}
         int n = poll(pfds.data(), pfds.size(), 1);  // 1ms таймаут Ч нормально
         if (n <= 0) continue;
 
