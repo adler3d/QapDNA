@@ -487,9 +487,9 @@ struct t_node:t_process,t_node_cache{
       game.tick2cmds.push_back(game.slot2cmd);
       game.w.step();
       if(game.w.finished()||game.tick>=game.gd.maxtick){
-        send_game_result(game);
         for(int i=0;i<game.gd.arr.size();i++)container_monitor.kill(game,i);
         container_monitor.clear(game.gd.game_id);
+        send_game_result(game);
         return;
       }
     }
