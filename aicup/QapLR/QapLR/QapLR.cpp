@@ -4410,6 +4410,7 @@ public:
     QAP_EM_LOG("before LoadTexture");
     if(1)
     {
+      #ifndef QAP_UNIX
       LoadTexture(GFX_DIR+"market_car_v2_512.png",[&](const string&fn,int ptr,int w,int h){
         QapTexMem*pMem=new QapTexMem(fn+"_"+to_string(w),w,h,(QapColor*)ptr);
         th_rt_tex=GenTextureMipMap(qDev,pMem);
@@ -4422,6 +4423,7 @@ public:
       });
       //ptm=LoadTexture("GFX\\market_car_v2_full.png");
       //th_rt_tex_full=GenTextureMipMap(ptm);
+      #endif
     }
     QAP_EM_LOG("before qDev.Init();");
     qDev.Init(1024*32,1024*32*2);
