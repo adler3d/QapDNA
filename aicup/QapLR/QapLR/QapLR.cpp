@@ -3640,6 +3640,8 @@ struct QapFont
     pMem->InvertY();
     return pMem;
   }
+  #else
+  QapTexMem*CreateFontMem(string Name,int Size,bool Bold,int TexSize,...){return {};}
   #endif
   #endif
 };
