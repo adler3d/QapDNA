@@ -1,0 +1,5324 @@
+﻿#ifdef _WIN32
+  #define WIN32_LEAN_AND_MEAN
+  #define NOMINMAX
+  #undef UNICODE
+  #include <windows.h>
+  #include <intrin.h>
+#endif
+#include <stdlib.h>
+#include <malloc.h>
+#include <memory.h>
+//#include <tchar.h>
+#ifndef _WIN32
+#include <emscripten.h>
+#else
+#include <d3d9.h>
+#pragma comment(lib,"d3d9")
+#endif
+#include <vector>
+#include <map>
+#include <functional>
+#include <sstream>
+#include <fstream>
+#include <iomanip>
+#include <stdlib.h>
+#include <atomic>
+#include <thread>
+#include <time.h>
+#include <chrono>
+std::vector<std::string> g_log;
+enum TMouseButton{mbLeft=257,mbRight=258,mbMiddle=259,};
+auto now=std::chrono::high_resolution_clock::now;
+typedef std::chrono::duration<double, std::milli> dms;
+double dmsc(dms diff){return diff.count();}
+using namespace std;
+#include "thirdparty/sweepline/sweepline.hpp"
+template<typename TYPE>TYPE Sign(TYPE value){if(value>0){return TYPE(+1);}else{return TYPE(value<0?-1:0);}};
+#define QAP_DEBUG
+#ifdef _WIN32
+class QapClock{
+public:
+  typedef long long int int64;
+  int64 freq,beg,tmp;
+  bool run;
+public:
+  QapClock(){QueryPerformanceFrequency((LARGE_INTEGER*)&freq);run=false;tmp=0;Start();}
+  void Start(){QueryPerformanceCounter((LARGE_INTEGER*)&beg);run=true;}
+  void Stop(){QueryPerformanceCounter((LARGE_INTEGER*)&tmp);run=false;tmp-=beg;}
+  double Time(){if(run)QueryPerformanceCounter((LARGE_INTEGER*)&tmp);return run?double(tmp-beg)/double(freq):double(tmp)/double(freq);}
+  double MS()
+  {
+    double d1000=1000.0;
+    if(run)QueryPerformanceCounter((LARGE_INTEGER*)&tmp);
+    if(run)return (double(tmp-beg)*d1000)/double(freq);
+    if(!run)return (double(tmp)*d1000)/double(freq);
+    return 0;
+  }
+  static int64 qpc(){int64 tmp;QueryPerformanceCounter((LARGE_INTEGER*)&tmp);return tmp;}
+};
+QapClock g_sys_clock;
+#define QAP_EM_LOG(TEXT)
+#else
+#ifndef __EMSCRIPTEN__
+//https://github.com/copilot/share/c05603ac-4240-8476-b813-be01a48a201d
+#include <chrono>
+class QapClock{
+public:
+  typedef long long int int64;
+  int64 freq,beg,tmp;
+  bool run;
+  typedef std::chrono::high_resolution_clock clock;
+  typedef std::chrono::time_point<clock> time_point;
+  time_point t_beg,t_tmp;
+public:
+  QapClock(){Start();}
+  #define F(diff)std::chrono::duration_cast<std::chrono::microseconds>(diff).count()
+  void Start(){t_beg=clock::now();run=true;}
+  void Stop(){t_tmp=clock::now();run=false;tmp=F(t_tmp-t_beg);}
+  double MS(){
+    if(run){t_tmp=clock::now();return F(t_tmp-t_beg)*0.001;}
+    return double(tmp)*0.001;
+  }
+  static int64 qpc(){return F(clock::now().time_since_epoch());}
+  #undef F
+};
+#define QAP_EM_LOG(TEXT)
+#else
+class QapClock{
+public:
+  typedef long long int int64;
+  int64 freq,beg,tmp;
+  bool run;
+public:
+  QapClock(){Start();}
+  void Start(){beg=qpc();run=true;}
+  void Stop(){run=false;tmp=qpc()-beg;}
+  double MS(){
+    if(run){tmp=qpc();return (tmp-beg)*0.001;}
+    return tmp*0.001;
+  }
+  static int64 qpc(){return EM_ASM_INT({return (1000*performance.now())|0;});}
+};
+#define QAP_EM_LOG(TEXT)EM_ASM({console.log(UTF8ToString($0));},string(TEXT).c_str());
+#endif //__EMSCRIPTEN__
+#endif //_WIN32
+#ifndef _WIN32
+#define VK_SLEEP          0x5F
+#define VK_NUMPAD0        0x60
+#define VK_NUMPAD1        0x61
+#define VK_NUMPAD2        0x62
+#define VK_NUMPAD3        0x63
+#define VK_NUMPAD4        0x64
+#define VK_NUMPAD5        0x65
+#define VK_NUMPAD6        0x66
+#define VK_NUMPAD7        0x67
+#define VK_NUMPAD8        0x68
+#define VK_NUMPAD9        0x69
+#define VK_MULTIPLY       0x6A
+#define VK_ADD            0x6B
+#define VK_SEPARATOR      0x6C
+#define VK_SUBTRACT       0x6D
+#define VK_DECIMAL        0x6E
+#define VK_DIVIDE         0x6F
+#define VK_F1             0x70
+#define VK_F2             0x71
+#define VK_F3             0x72
+#define VK_F4             0x73
+#define VK_F5             0x74
+#define VK_F6             0x75
+#define VK_F7             0x76
+#define VK_F8             0x77
+#define VK_F9             0x78
+#define VK_F10            0x79
+#define VK_F11            0x7A
+#define VK_F12            0x7B
+#define VK_F13            0x7C
+#define VK_F14            0x7D
+#define VK_F15            0x7E
+#define VK_F16            0x7F
+#define VK_F17            0x80
+#define VK_F18            0x81
+#define VK_F19            0x82
+#define VK_F20            0x83
+#define VK_F21            0x84
+#define VK_F22            0x85
+#define VK_F23            0x86
+#define VK_F24            0x87
+#define VK_ESCAPE         0x1B
+
+#define VK_CONVERT        0x1C
+#define VK_NONCONVERT     0x1D
+#define VK_ACCEPT         0x1E
+#define VK_MODECHANGE     0x1F
+
+#define VK_SPACE          0x20
+#define VK_PRIOR          0x21
+#define VK_NEXT           0x22
+#define VK_END            0x23
+#define VK_HOME           0x24
+#define VK_LEFT           0x25
+#define VK_UP             0x26
+#define VK_RIGHT          0x27
+#define VK_DOWN           0x28
+#define VK_SELECT         0x29
+#define VK_PRINT          0x2A
+#define VK_EXECUTE        0x2B
+#define VK_SNAPSHOT       0x2C
+#define VK_INSERT         0x2D
+#define VK_DELETE         0x2E
+#define VK_HELP           0x2F
+#define VK_CLEAR          0x0C
+#define VK_RETURN         0x0D
+#define VK_BACK           0x08
+#define VK_TAB            0x09
+#define VK_SHIFT          0x10
+#define VK_CONTROL        0x11
+#define VK_MENU           0x12
+#define VK_PAUSE          0x13
+#define VK_CAPITAL        0x14
+
+#endif
+#ifdef __EMSCRIPTEN__
+static string file_get_contents(const string&fn){
+  QAP_EM_LOG("file_get_contents:"+fn);
+  int length=EM_ASM_INT({
+    let key=UTF8ToString($0);
+    let val=localStorage.getItem(key);
+    if(val===null)return 0;
+    return lengthBytesUTF8(val);
+  },fn.c_str());
+  if(!length)return {};
+  string out;out.resize(length);
+  EM_ASM({
+    let key=UTF8ToString($0);
+    let val=localStorage.getItem(key);
+    if(val!==null)stringToUTF8(val,$1,$2+1);
+  },fn.c_str(),out.data(),length);
+  return out;
+}
+static bool file_put_contents(const string&fn,const string&mem){
+  QAP_EM_LOG("file_put_contents:"+fn);
+  EM_ASM({
+    let key=UTF8ToString($0);
+    let val=UTF8ToString($1);
+    localStorage.setItem(key,val);
+  },fn.c_str(),mem.c_str());
+  return true;
+}
+#else
+static bool file_put_contents(const string&FN,const string&mem){std::fstream f(FN,std::ios::out|std::ios::trunc);f<<mem;return true;}
+static string file_get_contents(const string&fn){std::ifstream file(fn);return std::string((std::istreambuf_iterator<char>(file)),(std::istreambuf_iterator<char>()));}
+#endif
+
+template<class TYPE>
+void QapPopFront(vector<TYPE>&arr)
+{
+  int last=0;
+  for(int i=1;i<arr.size();i++)
+  {
+    auto&ex=arr[i];
+    if(last!=i)
+    {
+      auto&ax=arr[last];
+      ax=std::move(ex);
+    }
+    last++;
+  }
+  if(last==arr.size())return;
+  arr.resize(last);
+}
+static vector<string> split(const string&s,const string&needle)
+{
+  vector<string> arr;
+  if(s.empty())return arr;
+  size_t p=0;
+  for(;;){
+    auto pos=s.find(needle,p);
+    if(pos==std::string::npos){arr.push_back(s.substr(p));return arr;}
+    arr.push_back(s.substr(p,pos-p));
+    p=pos+needle.size();
+  }
+  return arr;
+}
+static string join(const vector<string>&arr,const string&glue)
+{
+  string out;
+  size_t c=0;
+  size_t dc=glue.size();
+  for(int i=0;i<arr.size();i++){if(i)c+=dc;c+=arr[i].size();}
+  out.reserve(c);
+  for(int i=0;i<arr.size();i++){if(i)out+=glue;out+=arr[i];}
+  return out;
+}
+struct TScreenMode{
+  int W,H,BPP,Freq;
+};
+struct TSys{int UPS=128;TScreenMode SM;bool UPS_enabled=true;bool NeedClose=false;void ResetClock(){}}; TSys Sys;
+static const int Sys_UPD=64;
+inline string IToS(const int&val){return to_string(val);}
+inline string FToS(const double&val){return to_string(val);}
+inline string FToS2(const float&val){std::stringstream ss;ss<<std::fixed<<std::setprecision(2)<<val;return ss.str();}
+#ifdef __EMSCRIPTEN__
+#define __debugbreak()EM_ASM({throw new Error("__debugbreak");});
+#endif
+inline bool SysQapAssert(const string&exp,bool&ignore,const string&filename,const int line,const string&funcname);
+inline bool SysQapDebugMsg(const string&msg,bool&ignore,const string&filename,const int line,const string&funcname);
+#if(defined(_DEBUG)||defined(QAP_DEBUG))
+#define QapAssert(_Expression)if(!bool(_Expression)){static bool ignore=false;if(SysQapAssert((#_Expression),ignore,__FILE__,__LINE__,__FUNCTION__))__debugbreak();}
+#else
+#define QapAssert(_Expression)if(bool(_Expression)){};
+#endif
+#if(defined(_DEBUG)||defined(QAP_DEBUG))
+#define QapDebugMsg(_Message){static bool ignore=false;if(SysQapDebugMsg((_Message),ignore,__FILE__,__LINE__,__FUNCTION__))__debugbreak();}
+#else
+#define QapDebugMsg(_Message)
+#endif
+#if(defined(_DEBUG)||defined(QAP_DEBUG))
+#define QapNoWay(){QapDebugMsg("no way!");}
+#else
+#define QapNoWay()
+#endif
+enum QapMsgBoxRetval{qmbrSkip,qmbrBreak,qmbrIgnore};
+inline int WinMessageBox(const string&caption,const string&text)
+{
+  #ifdef _WIN32
+  string full_text=text+"\n\n    [Skip]            [Break]            [Ignore]";
+  const int nCode=MessageBoxA(NULL,full_text.c_str(),caption.c_str(),MB_CANCELTRYCONTINUE|MB_ICONHAND|MB_SETFOREGROUND|MB_TASKMODAL);
+  QapMsgBoxRetval retval=qmbrSkip;
+  if(IDCONTINUE==nCode)retval=qmbrIgnore;
+  if(IDTRYAGAIN==nCode)retval=qmbrBreak;
+  return retval;
+  #else
+  #ifdef __EMSCRIPTEN__
+  EM_ASM({alert(UTF8ToString($0)+"\n"+UTF8ToString($1));},int(caption.c_str()),int(text.c_str()));
+  return qmbrBreak;
+  #endif
+  #endif
+}
+typedef int(*TQapMessageBox)(const string&caption,const string&text);
+struct TMessageBoxCaller
+{
+  static int Call(const string&caption,const string&text)
+  {
+    return Get()(caption,text);
+  }
+  static TQapMessageBox&Get()
+  {
+    static TQapMessageBox func=WinMessageBox;
+    return func;
+  }
+  struct t_hack
+  {
+    TQapMessageBox old;
+    t_hack(TQapMessageBox func)
+    {
+      old=Get();
+      Get()=func;
+    }
+    ~t_hack()
+    {
+      Get()=old;
+    }
+  };
+};
+inline bool SysQapAssert(const string&exp,bool&ignore,const string&filename,const int line,const string&funcname)
+{
+  if(ignore)return false;
+  std::string text="Source file :\n"+filename
+      +"\n\nLine : "+std::to_string(line)
+      +"\n\nFunction :\n"+funcname
+      +"\n\nAssertion failed :\n"+exp;
+  auto retval=(QapMsgBoxRetval)TMessageBoxCaller::Call("Assertion failed",text);
+  if(qmbrIgnore==retval)ignore=true;
+  return qmbrBreak==retval;
+}
+inline bool SysQapDebugMsg(const string&msg,bool&ignore,const string&filename,const int line,const string&funcname)
+{
+  if(ignore)return false;
+  std::string text="Source file :\n"+filename
+      +"\n\nLine : "+std::to_string(line)
+      +"\n\nFunction :\n"+funcname
+      +"\n\nDebug message :\n"+msg;
+  auto retval=(QapMsgBoxRetval)TMessageBoxCaller::Call("Debug message",text);
+  if(qmbrIgnore==retval)ignore=true;
+  return qmbrBreak==retval;
+}
+template<typename TYPE>
+class QapPool{
+public:
+  struct Rec
+  {
+    bool used;
+    TYPE data;
+    Rec():used(false){}
+  };
+  vector<Rec>Arr;
+  int Size;
+  int MaxSize;
+public:
+  QapPool(int MaxSize=0):Size(0),MaxSize(MaxSize){Arr.resize(MaxSize);}
+  void NewInstance(TYPE*&pVar)
+  {
+    QapAssert(Size<MaxSize);
+    for(int i=0;i<Arr.size();i++)
+    {
+      if(!Arr[i].used)
+      {
+        Arr[i].used=true;
+        Size++;
+        pVar=&Arr[i].data;
+        return;
+      }
+    }
+  }
+  void FreeInstance(TYPE*&pVar){
+    QapAssert(Size>0);
+    int id=int((int)pVar-(int)&Arr[0].data)/sizeof(Arr[0]);
+    for(int i=id;i<Arr.size();i++)
+    {
+      if(&Arr[i].data==pVar)
+      {
+        Arr[i].used=false;
+        Size--;
+        pVar=NULL;
+        return;
+      }
+    }
+    QapAssert(pVar=NULL);
+  }
+  template<typename FUNC>
+  void ForEach(FUNC&Func)
+  {
+    int c=Size;
+    for(int i=0;i<Arr.size();i++)
+    {
+      if(!c)break;
+      Rec&it=Arr[i];
+      if(it.used)
+        Func(&it.data);
+    }
+  }
+};
+typedef double real;
+template<typename TYPE>inline TYPE Lerp(const TYPE&A,const TYPE&B,const real&v){return A+(B-A)*v;}
+template<class TYPE>inline TYPE Clamp(const TYPE&v,const TYPE&a,const TYPE&b){return max(a,min(v, b));}
+const real Pi=3.14159265;
+const real Pi2=Pi*2;
+const real PiD2=Pi/2;
+const real PiD4=Pi/4;
+//template<typename TYPE>TYPE Sign(const TYPE&value){if(value>0){return TYPE(+1);}else{return TYPE(value<0?-1:0);};};
+//template<typename TYPE>bool InDip(const TYPE&&min,const TYPE&&val,const TYPE&&max){return (val>=min)&&(val<=max);};
+//template<typename TYPE,typename TYPEB,typename TYPEC>bool InDip(const TYPE&&min,const TYPEB&&val,const TYPEC&&maxC){return (val>=min)&&(val<=max);};
+template<typename TYPE,typename TYPEB,typename TYPEC>bool InDip(const TYPE min,const TYPEB val,const TYPEC max){return (val>=min)&&(val<=max);};
+template<class TYPE>static TYPE&vec_add_back(vector<TYPE>&arr){arr.resize(arr.size()+1);return arr.back();}
+template<class TYPE>static TYPE&qap_add_back(vector<TYPE>&arr){arr.resize(arr.size()+1);return arr.back();}
+struct vec2d{
+public:
+  real x,y;
+  vec2d():x(0),y(0){}
+  vec2d(real x,real y):x(x),y(y){}
+  vec2d(const vec2d&v):x(v.x),y(v.y){}
+  vec2d&operator=(const vec2d&v){x=v.x;y=v.y;return *this;}
+  vec2d operator+()const{return *this;}
+  vec2d operator-()const{return vec2d(-x,-y);}
+  vec2d&operator+=(const vec2d&v){x+=v.x;y +=v.y;return *this;}
+  vec2d&operator-=(const vec2d&v){x-=v.x; y-=v.y;return *this;}
+  vec2d&operator*=(const real&f){x*=f;y*=f;return *this;}
+  vec2d&operator/=(const real&f){x/=f;y/=f;return *this;}
+public:
+  vec2d Rot(const vec2d&OX)const{real M=OX.Mag();return vec2d(((x*+OX.x)+(y*OX.y))/M,((x*-OX.y)+(y*OX.x))/M);}
+  vec2d UnRot(const vec2d&OX)const{real M=OX.Mag();if(M==0.0f){return vec2d(0,0);};return vec2d(((x*OX.x)+(y*-OX.y))/M,((x*OX.y)+(y*+OX.x))/M);}
+  vec2d Ort()const{return vec2d(-y,x);}
+  vec2d Norm()const{if((x==0)&&(y==0)){return vec2d(0,0);}return vec2d(x/this->Mag(),y/this->Mag());}
+  vec2d SetMag(const real&val)const{return this->Norm()*val;}
+  vec2d Mul(const vec2d&v)const{return vec2d(x*v.x,y*v.y);}
+  vec2d Div(const vec2d&v)const{return vec2d(v.x!=0?x/v.x:x,v.y!=0?y/v.y:y);}
+  real GetAng()const{return atan2(y,x);}
+  real Mag()const{return sqrt(x*x+y*y);}
+  real SqrMag()const{return x*x+y*y;}
+public:
+  friend vec2d operator+(const vec2d&u,const vec2d&v){return vec2d(u.x+v.x,u.y+v.y);}
+  friend vec2d operator-(const vec2d&u,const vec2d&v){return vec2d(u.x-v.x,u.y-v.y);}
+  friend vec2d operator*(const vec2d&u,const real&v){return vec2d(u.x*v,u.y*v);}
+  friend vec2d operator*(const real&u,const vec2d&v){return vec2d(u*v.x,u*v.y);}
+  friend bool operator==(const vec2d&u,const vec2d&v){return (u.x==v.x)||(u.y==v.y);}
+  friend bool operator!=(const vec2d&u,const vec2d&v){return (u.x!=v.x)||(u.y!=v.y);}
+public:
+  //friend inline static vec2d Vec2dEx(const real&ang,const real&mag){return vec2d(cos(ang)*mag,sin(ang)*mag);}
+public:
+  #ifdef BOX2D_H
+    operator b2Vec2()const{return b2Vec2(x,y);}
+    vec2d(const b2Vec2& v):x(v.x),y(v.y){}
+  #endif
+public:
+  real dist_to(const vec2d&p)const{return (p-*this).Mag();}
+  real sqr_dist_to(const vec2d&p)const{return (p-*this).SqrMag();}
+  bool dist_to_point_less_that_r(const vec2d&p,real r)const{return (p-*this).SqrMag()<r*r;}
+  static vec2d min(const vec2d&a,const vec2d&b){
+    return vec2d(std::min(a.x,b.x),std::min(a.y,b.y));
+  }
+  static vec2d max(const vec2d&a,const vec2d&b){
+    return vec2d(std::max(a.x,b.x),std::max(a.y,b.y));
+  }
+  static void comin(vec2d&a,const vec2d&b){a=min(a,b);}
+  static void comax(vec2d&a,const vec2d&b){a=max(a,b);}
+  static vec2d sign(const vec2d&p){return vec2d(Sign(p.x),Sign(p.y));}
+};
+inline vec2d Vec2dEx(const real&ang,const real&mag){return vec2d(cos(ang)*mag,sin(ang)*mag);}
+inline int round(const real&val){return int(val>=0?val+0.5:val-0.5);}//{return int(val);}
+inline static real dot(const vec2d&a,const vec2d&b){return a.x*b.x+a.y*b.y;}
+inline static real cross(const vec2d&a,const vec2d&b){return a.x*b.y-a.y*b.x;}
+typedef unsigned char uchar;
+class QapColor{
+public:
+  typedef QapColor SelfClass;
+  uchar b,g,r,a;
+  QapColor():b(255),g(255),r(255),a(255){}
+  QapColor(uchar A,uchar R,uchar G,uchar B):a(A),r(R),g(G),b(B){}
+  QapColor(uchar R,uchar G,uchar B):a(255),r(R),g(G),b(B){}
+  QapColor(const QapColor& v):a(v.a),r(v.r),g(v.g),b(v.b){}
+  QapColor(const unsigned int&v){*this=(QapColor&)v;}
+  bool operator==(const QapColor&v)const{return (a==v.a)&&(r==v.r)&&(g==v.g)&&(b==v.b);}
+  QapColor&operator=(const QapColor&v){a=v.a; r=v.r; g=v.g; b=v.b; return *this;}
+  QapColor operator+()const{return *this;}
+  QapColor&operator*=(const QapColor&v){
+    a=Clamp(int(a)*int(v.a)/255,0,255);
+    r=Clamp(int(r)*int(v.r)/255,0,255);
+    g=Clamp(int(g)*int(v.g)/255,0,255);
+    b=Clamp(int(b)*int(v.b)/255,0,255);
+    return *this;
+  }
+  QapColor&operator+=(const QapColor&v){
+    a=Clamp(int(a)+int(v.a),0,255);
+    r=Clamp(int(r)+int(v.r),0,255);
+    g=Clamp(int(g)+int(v.g),0,255);
+    b=Clamp(int(b)+int(v.b),0,255);
+    return *this;
+  }
+  QapColor&operator-=(const QapColor&v){
+    a=Clamp(int(a)-int(v.a),0,255);
+    r=Clamp(int(r)-int(v.r),0,255);
+    g=Clamp(int(g)-int(v.g),0,255);
+    b=Clamp(int(b)-int(v.b),0,255);
+    return *this;
+  }
+  QapColor operator*(const QapColor&v)const{
+    return QapColor(int(a)*int(v.a)/255,int(r)*int(v.r)/255,int(g)*int(v.g)/255,int(b)*int(v.b)/255);
+  }
+  QapColor operator+(const QapColor&v)const{
+    return QapColor(Clamp(int(a)+int(v.a),0,255),Clamp(int(r)+int(v.r),0,255),Clamp(int(g)+int(v.g),0,255),Clamp(int(b)+int(v.b),0,255));
+  }
+  QapColor operator-(const QapColor&v)const{
+    return QapColor(Clamp(int(a)-int(v.a),0,255),Clamp(int(r)-int(v.r),0,255),Clamp(int(g)-int(v.g),0,255),Clamp(int(b)-int(v.b),0,255));
+  }
+  QapColor&operator*=(real f){
+    b=uchar(Clamp(real(b)*f,0.0,255.0));
+    g=uchar(Clamp(real(g)*f,0.0,255.0));
+    r=uchar(Clamp(real(r)*f,0.0,255.0));
+    return *this;
+  }
+  QapColor&operator/=(real r){
+    real f=1.0/r;
+    b=uchar(Clamp(real(b)*f,0.0,255.0));
+    g=uchar(Clamp(real(g)*f,0.0,255.0));
+    r=uchar(Clamp(real(r)*f,0.0,255.0));
+    return *this;
+  }
+  operator unsigned int&()const{return *(unsigned int*)this;}
+  uchar GetLuminance()const{return (int(r)+int(g)+int(b))/3;}
+  QapColor toGray()const{auto l=GetLuminance(); return QapColor(a,l,l,l);}
+  inline static QapColor Mix(const QapColor&A,const QapColor&B,const real&t){
+    real ct=Clamp(t,0.0,1.0), tA=1.0-ct, tB=ct;
+    QapColor O;
+    O.b=uchar(Clamp(real(A.b)*tA+real(B.b)*tB,0.0,255.0));
+    O.g=uchar(Clamp(real(A.g)*tA+real(B.g)*tB,0.0,255.0));
+    O.r=uchar(Clamp(real(A.r)*tA+real(B.r)*tB,0.0,255.0));
+    O.a=uchar(Clamp(real(A.a)*tA+real(B.a)*tB,0.0,255.0));
+    return O;
+  }
+  inline static QapColor HalfMix(const QapColor&A,const QapColor&B){
+    QapColor O;
+    O.b=(int(A.b)+int(B.b))>>1;
+    O.g=(int(A.g)+int(B.g))>>1;
+    O.r=(int(A.r)+int(B.r))>>1;
+    O.a=(int(A.a)+int(B.a))>>1;
+    return O;
+  }
+  inline QapColor inv_rgb()const{return QapColor(a,0xff-r,0xff-g,0xff-b);}
+  inline QapColor swap_rg()const{return QapColor(a,b,g,r);}
+};
+class vec2f{
+public:
+  typedef vec2f SelfClass;
+  float x,y;
+  vec2f():x(0),y(0){}
+  vec2f(const vec2d&v):x(v.x),y(v.y){}
+  vec2f(float x,float y):x(x),y(y){}
+  void set_zero(){x=0.0f;y=0.0f;}
+  friend vec2f operator*(const vec2f&u,const float&v){return vec2f(u.x*v,u.y*v);}
+  friend vec2f operator*(const float&u,const vec2f&v){return vec2f(u*v.x,u*v.y);}
+  friend vec2f operator+(const vec2f&u,const vec2f&v){return vec2f(u.x+v.x,u.y+v.y);}
+  friend vec2f operator-(const vec2f&u,const vec2f&v){return vec2f(u.x-v.x,u.y-v.y);}
+  friend void operator*=(vec2f&ref,float r){ref.x*=r;ref.y*=r;}
+  void operator+=(const vec2d&v){x+=v.x;y+=v.y;}
+  void operator-=(const vec2d&v){x-=v.x;y-=v.y;}
+  friend vec2f operator*(float u,const vec2f&v){return vec2f(u*v.x,u*v.y);}
+  operator vec2d()const{return vec2d(x,y);}
+  friend bool operator==(const vec2f&u,const vec2f&v){return (u.x==v.x)&&(u.y==v.y);}
+  friend bool operator!=(const vec2f&u,const vec2f&v){return (u.x!=v.x)||(u.y!=v.y);}
+  vec2f operator-()const{return vec2f(-x,-y);}
+};
+inline static real dot(const vec2f&a,const vec2f&b){return a.x*b.x+a.y*b.y;}
+inline static real cross(const vec2f&a,const vec2f&b){return a.x*b.y-a.y*b.x;}
+class QapMat22{
+public:
+  vec2f col1,col2;
+  QapMat22():col1(1,0),col2(0,1){}
+  QapMat22(const vec2f&c1,const vec2f&c2):col1(c1),col2(c2){}
+  QapMat22(float a11,float a12,float a21,float a22){col1.x=a11;col1.y=a21;col2.x=a12;col2.y=a22;}
+  explicit QapMat22(float ang){
+    float c=cosf(ang),s=sinf(ang);
+    col1.x=c; col2.x=-s; col1.y=s; col2.y=+c;
+  }
+  void set(const vec2f&c1,const vec2f&c2){col1=c1;col2=c2;}
+  void set(float ang){
+    float c=cosf(ang),s=sinf(ang);
+    col1.x=c; col2.x=-s; col1.y=s; col2.y=+c;
+  }
+  void set_ident(){col1.x=1.0f;col2.x=0.0f;col1.y=0.0f;col2.y=1.0f;}
+  void set_zero(){col1.x=0.0f;col2.x=0.0f;col1.y=0.0f;col2.y=0.0f;}
+  float GetAngle()const{return atan2(col1.y,col1.x);}
+  void mul(real r){col1*=r;col2*=r;}
+};
+
+class transform2f{
+public:
+  vec2f p; QapMat22 r;
+  transform2f(){}
+  transform2f(const vec2f&p,const QapMat22&r):p(p),r(r){}
+  explicit transform2f(const vec2f&p):p(p){}
+  void set_ident(){p.set_zero();r.set_ident();}
+  void set(const vec2d&p,float ang){this->p=p;this->r.set(ang);}
+  float getAng()const{return atan2(r.col1.y,r.col1.x);}
+  friend vec2f operator*(const transform2f&T,const vec2f&v){
+    float x=(+T.r.col1.x*v.x+T.r.col2.x*v.y)+T.p.x;
+    float y=(+T.r.col1.y*v.x+T.r.col2.y*v.y)+T.p.y;
+    return vec2f(x,y);
+  }
+};
+typedef transform2f b2Transform;
+  
+inline transform2f MakeZoomTransform(const vec2d&zoom)
+{
+  transform2f tmp(vec2f(0,0),QapMat22(vec2f(zoom.x,0.f),vec2f(0.f,zoom.y)));
+  return tmp;
+}
+class vec3f{
+public:
+  float x,y,z;
+  //vec3f(const D3DVECTOR&v):D3DVECTOR(v){}
+  vec3f(){x=0;y=0;z=0;}
+  vec3f(float x,float y,float z)
+  {
+    #define F(a)this->a=a;
+    F(x);F(y);F(z);
+    #undef F
+  }
+public:
+  bool dist_to_point_less_that_r(const vec3f&p,real r)const{return (p-*this).SqrMag()<r*r;}
+  bool dist_to_point_less_that_r(const vec3f&p,float r)const{return (p-*this).SqrMag()<r*r;}
+  friend vec3f operator*(const float&u,const vec3f&v)
+  {
+    return vec3f(v.x*u,v.y*u,v.z*u);
+  }
+  friend vec3f operator*(const vec3f&v,const float&u)
+  {
+    return vec3f(v.x*u,v.y*u,v.z*u);
+  }
+  friend vec3f operator+(const vec3f&v,const vec3f&u)
+  {
+    return vec3f(v.x+u.x,v.y+u.y,v.z+u.z);
+  }
+  friend vec3f operator-(const vec3f&v,const vec3f&u)
+  {
+    return vec3f(v.x-u.x,v.y-u.y,v.z-u.z);
+  }
+  void operator*=(const float&k)
+  {
+    x*=k;
+    y*=k;
+    z*=k;
+  }
+  bool operator==(const vec3f&v)const
+  {
+    auto&a=*this;
+    bool xok=a.x==v.x;
+    bool yok=a.y==v.y;
+    bool zok=a.z==v.z;
+    return xok&&yok&&zok;
+  }
+  bool operator!=(const vec3f&v)const
+  {
+    return !operator==(v);
+  }
+  void operator+=(const vec3f&v)
+  {
+    x+=v.x;
+    y+=v.y;
+    z+=v.z;
+  }
+  void operator-=(const vec3f&v)
+  {
+    x-=v.x;
+    y-=v.y;
+    z-=v.z;
+  }
+  vec3f operator+()const{return *this;}
+  vec3f operator-()const{return *this*-1;}
+  vec3f RawMul(const vec3f&b)const
+  {
+    auto&a=*this;
+    return vec3f(a.x*b.x,a.y*b.y,a.z*b.z);
+  }
+  vec3f RawMul(float x,float y,float z)const
+  {
+    auto&a=*this;
+    return vec3f(a.x*x,a.y*y,a.z*z);
+  }
+  vec3f Mul(const vec3f&b)const
+  {
+    auto&a=*this;
+    return vec3f(a.x*b.x,a.y*b.y,a.z*b.z);
+  }
+  vec3f Mul(float x,float y,float z)const
+  {
+    auto&a=*this;
+    return vec3f(a.x*x,a.y*y,a.z*z);
+  }
+  float Mag()const
+  {
+    return sqrt(x*x+y*y+z*z);
+  }
+  float SqrMag()const
+  {
+    return x*x+y*y+z*z;
+  }
+  vec3f Norm()const
+  {
+    if((x==0)&&(y==0)&&(z==0))
+    {
+      return vec3f(0,0,0);
+    }
+    auto k=1.0f/Mag();
+    return vec3f(x*k,y*k,z*k);
+  }
+  vec3f cross(const vec3f&b)const
+  {
+    auto&a=*this;
+    return vec3f(
+      +(a.y*b.z-a.z*b.y),
+      -(a.x*b.z-a.z*b.x),
+      +(a.x*b.y-a.y*b.x)
+    );
+  }
+  float dot(const vec3f&b)const
+  {
+    auto&a=*this;
+    return (
+      a.x*b.x+
+      a.y*b.y+
+      a.z*b.z
+    );
+  }
+};
+inline float dot(const vec3f&a,const vec3f&b){return a.dot(b);}
+//inline float dot(const vec3d&a,const vec3d&b){return a.dot(b);}
+inline vec3f cross(const vec3f&a,const vec3f&b){return a.cross(b);}
+//inline vec3d cross(const vec3d&a,const vec3d&b){return a.cross(b);}
+class vec2i{
+public:
+  typedef vec2i SelfClass;
+  int x, y;
+  vec2i():x(0),y(0){}
+  vec2i(int x,int y):x(x),y(y){}
+  friend vec2i operator*(int u,const vec2i&v){return vec2i(u*v.x,u*v.y);}
+  friend vec2i operator*(const vec2i&v,int u){return vec2i(u*v.x,u*v.y);}
+  friend vec2i operator/(const vec2i&v,int d){return vec2i(v.x/d,v.y/d);}
+  friend vec2i operator+(const vec2i&u,const vec2i&v){return vec2i(u.x+v.x,u.y+v.y);}
+  friend vec2i operator-(const vec2i&u,const vec2i&v){return vec2i(u.x-v.x,u.y-v.y);}
+  void operator+=(const vec2i&v){x+=v.x;y+=v.y;}
+  void operator-=(const vec2i&v){x-=v.x;y-=v.y;}
+  int SqrMag()const{return x*x+y*y;}
+  float Mag()const{return sqrt(float(x*x+y*y));}
+  operator vec2d()const{return vec2d(x,y);}
+  operator vec2f()const{return vec2f(x,y);}
+  vec2i operator+()const{return vec2i(+x,+y);}
+  vec2i operator-()const{return vec2i(-x,-y);}
+  friend bool operator==(const vec2i&u,const vec2i&v){return (u.x==v.x)&&(u.y==v.y);}
+  friend bool operator!=(const vec2i&u,const vec2i&v){return (u.x!=v.x)||(u.y!=v.y);}
+  static vec2i fromVec2d(const vec2d&v){return vec2i(v.x,v.y);}
+};
+struct Dip2i{
+  int a,b;
+  Dip2i(int a,int b):a(a),b(b){}
+  void Take(int x){a=min(a,x);b=max(b,x);}
+  Dip2i Norm()const{return Dip2i(min(a,b),max(a,b));}
+  int Mag()const{return b-a;}
+  struct Transform{
+    float x,s;
+    Transform(float x,float s):x(x),s(s){}
+    Transform(const Dip2i&from,const Dip2i&to){
+      s=float(to.Norm().Mag())/float(from.Norm().Mag());
+      x=to.a-from.a;
+    }
+    float operator*(int v){return x+v*s;}
+  };
+};
+struct vec4f{
+public:
+  float b,g,r,a;
+  //struct{float x,y,z,w;};
+  vec4f(){}
+  vec4f(float b,float g,float r,float a):b(b),g(g),r(r),a(a){}
+  vec4f(const QapColor&ref):b(ref.b/255.f),g(ref.g/255.f),r(ref.r/255.f),a(ref.a/255.f){}
+  vec4f&operator+=(const vec4f&v){b+=v.b;g+=v.g;r+=v.r;a+=v.a;return *this;}
+  vec4f&operator*=(const float&k){b*=k;g*=k;r*=k;a*=k;return *this;}
+  friend vec4f operator*(const float&u,const vec4f&v){return vec4f(u*v.b,u*v.g,u*v.r,u*v.a);}
+  friend vec4f operator+(const vec4f&u,const vec4f&v){return vec4f(u.b+v.b,u.g+v.g,u.r+v.r,u.a+v.a);}
+  #define F(r)Clamp(int(r*255),int(0),int(255))
+  QapColor GetColor(){return QapColor(F(a),F(r),F(g),F(b));}
+  #undef F
+};
+union vec4i{
+public:
+  struct{int x,y,z,w;};
+  struct{int b,g,r,a;};
+  vec4i(int b,int g,int r,int a):b(b),g(g),r(r),a(a){}
+  vec4i(const QapColor&ref):b(ref.b),g(ref.g),r(ref.r),a(ref.a){}
+  vec4i&operator+=(const vec4i&v){b+=v.b;g+=v.g;r+=v.r;a+=v.a;return *this;}
+  vec4i operator*(const int&v){return vec4i(x*v,y*v,z*v,w*v);}
+  vec4i operator/(const int&v){return vec4i(x/v,y/v,z/v,w/v);}
+  vec4i operator+(const vec4i&v){return vec4i(x+v.x,y+v.y,z+v.z,w+v.w);}
+  #define F(r)Clamp(int(r),int(0),int(255))
+  QapColor GetColor(){return QapColor(F(a),F(r),F(g),F(b));}
+  #undef F
+};
+inline bool CD_Rect2Point(vec2d A,vec2d B,vec2d P)
+{
+  vec2d &p=P;vec2d a(min(A.x,B.x),min(A.y,B.y)),b(max(A.x,B.x),max(A.y,B.y));
+  return InDip(a.x,p.x,b.x)&&InDip(a.y,p.y,b.y);
+}
+#ifdef _WIN32
+FILETIME get_systime_percise_as_filetime(){FILETIME ft;GetSystemTimePreciseAsFileTime(&ft);return ft;}
+SYSTEMTIME filetime_to_systime(const FILETIME&ft){SYSTEMTIME st;FileTimeToSystemTime(&ft,&st);return st;}
+SYSTEMTIME get_localtime(const SYSTEMTIME&src){SYSTEMTIME out;SystemTimeToTzSpecificLocalTime(0,&src,&out);return out;}
+SYSTEMTIME filetime_to_localtime(const FILETIME&ft){return get_localtime(filetime_to_systime(ft));}
+SYSTEMTIME get_percise_localtime(){return filetime_to_localtime(get_systime_percise_as_filetime());}
+string systime_to_str(const SYSTEMTIME&st){
+  #define F(VAR,FIELD)auto&VAR=st.FIELD;
+  F(Y,wYear);
+  F(M,wMonth);
+  F(D,wDay);
+  F(h,wHour);
+  F(m,wMinute);
+  F(s,wSecond);
+  F(x,wMilliseconds);
+  #undef F
+  char buff[]="YYYY.MM.DD hh:mm:ss.xxx";
+  //           0123456789 123456789 12
+  constexpr int q=10;constexpr int Z='0';
+  #define F()buff[id--]=Z+v%q;v/=q;
+  {int v=Y;int id=+3;F()F()F()F()}
+  {int v=M;int id=+6;F()F()      }
+  {int v=D;int id=+9;F()F()      }
+  {int v=h;int id=12;F()F()      }
+  {int v=m;int id=15;F()F()      }
+  {int v=s;int id=18;F()F()      }
+  {int v=x;int id=22;F()F()F()   }
+  #undef F
+  return buff;
+}
+//string systime_to_str_v1(const SYSTEMTIME&st){
+//  #define F(VAR,FIELD,OFFSET)auto VAR=st.FIELD+OFFSET;
+//  F(Y,wYear,0);
+//  F(M,wMonth,0);
+//  F(D,wDay,0);
+//  F(h,wHour,0);
+//  F(m,wMinute,0);
+//  F(s,wSecond,0);
+//  F(ms,wMilliseconds,0);
+//  #undef F
+//  char buff[32];
+//  sprintf(&buff[0],"%04u.%02u.%02u %02u:%02u:%02u.%03u\0",
+//    Y,M,D,
+//    h,m,s,ms
+//  );
+//  return buff;
+//}
+string filetime_to_localstr(const FILETIME&ft){return systime_to_str(filetime_to_localtime(ft));}
+string local_cur_date_str_v4(){auto lt=get_percise_localtime();return systime_to_str(lt);}
+#endif
+template<class TYPE>static bool qap_check_id(const vector<TYPE>&arr,int id){return id>=0&&id<arr.size();}
+template<class TYPE>
+inline static TYPE max(const TYPE&a,const TYPE&b){
+  return a>b?a:b;
+}
+template<class TYPE>
+inline static TYPE min(const TYPE&a,const TYPE&b){
+  return a<b?a:b;
+}
+template<typename TYPE,size_t COUNT>
+inline size_t lenof(TYPE(&)[COUNT]){
+  return COUNT;
+}
+inline static int max(int a,int b){
+  return a>b?a:b;
+}
+inline static int min(int a,int b){
+  return a<b?a:b;
+}
+inline static float max(float a,float b){
+  return a>b?a:b;
+}
+inline static float min(float a,float b){
+  return a<b?a:b;
+}
+inline static double max(double a,double b){
+  return a>b?a:b;
+}
+inline static double min(double a,double b){
+  return a<b?a:b;
+}
+#ifdef _WIN32
+inline TScreenMode GetScreenMode(){
+  HDC DC=GetDC(0);
+  TScreenMode Res={GetDeviceCaps(DC,HORZRES),GetDeviceCaps(DC,VERTRES),GetDeviceCaps(DC,BITSPIXEL),GetDeviceCaps(DC,VREFRESH)};
+  ReleaseDC(0,DC);
+  return Res;
+}
+static bool IsKeyDown(int vKey){int i=GetAsyncKeyState(vKey);return i<0;}
+class TQuad{
+public:
+  typedef TQuad SelfClass;
+  int x,y,w,h;
+  TQuad(){DoReset();}
+  TQuad(const TQuad&){QapDebugMsg("TQuad is noncopyable");DoReset();}
+  TQuad(TQuad&&R){operator=(std::move(R));}
+  void operator=(TQuad&&R){
+    if(&R==this)return;
+    x=std::move(R.x);y=std::move(R.y);w=std::move(R.w);h=std::move(R.h);
+  }
+  void DoReset(){x=320;y=240;w=320;h=240;}
+  void Set(int X,int Y,int W,int H){x=X;y=Y;w=W;h=H;}
+  vec2i&GetPos(){return*(vec2i*)&x;}
+  vec2i&GetSize(){return*(vec2i*)&w;}
+  void SetAs(const vec2i&pos,const vec2i&size){GetPos()=pos;GetSize()=size;}
+  RECT GetWinRect()const{return {x,y,x+w,y+h};}
+  void SetWinRect(const RECT&rect){Set(rect.left,rect.top,rect.right-rect.left,rect.bottom-rect.top);}
+  void SetSize(const SIZE&size){w=size.cx;h=size.cy;}
+  static TQuad getFullScreen(){TQuad tmp;auto mode=GetScreenMode();tmp.Set(0,0,mode.W,mode.H);return tmp;}
+  void setAtCenter(const TQuad&q){QapAssert(q.w>=w);QapAssert(q.h>=h);x=(q.w-w)/2;y=(q.h-h)/2;}
+  void subpos(const TQuad&q){x-=q.x;y-=q.y;}
+  void setAtCenterScreen(){setAtCenter(getFullScreen());}
+};
+#endif
+using std::string;
+using std::vector;
+using std::map;
+using std::fstream;
+using std::iostream;
+using std::stringstream;
+using std::array;
+typedef double real;
+typedef long long int int64;
+typedef long long unsigned int uint64;
+typedef unsigned int uint;
+typedef unsigned char uchar;
+class CrutchIO{
+public:
+  static bool FileExist(const string&FN)
+  {
+    std::fstream f;
+    f.open(FN.c_str(),std::ios::in|std::ios::binary);
+    return f.is_open();
+  }
+private:
+  static int FileLength(iostream&f)
+  {
+    using namespace std;
+    f.seekg(0,ios::end);
+    auto L=f.tellg();
+    f.seekg(0,ios::beg);
+    return int(L);
+  };
+public:
+  int pos;
+  string mem;
+  CrutchIO():mem(""),pos(0){};
+  bool LoadFile(const string&FN)
+  {
+    using namespace std;
+    fstream f;
+    f.open(FN.c_str(),ios::in|ios::binary);
+    if(!f)return false;
+    int L=FileLength(f);
+    mem.resize(L);
+    if(L)f.read(&mem[0],L);
+    //printf("f->size=%i\n",L);
+    //printf("f->Chcount=%i\n",f._Chcount);
+    f.close(); pos=0;
+    return true;
+  };
+  bool SaveFile(const string&FN)
+  {
+    using namespace std;
+    fstream f;
+    f.open(FN.c_str(),ios::out|ios::binary);
+    if(!f)return false;
+    if(!mem.empty())f.write(&mem[0],mem.size());
+    f.close(); pos=0; int L=mem.size();
+    return true;
+  };
+  void read(char*c,int count)
+  {
+    for(int i=0;i<count;i++)c[i]=mem[pos++];//FIXME: тут можно юзать memcpy
+  };
+  void write(char*c,int count)
+  {
+    //mem.reserve(max(mem.capacity(),mem.size()+count));
+    int n=mem.size();
+    mem.resize(n+count);//Hint: resize гарантировано копирует содержимое.
+    for(int i=0;i<count;i++)mem[n+i]=c[i];//FIXME: тут можно юзать memcpy
+    pos+=count;
+  };
+};
+//-------------------------------------------//
+class QapIO{
+public:
+  QapIO(){}
+public:
+  virtual void SavePOD(void*p,int count)=0;
+  virtual void LoadPOD(void*p,int count)=0;
+  virtual bool TryLoad(int count)=0;
+  virtual void Crash()=0;
+  virtual bool IsCrashed()=0;
+  virtual bool IsSizeIO()=0;
+  virtual int GetSize()=0;
+  virtual void WriteTo(QapIO&ref)=0;
+public:
+  #define LIST(F)F(int)F(unsigned int)F(char)F(unsigned char)F(bool)F(int64)F(uint64)F(float)F(real)F(short)F(unsigned short)F(vec2i)F(vec2d)F(vec2f)
+  #define F(TYPE)void load(TYPE&ref){if(!TryLoad(sizeof(ref))){Crash();return;}LoadPOD(&ref,sizeof(ref));}
+  LIST(F)
+  #undef F
+  #define F(TYPE)void save(TYPE&ref){SavePOD(&ref,sizeof(ref));}
+  LIST(F)
+  #undef F
+  #undef LIST
+  void load(std::string&ref)
+  {
+    int size=0;
+    load(size);
+    if(size<0){Crash();return;}
+    if(!size){ref.clear();return;}
+    if(!TryLoad(size)){Crash();return;}
+    ref.resize(size);
+    LoadPOD(&ref[0],size);
+  }
+  void save(std::string&ref)
+  {
+    int size=ref.size();
+    save(size);
+    if(!size)return;
+    SavePOD(&ref[0],size);
+  }
+  template<class TYPE>
+  void load(std::vector<TYPE>&ref)
+  {
+    int size=0;
+    load(size);
+    if(size<0){Crash();return;}
+    ref.resize(size);
+    for(int i=0;i<size;i++){
+      load(ref[i]);
+    }
+  }
+  template<class TYPE>
+  void load_as_pod(std::vector<TYPE>&ref)
+  {
+    int size=0;
+    load(size);
+    if(size<0){Crash();return;}
+    ref.resize(size);
+    for(int i=0;i<size;i++){
+      LoadPOD(&ref[i],sizeof(TYPE));
+    }
+  }
+  template<class TYPE>
+  void save(std::vector<TYPE>&ref)
+  {
+    int size=ref.size();
+    save(size);
+    if(!size)return;
+    for(int i=0;i<size;i++){
+      save(ref[i]);
+    }
+  }
+  template<class TYPE>
+  void save_as_pod(std::vector<TYPE>&ref)
+  {
+    int size=ref.size();
+    save(size);
+    if(!size)return;
+    for(int i=0;i<size;i++){
+      SavePOD(&ref[i],sizeof(TYPE));
+    }
+  }
+  void write_raw_string(string&s){if(s.empty())return;SavePOD((void*)&s[0],s.size());}
+};
+//-------------------------------------------//
+class TDataIO:public QapIO{
+public:
+  CrutchIO IO;
+  bool crashed;
+  TDataIO():crashed(false),QapIO(){}
+  //TDataIO(const TDataIO&)=delete;
+  //TDataIO(TDataIO&)=delete;
+  //TDataIO(TDataIO&&)=delete;
+  //void operator=(const TDataIO&)=delete;
+  //void operator=(TDataIO&)=delete;
+  //void operator=(TDataIO&&)=delete;
+public:
+  void SavePOD(void*p,int count)
+  {
+    this->IO.write((char*)p,count);
+  }
+  void LoadPOD(void*p,int count)
+  {
+    int max_count=int(this->IO.mem.size())-int(this->IO.pos);
+    if(count>max_count)
+    {
+      QapAssert(count<=max_count);
+      return;
+    }
+    this->IO.read((char*)p,count);
+  }
+  bool TryLoad(int count)
+  {
+    auto max_size=int(IO.mem.size())-int(IO.pos);
+    return (count>=0)&&(max_size>=count);
+  }
+  void Crash()
+  {
+    IO.pos=IO.mem.size();
+    crashed=true;
+  }
+  bool IsCrashed()
+  {
+    return crashed;
+  }
+  bool IsSizeIO()
+  {
+    return false;
+  }
+  int GetSize()
+  {
+    return IO.mem.size();
+  }
+  void SaveTo(QapIO&Stream)
+  {
+    int size=IO.mem.size();
+    Stream.SavePOD(&size,sizeof(size));
+    if(!size)return;
+    Stream.SavePOD(&IO.mem.front(),size);
+  }
+  void LoadFrom(QapIO&Stream)
+  {
+    int size;
+    Stream.LoadPOD(&size,sizeof(size));
+    if(!size)return;
+    IO.mem.resize(size);
+    Stream.LoadPOD(&IO.mem.front(),size);
+  }
+  void WriteTo(QapIO&ref)
+  {
+    ref.write_raw_string(IO.mem);
+  }
+};
+//-------------------------------------------//
+class TSizeIO:public QapIO{
+public:
+  int size;
+  bool crashed;
+public:
+  TSizeIO():size(0),crashed(false),QapIO(){}
+  void SavePOD(void*p,int count){size+=count;}
+  void LoadPOD(void*p,int count){QapNoWay();Crash();}
+  bool TryLoad(int count){QapNoWay();Crash();return false;}
+  void Crash(){crashed=true;}
+  bool IsCrashed(){return crashed;}
+  bool IsSizeIO(){return true;}
+  int GetSize()
+  {
+    return size;
+  }
+  void WriteTo(QapIO&ref)
+  {
+    if(!ref.IsSizeIO()){QapNoWay();Crash();return;}
+    ref.SavePOD(nullptr,size);
+  }
+};
+namespace detail
+{
+  struct yes_type
+  {
+    char padding[1];
+  };
+  struct no_type
+  {
+    char padding[8];
+  };
+  template<bool condition,typename true_t,typename false_t>struct select;
+  template<typename true_t,typename false_t>struct select<true,true_t,false_t>
+  {
+    typedef true_t type;
+  };
+  template<typename true_t,typename false_t>struct select<false,true_t,false_t>
+  {
+    typedef false_t type;
+  };
+  template<class U,U x>struct test;
+  template<class TYPE>
+  static void TryDoReset(void*) {}
+  template<class TYPE>
+  static void TryDoReset(TYPE*Self,void(TYPE::ParentClass::*pDoReset)()=&TYPE::ParentClass::DoReset)
+  {
+    (Self->*pDoReset)();
+  }
+  template<class TYPE>
+  static void FieldTryDoReset(TYPE&p,...) {}
+  template<class TYPE,size_t SIZE>static void FieldTryDoReset(array<TYPE,SIZE>&arr)
+  {
+    for (int i=0;i<SIZE;i++)FieldTryDoReset(arr[i]);
+  }
+  static void FieldTryDoReset(unsigned short&ref)
+  {
+    ref=0;
+  };
+  static void FieldTryDoReset(short&ref)
+  {
+    ref=0;
+  };
+  static void FieldTryDoReset(bool&ref)
+  {
+    ref=0;
+  };
+  static void FieldTryDoReset(int&ref)
+  {
+    ref=0;
+  };
+  static void FieldTryDoReset(size_t&ref)
+  {
+    ref=0;
+  };
+  static void FieldTryDoReset(float&ref)
+  {
+    ref=0;
+  };
+  static void FieldTryDoReset(double&ref)
+  {
+    ref=0;
+  };
+  static void FieldTryDoReset(char&ref)
+  {
+    ref=0;
+  };
+  static void FieldTryDoReset(uchar&ref)
+  {
+    ref=0;
+  };
+};
+namespace detail{
+  template<typename T>
+  struct has_ProxySys$$
+  {
+    template<class U>
+    static no_type check(...);
+    template<class U>
+    static yes_type check(
+      U*,
+      typename U::ProxySys$$(*)=nullptr
+    );
+    static const bool value=sizeof(check<T>(nullptr))==sizeof(yes_type);
+  };
+};
+
+template<typename TYPE,bool is_proxy>
+struct ProxySys$$;
+template<class TYPE>
+struct Sys$${
+  static void Save(TDataIO&IO,TYPE&ref)
+  {
+    ProxySys$$<TYPE,detail::has_ProxySys$$<TYPE>::value>::Save(IO,ref);
+  }
+  static void Load(TDataIO&IO,TYPE&ref)
+  {
+    ProxySys$$<TYPE,detail::has_ProxySys$$<TYPE>::value>::Load(IO,ref);
+  }
+};
+
+template<class TYPE>void QapSave(TDataIO&IO,TYPE*){static_assert(false,"fail");}
+template<class TYPE>void QapLoad(TDataIO&IO,TYPE*){static_assert(false,"fail");}
+
+template<class TYPE>void QapSave(TDataIO&IO,TYPE&ref){Sys$$<TYPE>::Save(IO,ref);}
+template<class TYPE>void QapLoad(TDataIO&IO,TYPE&ref){Sys$$<TYPE>::Load(IO,ref);}
+template<class TYPE>string QapSaveToStr(TYPE&ref){TDataIO IO;QapSave(IO,ref);return IO.IO.mem;}
+template<class TYPE>void QapLoadFromStr(TYPE&ref,const string&data){TDataIO IO; IO.IO.mem=data;QapLoad(IO,ref);}
+
+
+template<class TYPE>string QapSaveToStrWithSizeOfType(TYPE&ref)
+{
+  int size_of_type=sizeof(TYPE);
+  TDataIO IO;QapSave(IO,size_of_type);QapSave(IO,ref);return IO.IO.mem;
+}
+template<class TYPE>void QapLoadFromStrWithSizeOfType(TYPE&ref,const string&data){
+  int size_of_type=-1;
+  TDataIO IO;IO.IO.mem=data;QapLoad(IO,size_of_type);if(size_of_type!=sizeof(TYPE))return;QapLoad(IO,ref);
+}
+
+template<typename TYPE>
+struct ProxySys$$<TYPE,true>
+{
+  static void Save(TDataIO&IO,TYPE&ref){
+    TYPE::ProxySys$$::Save(IO,ref);
+  }
+  static void Load(TDataIO&IO,TYPE&ref){
+    TYPE::ProxySys$$::Load(IO,ref);
+  }
+};
+
+//class QapKeyboard;
+/*template<>
+struct Sys$$<QapKeyboard::TKeyState>{
+  static void Save(TDataIO&IO,QapKeyboard::TKeyState&ref)
+  {
+    static_assert(QapKeyboard::TKeyState::MAX_KEY==263,"hm...");
+    std::bitset<256+8> bs;
+    for(int i=0;i<ref.MAX_KEY;i++){auto&ex=ref.data[i];QapAssert(1>=*(uchar*)(void*)&ex);bs[i]=ex;}
+    IO.SavePOD(&bs,sizeof(bs));
+  }
+  static void Load(TDataIO&IO,QapKeyboard::TKeyState&ref)
+  {
+    static_assert(QapKeyboard::TKeyState::MAX_KEY==263,"hm...");
+    std::bitset<256+8> bs;
+    IO.LoadPOD(&bs,sizeof(bs));
+    for(int i=0;i<ref.MAX_KEY;i++){auto&ex=ref.data[i];ex=bs[i];}
+  }
+};*/
+
+//template<class TYPE>struct Sys$${};
+
+//-->
+#define SYS_RAW_POD_TYPE(QapKeyboard)\
+  template<>\
+  struct Sys$$<QapKeyboard>{\
+    static void Save(TDataIO&IO,QapKeyboard&ref)\
+    {\
+      IO.SavePOD(&ref,sizeof(ref));\
+    }\
+    static void Load(TDataIO&IO,QapKeyboard&ref)\
+    {\
+      IO.LoadPOD(&ref,sizeof(ref));\
+    }\
+  };
+//---
+#define LIST(F)F(QapColor)F(vec2i)F(vec2f)F(vec2d)
+LIST(SYS_RAW_POD_TYPE)
+#undef LIST
+//---
+#undef SYS_RAW_POD_TYPE
+//<--
+
+template<class TYPE>
+struct Sys$$<vector<TYPE>>{
+  static void Save(TDataIO&IO,vector<TYPE>&ref)
+  {
+    int size=ref.size();
+    IO.save(size);
+    if(!size)return;
+    for(int i=0;i<size;i++){
+      auto&ex=ref[i];
+      Sys$$<TYPE>::Save(IO,ex);
+    }
+  }
+  static void Load(TDataIO&IO,vector<TYPE>&ref)
+  {
+    int size=0;
+    IO.load(size);
+    if(size<0){IO.Crash();return;}
+    ref.resize(size);
+    for(int i=0;i<size;i++){
+      auto&ex=ref[i];
+      Sys$$<TYPE>::Load(IO,ex);
+    }
+  }
+};
+
+//-->
+#define SYS_SIMPLE_TYPE(string)\
+  template<>\
+  struct Sys$$<string>{\
+    static void Save(TDataIO&IO,string&ref)\
+    {\
+      IO.save(ref);\
+    }\
+    static void Load(TDataIO&IO,string&ref)\
+    {\
+      IO.load(ref);\
+    }\
+  };
+//---
+#define LIST(F)F(int)F(unsigned int)F(char)F(unsigned char)F(bool)F(int64)F(uint64)F(float)F(real)F(short)F(unsigned short)F(string)
+#define F(TYPE)SYS_SIMPLE_TYPE(TYPE)
+LIST(F)
+#undef F
+#undef LIST
+//---
+#undef SYS_SIMPLE_TYPE
+//<--
+#ifdef _WIN32
+struct QapMat4:public D3DMATRIX{
+  QapMat4(){}
+  QapMat4(
+    float m00,float m01,float m02,float m03,
+    float m10,float m11,float m12,float m13,
+    float m20,float m21,float m22,float m23,
+    float m30,float m31,float m32,float m33
+  ){
+    m[0][0]=m00; m[0][1]=m01; m[0][2]=m02; m[0][3]=m03;
+    m[1][0]=m10; m[1][1]=m11; m[1][2]=m12; m[1][3]=m13;
+    m[2][0]=m20; m[2][1]=m21; m[2][2]=m22; m[2][3]=m23;
+    m[3][0]=m30; m[3][1]=m31; m[3][2]=m32; m[3][3]=m33;
+  }
+  friend QapMat4 operator+(const QapMat4&m,const QapMat4&n){
+    QapMat4 O;
+    for(int i=0;i<4;i++)for(int j=0;j<4;j++)O.m[i][j]=m.m[i][j]+n.m[i][j];
+    return O;
+  }
+  friend QapMat4 operator-(const QapMat4&m,const QapMat4&n){
+    QapMat4 O;
+    for(int i=0;i<4;i++)for(int j=0;j<4;j++)O.m[i][j]=m.m[i][j]-n.m[i][j];
+    return O;
+  }
+  friend QapMat4 operator-(const QapMat4&m){
+    QapMat4 O;
+    for(int i=0;i<4;i++)for(int j=0;j<4;j++)O.m[i][j]=-m.m[i][j];
+    return O;
+  }
+  friend QapMat4 operator*(const QapMat4&m,const QapMat4&n){
+    return QapMat4(
+      m.m[0][0]*n.m[0][0]+m.m[0][1]*n.m[1][0]+m.m[0][2]*n.m[2][0]+m.m[0][3]*n.m[3][0],
+      m.m[0][0]*n.m[0][1]+m.m[0][1]*n.m[1][1]+m.m[0][2]*n.m[2][1]+m.m[0][3]*n.m[3][1],
+      m.m[0][0]*n.m[0][2]+m.m[0][1]*n.m[1][2]+m.m[0][2]*n.m[2][2]+m.m[0][3]*n.m[3][2],
+      m.m[0][0]*n.m[0][3]+m.m[0][1]*n.m[1][3]+m.m[0][2]*n.m[2][3]+m.m[0][3]*n.m[3][3],
+      m.m[1][0]*n.m[0][0]+m.m[1][1]*n.m[1][0]+m.m[1][2]*n.m[2][0]+m.m[1][3]*n.m[3][0],
+      m.m[1][0]*n.m[0][1]+m.m[1][1]*n.m[1][1]+m.m[1][2]*n.m[2][1]+m.m[1][3]*n.m[3][1],
+      m.m[1][0]*n.m[0][2]+m.m[1][1]*n.m[1][2]+m.m[1][2]*n.m[2][2]+m.m[1][3]*n.m[3][2],
+      m.m[1][0]*n.m[0][3]+m.m[1][1]*n.m[1][3]+m.m[1][2]*n.m[2][3]+m.m[1][3]*n.m[3][3],
+      m.m[2][0]*n.m[0][0]+m.m[2][1]*n.m[1][0]+m.m[2][2]*n.m[2][0]+m.m[2][3]*n.m[3][0],
+      m.m[2][0]*n.m[0][1]+m.m[2][1]*n.m[1][1]+m.m[2][2]*n.m[2][1]+m.m[2][3]*n.m[3][1],
+      m.m[2][0]*n.m[0][2]+m.m[2][1]*n.m[1][2]+m.m[2][2]*n.m[2][2]+m.m[2][3]*n.m[3][2],
+      m.m[2][0]*n.m[0][3]+m.m[2][1]*n.m[1][3]+m.m[2][2]*n.m[2][3]+m.m[2][3]*n.m[3][3],
+      m.m[3][0]*n.m[0][0]+m.m[3][1]*n.m[1][0]+m.m[3][2]*n.m[2][0]+m.m[3][3]*n.m[3][0],
+      m.m[3][0]*n.m[0][1]+m.m[3][1]*n.m[1][1]+m.m[3][2]*n.m[2][1]+m.m[3][3]*n.m[3][1],
+      m.m[3][0]*n.m[0][2]+m.m[3][1]*n.m[1][2]+m.m[3][2]*n.m[2][2]+m.m[3][3]*n.m[3][2],
+      m.m[3][0]*n.m[0][3]+m.m[3][1]*n.m[1][3]+m.m[3][2]*n.m[2][3]+m.m[3][3]*n.m[3][3]
+    );
+  }
+  friend QapMat4 operator*(const QapMat4&m,float x){
+    QapMat4 O;
+    for(int i=0;i<4;i++)for(int j=0;j<4;j++)O.m[i][j]=x*m.m[i][j];
+    return O;
+  }
+};
+inline QapMat4 Transpose(const QapMat4&m){
+  return QapMat4(
+    m.m[0][0],m.m[1][0],m.m[2][0],m.m[3][0],
+    m.m[0][1],m.m[1][1],m.m[2][1],m.m[3][1],
+    m.m[0][2],m.m[1][2],m.m[2][2],m.m[3][2],
+    m.m[0][3],m.m[1][3],m.m[2][3],m.m[3][3]
+  );
+}
+inline QapMat4 RotateZ(float angle){
+  float c=cosf(angle),s=sinf(angle);
+  return QapMat4(
+    +c,+s,+0,+0,
+    -s,+c,+0,+0,
+    +0,+0,+1,+0,
+    +0,+0,+0,+1
+  );
+}
+inline QapMat4 Translate(float x,float y,float z){
+  return QapMat4(
+    1,0,0,0,
+    0,1,0,0,
+    0,0,1,0,
+    x,y,z,1
+  );
+}
+inline QapMat4 Scale(float x,float y,float z){
+  return QapMat4(
+    x,0,0,0,
+    0,y,0,0,
+    0,0,z,0,
+    0,0,0,1
+  );
+}
+inline QapMat4 Identity4(){
+  return QapMat4(
+    1,0,0,0,
+    0,1,0,0,
+    0,0,1,0,
+    0,0,0,1
+  );
+}
+
+
+class QapD3DPresentParameters{
+public:
+  typedef QapD3DPresentParameters SelfClass;
+  D3DPRESENT_PARAMETERS pp;
+  void DoReset(){pp=Zero(pp);}
+  QapD3DPresentParameters(const QapD3DPresentParameters&){QapDebugMsg("QapD3DPresentParameters is noncopyable");DoReset();}
+  QapD3DPresentParameters(){DoReset();}
+  template<class TYPE> static TYPE&Zero(TYPE&inout){ZeroMemory(&inout,sizeof(inout)); return inout;}
+  D3DPRESENT_PARAMETERS&SetToDef(HWND hWnd,bool VSync=true){
+    Zero(pp);
+    TScreenMode SM=GetScreenMode();
+    pp.BackBufferWidth=SM.W; pp.BackBufferHeight=SM.H; pp.BackBufferFormat=D3DFMT_X8R8G8B8; pp.BackBufferCount=1;
+    pp.SwapEffect=D3DSWAPEFFECT_COPY;
+    pp.PresentationInterval=VSync?D3DPRESENT_INTERVAL_ONE:D3DPRESENT_INTERVAL_IMMEDIATE;
+    pp.hDeviceWindow=hWnd; pp.Windowed=true;
+    pp.FullScreen_RefreshRateInHz=pp.Windowed?0:SM.Freq;
+    return pp;
+  }
+};
+
+class QapD3D9{
+public:
+  typedef QapD3D9 SelfClass;
+  IDirect3D9* pD3D;
+  void DoReset(){pD3D=nullptr;}
+  QapD3D9(const QapD3D9&){QapDebugMsg("QapD3D9 is noncopyable");DoReset();}
+  QapD3D9(){DoReset();}
+  QapD3D9(QapD3D9&&Ref){DoReset(); oper_set(std::move(Ref));}
+  ~QapD3D9(){Free();}
+  void oper_set(QapD3D9&&Ref){Free(); this->pD3D=Ref.pD3D; Ref.pD3D=nullptr;}
+  void operator=(QapD3D9&&Ref){oper_set(std::move(Ref));}
+  void Init(){
+    Free();
+    pD3D=Direct3DCreate9(D3D_SDK_VERSION);
+    if(!pD3D)QapDebugMsg("Cannot create Direct3D9");
+  }
+  void Free(){if(pD3D)pD3D->Release();}
+};
+
+class QapD3D9Resource{
+public:
+  virtual void OnLost()=0;
+  virtual void OnReset()=0;
+};
+
+class QapD3D9ResourceList{
+public:
+  typedef QapD3D9ResourceList SelfClass;
+  vector<QapD3D9Resource*> Arr;
+  bool Lost;
+  void DoReset(){Arr=vector<QapD3D9Resource*>(); Lost=false;}
+  QapD3D9ResourceList(const QapD3D9ResourceList&){QapDebugMsg("QapD3D9ResourceList is noncopyable");DoReset();}
+  QapD3D9ResourceList(){DoReset();}
+  QapD3D9ResourceList(QapD3D9ResourceList&&Ref){DoReset(); oper_set(std::move(Ref));}
+  ~QapD3D9ResourceList(){Free();}
+  void oper_set(QapD3D9ResourceList&&Ref){
+    Free();
+    this->Arr=std::move(Ref.Arr);
+    this->Lost=std::move(Ref.Lost);
+  }
+  void operator=(QapD3D9ResourceList&&Ref){oper_set(std::move(Ref));}
+  void Free(){Lost=false; QapAssert(Arr.empty());}
+  void OnLost(){Lost=true; for(int i=0;i<Arr.size();i++)Arr[i]->OnLost();}
+  void OnReset(){Lost=false; for(int i=0;i<Arr.size();i++)Arr[i]->OnReset();}
+  bool HasRes(QapD3D9Resource*pRes,int*pIndex=nullptr){
+    for(int i=0;i<Arr.size();i++)if(Arr[i]==pRes){if(pIndex)*pIndex=i;return true;}
+    if(pIndex)*pIndex=-1; return false;
+  }
+  void Reg(QapD3D9Resource*pRes){QapAssert(bool(pRes)); QapAssert(!HasRes(pRes)); Arr.push_back(pRes);}
+  void UnReg(QapD3D9Resource*pRes){
+    int i=-1; bool flag=HasRes(pRes,&i);
+    if(!flag){QapAssert(flag); return;}
+    std::swap(Arr[i],Arr.back()); Arr.pop_back();
+  }
+};
+
+class QapD3DDev9{
+public:
+  typedef QapD3DDev9 SelfClass;
+  QapD3DPresentParameters PresParams;
+  IDirect3DDevice9* pDev;
+  QapD3D9ResourceList Resources;
+  bool DrawPass;
+  void DoReset(){PresParams=QapD3DPresentParameters(); pDev=nullptr; Resources=QapD3D9ResourceList(); DrawPass=false;}
+  QapD3DDev9(const QapD3DDev9&){QapDebugMsg("QapD3DDev9 is noncopyable");DoReset();}
+  QapD3DDev9(){DoReset();}
+  QapD3DDev9(QapD3DDev9&&Ref){DoReset(); oper_set(std::move(Ref));}
+  ~QapD3DDev9(){Free();}
+  void oper_set(QapD3DDev9&&Ref){
+    Free();
+    this->PresParams=std::move(Ref.PresParams);
+    this->pDev=std::move(Ref.pDev); Ref.pDev=nullptr;
+    this->Resources=std::move(Ref.Resources);
+  }
+  void operator=(QapD3DDev9&&Ref){oper_set(std::move(Ref));}
+  void Init(HWND hWnd,QapD3D9&D3D){
+    QapAssert(D3D.pD3D); Free();
+    D3D.pD3D->CreateDevice(D3DADAPTER_DEFAULT,D3DDEVTYPE_HAL,hWnd,D3DCREATE_SOFTWARE_VERTEXPROCESSING,&PresParams.pp,&pDev);
+    if(!pDev)QapDebugMsg("Cannot create Direct3DDevice9");
+  }
+  void Free(){if(pDev)pDev->Release();}
+  void ResetStates(){
+    pDev->SetRenderState(D3DRS_LIGHTING,false);
+    pDev->SetRenderState(D3DRS_ZENABLE,false);
+    pDev->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE);
+    pDev->SetSamplerState(0,D3DSAMP_MAGFILTER,D3DTEXF_LINEAR);
+    pDev->SetSamplerState(0,D3DSAMP_MINFILTER,D3DTEXF_LINEAR);
+    pDev->SetSamplerState(0,D3DSAMP_ADDRESSU,D3DTADDRESS_WRAP);
+    pDev->SetSamplerState(0,D3DSAMP_ADDRESSV,D3DTADDRESS_WRAP);
+    pDev->SetSamplerState(0,D3DSAMP_MIPFILTER,D3DTEXF_LINEAR);
+  }
+  bool BeginScene(){
+    if(Resources.Lost){EndScene(); return false;}
+    pDev->BeginScene();
+    DrawPass=true;
+    ResetStates();
+    return true;
+  }
+  bool EndScene(){
+    DrawPass=false;
+    if(Resources.Lost){
+      HRESULT hr=pDev->TestCooperativeLevel();
+      if(hr!=D3DERR_DEVICENOTRESET)return false;
+      pDev->Reset(&PresParams.pp);
+      Resources.OnReset();
+      return false;
+    }
+    pDev->EndScene();
+    return !Resources.Lost;
+  }
+  bool Present(const RECT*pSource=nullptr,const RECT*pDest=nullptr){
+    if(!Resources.Lost){
+      Resources.Lost=D3DERR_DEVICELOST==pDev->Present(pSource,pDest,NULL,NULL);
+      if(Resources.Lost)Resources.OnLost();
+    }
+    return !Resources.Lost;
+  }
+  enum BlendType{BT_NONE,BT_SUB,BT_ADD};
+  enum AlphaType{AM_NONE,AM_GEQUAL_ONE,AM_NEQUAL_MAX};
+  void Blend(BlendType Mode){
+    pDev->SetRenderState(D3DRS_ALPHABLENDENABLE,Mode!=BT_NONE);
+    if(Mode==BT_NONE)return;
+    if(Mode==BT_SUB){
+      pDev->SetTextureStageState(0,D3DTSS_TEXCOORDINDEX,0);
+      pDev->SetTextureStageState(0,D3DTSS_COLOROP,D3DTOP_MODULATE);
+      pDev->SetTextureStageState(0,D3DTSS_COLORARG1,D3DTA_TEXTURE);
+      pDev->SetTextureStageState(0,D3DTSS_COLORARG2,D3DTA_DIFFUSE);
+      pDev->SetTextureStageState(0,D3DTSS_ALPHAOP,D3DTOP_MODULATE);
+      pDev->SetTextureStageState(0,D3DTSS_ALPHAARG1,D3DTA_TEXTURE);
+      pDev->SetTextureStageState(0,D3DTSS_ALPHAARG2,D3DTA_DIFFUSE);
+      pDev->SetRenderState(D3DRS_BLENDOP,D3DBLENDOP_ADD);
+      pDev->SetRenderState(D3DRS_DESTBLEND,D3DBLEND_INVSRCALPHA);
+      pDev->SetRenderState(D3DRS_SRCBLEND,D3DBLEND_SRCALPHA);
+      return;
+    }
+    if(Mode==BT_ADD){
+      pDev->SetRenderState(D3DRS_SRCBLEND,D3DBLEND_SRCALPHA);
+      pDev->SetRenderState(D3DRS_DESTBLEND,D3DBLEND_ONE);
+      return;
+    }
+  }
+  void Alpha(AlphaType Mode){
+    pDev->SetRenderState(D3DRS_ALPHATESTENABLE,Mode!=AM_NONE);
+    if(Mode==AM_NONE)return;
+    if(Mode==AM_GEQUAL_ONE){
+      pDev->SetRenderState(D3DRS_ALPHAFUNC,D3DCMP_GREATEREQUAL);
+      pDev->SetRenderState(D3DRS_ALPHAREF,1);
+      return;
+    }
+    if(Mode==AM_NEQUAL_MAX){
+      pDev->SetRenderState(D3DRS_ALPHAFUNC,D3DCMP_NOTEQUAL);
+      pDev->SetRenderState(D3DRS_ALPHAREF,255);
+      return;
+    }
+  }
+  static void OrthoLH(D3DMATRIX&out,float w,float h,float zn,float zf){
+    QapMat4 mat=QapMat4(
+      2.0/w,0,0,0,
+      0,2.0/h,0,0,
+      0,0,1/(zf-zn),0,
+      0,0,-zn/(zf-zn),1
+    );
+    out=mat*Identity4();
+  }
+  void Set2D(vec2d CamPos=vec2d(0.0,0.0),real zoom=1.0,real ang=0.0,vec2i*pSize=nullptr){
+    auto&pp=PresParams.pp;
+    vec2i v=pSize?*pSize:vec2i(pp.BackBufferWidth,pp.BackBufferHeight);
+    QapMat4 matProj(Identity4()), matView(Identity4());
+    if((v.x%2)||(v.y%2)){
+      if(v.x%2)CamPos.x+=0.5f;
+      if(v.y%2)CamPos.y+=0.5f;
+    }
+    QapMat4 matWorld(Translate(-CamPos.x,-CamPos.y,0)*Scale(zoom,zoom,1.0)*RotateZ(ang));
+    OrthoLH(matProj,float(v.x),float(v.y),-1.0,1.0);
+    pDev->SetTransform(D3DTS_PROJECTION,&matProj);
+    pDev->SetTransform(D3DTS_VIEW,&matView);
+    pDev->SetTransform(D3DTS_WORLD,&matWorld);
+  }
+  void Clear2D(const QapColor&Color){pDev->Clear(0,NULL,D3DCLEAR_TARGET,Color,1.0f,0);}
+};
+#endif
+class QapKeyboard
+{
+public:
+  struct TKeyState
+  {
+    static const int MAX_KEY=263;
+    bool data[MAX_KEY];
+    TKeyState(){SetToDef();}
+    void SetToDef(){for(int i=0;i<MAX_KEY;i++)data[i]=false;}
+    bool&operator[](int index){
+      if(!InDip<int>(0,index,MAX_KEY-1)){QapDebugMsg("bad index");static bool tmp;return tmp;}
+      return data[index];
+    }
+    bool&operator()(int index){return (*this)[index];}
+    const bool&operator()(int index)const{
+      if(!InDip<int>(0,index,MAX_KEY-1)){QapDebugMsg("bad index");static bool tmp;return tmp;}
+      return data[index];
+    }
+    const bool&operator[](int index)const{
+      if(!InDip<int>(0,index,MAX_KEY-1)){QapDebugMsg("bad index");static bool tmp;return tmp;}
+      return data[index];
+    }
+  };
+public:
+  typedef QapKeyboard SelfClass;
+public:
+  #define DEF_PRO_TEMPLATE_DATAIO()
+  #define DEF_PRO_CLASSNAME()QapKeyboard
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(int,LastKey,0)\
+  ADD(char,LastChar,0)\
+  ADD(bool,News,false)\
+  ADD(TKeyState,Down,{})\
+  ADD(TKeyState,Changed,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+public:
+  vec2d MousePos;
+public:
+  void KeyUpdate(int Key, bool Value) {
+    if (Value) LastKey = Key;
+    Down[Key] = Value;
+    Changed[Key] = true;
+  }
+  void CharUpdate(char c) { LastChar = c; News = true; }
+  void Sync() { News = false; Changed.SetToDef(); }
+  bool OnDown(int index) const { return Changed[index] && Down[index]; }
+  bool OnUp(int index) const { return Changed[index] && !Down[index]; }
+  vec2d get_dir_from_wasd_and_arrows() const {
+    vec2d dp{};
+    auto dir_x = vec2d(1, 0), dir_y = vec2d(0, 1);
+    #define F(dir,k1,k2) if (Down[k1] || Down[k2]) { dp += dir; }
+    F(-dir_x, VK_LEFT, 'A');
+    F(+dir_x, VK_RIGHT, 'D');
+    F(+dir_y, VK_UP, 'W');
+    F(-dir_y, VK_DOWN, 'S');
+    #undef F
+    return dp;
+  }
+};
+QapKeyboard*kb_v2,*kb_v3;
+#ifdef _WIN32
+class GlobalEnv{
+public:
+  HINSTANCE hInstance, hPrevInstance;
+  LPSTR lpCmdLine;
+  int nCmdShow;
+  GlobalEnv(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow)
+    :hInstance(hInstance),hPrevInstance(hPrevInstance),lpCmdLine(lpCmdLine),nCmdShow(nCmdShow)
+  { GlobalEnv::Get(this); }
+  static const GlobalEnv&Get(GlobalEnv*ptr=nullptr){
+    static GlobalEnv*pGE=nullptr;
+    if(!pGE)std::swap(pGE,ptr);
+    QapAssert(pGE&&!ptr);
+    return *pGE;
+  }
+private:
+  GlobalEnv(const GlobalEnv&);
+  void operator=(const GlobalEnv&);
+};
+class TD3DGameBox{
+public:
+  class TForm{
+  public:
+    class WndClassPair{
+    public:
+      WNDPROC Proc; HWND hWnd; int ID; bool Used;
+      WndClassPair():Proc(nullptr),hWnd(nullptr),ID(0),Used(false){}
+      WndClassPair(WNDPROC Proc,HWND hWnd,int ID,bool Used):Proc(Proc),hWnd(hWnd),ID(ID),Used(Used){}
+      void Init(TForm*Owner){
+        WndProcHeap::Get().Load(*this);
+        QapAssert(!Used); QapAssert(!hWnd); Used=true;
+        Proc((HWND)Owner,WMU_INIT,0,0);
+      }
+      void Free(TForm*Owner){
+        QapAssert(!hWnd); QapAssert(Used); Used=false;
+        Proc((HWND)Owner,WMU_FREE,0,0);
+        WndProcHeap::Get().Save(*this);
+      }
+    };
+    class WndProcHeap{
+    public:
+      vector<WndClassPair> Arr;
+      void Load(WndClassPair&WinPair){QapAssert(!Arr.empty()); WndClassPair&WCP=Arr.back(); WinPair=std::move(WCP); Arr.pop_back();}
+      void Save(WndClassPair&WinPair){Arr.push_back(std::move(WinPair));}
+      static WndProcHeap&Get(){
+        static WndProcHeap Heap; static bool flag=false;
+        if(!flag){
+          vector<WndClassPair>&Arr=Heap.Arr;
+          {WndClassPair tmp(WndProc<0>,nullptr,0,false); Arr.push_back(tmp);}
+          {WndClassPair tmp(WndProc<1>,nullptr,1,false); Arr.push_back(tmp);}
+          flag=true;
+        }
+        return Heap;
+      }
+    };
+    typedef TD3DGameBox OwnerClass;
+    typedef TForm SelfClass;
+    TD3DGameBox*Owner;
+    ATOM ClassAtom;
+    string ClassName;
+    WndClassPair WinPair;
+    void DoReset(){Owner=nullptr; ClassAtom=0; ClassName=""; WinPair=WndClassPair();}
+    TForm(const TForm&){QapDebugMsg("TForm is noncopyable");DoReset();}
+    TForm(){DoReset();}
+    ~TForm(){if(WinPair.hWnd)Free();}
+    void operator=(TD3DGameBox*Owner){this->Owner=Owner;}
+    void Init(const string&name){
+      WinPair.hWnd=nullptr;
+      auto tmp=CreateWindowA((LPCSTR)ClassAtom,name.c_str(),WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,0,0,320,240,NULL,NULL,GlobalEnv::Get().hInstance,NULL);
+      WinPair.hWnd=tmp; QapAssert(tmp);
+    }
+    void Free(){QapAssert(DestroyWindow(WinPair.hWnd)); WinPair.hWnd=nullptr;}
+    void Reg(){
+      WinPair.Init(this);
+      ClassName="TD3DGameBox_"+IToS(WinPair.ID);
+      WNDCLASSEX wcx; ZeroMemory(&wcx,sizeof(wcx));
+      wcx.cbSize=sizeof(wcx); wcx.hInstance=GlobalEnv::Get().hInstance;
+      wcx.hIcon=LoadIcon(0,IDI_ASTERISK); wcx.hIconSm=wcx.hIcon;
+      wcx.hCursor=LoadCursor(0,IDC_ARROW);
+      wcx.hbrBackground=(HBRUSH)GetStockObject(NULL_BRUSH);
+      wcx.style=0;
+      wcx.lpfnWndProc=WinPair.Proc;
+      wcx.lpszClassName=ClassName.c_str();
+      ClassAtom=RegisterClassExA(&wcx);
+    }
+    bool UnReg(){
+      WinPair.Free(this);
+      bool flag=UnregisterClassA((LPCSTR)ClassAtom,GlobalEnv::Get().hInstance);
+      ClassAtom=0; ClassName.clear();
+      return flag;
+    }
+    static const UINT WMU_INIT=WM_USER+1234;
+    static const UINT WMU_FREE=WM_USER+4321;
+    template<int Index>
+    static LRESULT CALLBACK WndProc(HWND hWnd,UINT msg,WPARAM wParam,LPARAM lParam){
+      if(msg==WM_INPUTLANGCHANGEREQUEST) return DefWindowProcA(hWnd,msg,wParam,lParam);
+      if(msg==WM_INPUTLANGCHANGE) return DefWindowProcA(hWnd,msg,wParam,lParam);
+      if(msg==WM_WINDOWPOSCHANGING){static bool flag=true; if(flag)return 0;}
+      static TForm*pForm=nullptr;
+      if(!pForm){QapAssert(WMU_INIT==msg); pForm=(TForm*)hWnd; return 0;}
+      if(WMU_FREE==msg){QapAssert(pForm); QapAssert(pForm->Owner); QapAssert(hWnd==((HWND)pForm)); pForm=nullptr; return 0;}
+      QapAssert(pForm); QapAssert(pForm->Owner);
+      long UD=GetWindowLongA(hWnd,GWL_USERDATA);
+      if(!UD){SetWindowLong(hWnd,GWL_USERDATA,(long)pForm);}
+      else{long pF=(long)pForm; QapAssert(pF==UD);}
+      if(msg==WM_WINDOWPOSCHANGING){QapAssert("WTF?"); return 0;}
+      auto result=pForm->Owner->WndProc(hWnd,msg,wParam,lParam);
+      return result;
+    }
+  };
+  typedef TD3DGameBox SelfClass;
+  string Caption;
+  bool NeedClose,Runned,Visible,FullScreen;
+  TQuad Quad;
+  TForm Form;
+  TForm&win=Form;
+  QapKeyboard Keyboard;
+  int zDelta;
+  vec2i mpos;
+  void DoReset(){
+    Caption="TD3DGameBox"; NeedClose=false; Runned=false; Visible=true; FullScreen=true;
+    detail::FieldTryDoReset(Quad); Form=this; detail::FieldTryDoReset(Keyboard); zDelta=0; detail::FieldTryDoReset(mpos);
+  }
+  TD3DGameBox(const TD3DGameBox&){QapDebugMsg("TD3DGameBox is noncopyable");DoReset();}
+  TD3DGameBox(){DoReset();}
+  TD3DGameBox(TD3DGameBox&&_Right){operator=(std::move(_Right));}
+  void operator=(TD3DGameBox&&_Right){
+    if(&_Right==this)return;
+    Caption=std::move(_Right.Caption); NeedClose=std::move(_Right.NeedClose); Runned=std::move(_Right.Runned);
+    Visible=std::move(_Right.Visible); FullScreen=std::move(_Right.FullScreen); Quad=std::move(_Right.Quad);
+    Form=std::move(_Right.Form); Keyboard=std::move(_Right.Keyboard); zDelta=std::move(_Right.zDelta); mpos=std::move(_Right.mpos);
+  }
+  bool IsWindow(){return Form.WinPair.hWnd;}
+  void Init(const string&name){if(IsWindow())return; Form.Reg(); Form.Init(name); UpdateWnd(); Runned=true;}
+  void UpdateWnd(){HWND&hWnd=Form.WinPair.hWnd; SetWindowTextA(hWnd,Caption.c_str());}
+  void WindowMode(){
+    HWND&hWnd=Form.WinPair.hWnd; TScreenMode SM=GetScreenMode();
+    DWORD Style=true?WS_OVERLAPPED:WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN;
+    SetWindowLong(hWnd,GWL_STYLE,Style);
+    RECT Rect=Quad.GetWinRect(); AdjustWindowRect(&Rect,Style,false);
+    SetWindowPos(hWnd,0,Quad.x,Quad.y,Quad.w,Quad.h,SWP_FRAMECHANGED|SWP_NOOWNERZORDER);
+    ShowWindow(hWnd,SW_MAXIMIZE); ShowWindow(hWnd,Visible?SW_SHOW:SW_HIDE);
+  }
+  ~TD3DGameBox(){Free();}
+  void Free(){
+    if(!IsWindow())return;
+    Runned=false; Form.Free(); Form.UnReg(); NeedClose=false;
+  }
+  struct PROCESSOR_POWER_INFORMATION{
+    ULONG Number=0,MaxMhz=0,CurrentMhz=0,MhzLimit=0,MaxIdleState=0,CurrentIdleState=0;
+  };
+  struct t_tsc{
+    int64_t tscv=0; uint32_t tsca=0;
+    void main(){tscv=__rdtscp(&tsca);}
+    string toStr()const{return std::to_string(tscv)+" "+std::to_string(tsca);}
+    static t_tsc get(){t_tsc out; MemoryBarrier(); out.main(); return out;}
+  };
+  struct qpc_stamp{
+    int64_t f,c,tscv; uint32_t tsca;
+    void load(){QueryPerformanceFrequency((LARGE_INTEGER*)&f); QueryPerformanceCounter((LARGE_INTEGER*)&c); MemoryBarrier(); tscv=__rdtscp(&tsca);}
+    static string FToS1(const real&val){char c[64];sprintf_s(c,"%.1f",val);return string(c);}
+    static string get(){qpc_stamp q;q.load();return q.to_str();}
+    string to_str()const{
+      auto&q=*this; static auto base_qc=q.c-60*10000000ll; static auto base_tscv=q.tscv-60*2400000000ll;
+      #define F std::to_string
+      return "("+FToS1(double(q.c-base_qc)*(1e6)/q.f)+"us"+","+F(q.tscv-base_tscv)+","+F(q.tsca)+")";
+      #undef F
+    }
+  };
+struct t_cool_msg{
+    string t;
+    string name;
+    int x,y;
+    MSG msg;
+    //static string id2str(int id){
+    //  static vector<string> arr;
+    //  if(arr.empty())arr.resize(9000);
+    //  if(!qap_check_id(arr,id))return id2str_impl(id);
+    //  auto&s=arr[id];
+    //  if(s.empty())s=id2str_impl(id);
+    //  return s;
+    //}
+    static string id2str(int id){
+      auto*p=id2str_impl_v2(id);
+      return p?p:"unk("+std::to_string(id)+")";
+    }
+    static const char*id2str_impl_v2(int id){
+      #define F(A,B)case A:return #B;
+      switch(id)
+      {
+        F(0,WM_NULL)
+        F(1,WM_CREATE)
+        F(2,WM_DESTROY)
+        F(3,WM_MOVE)
+        F(5,WM_SIZE)
+        F(6,WM_ACTIVATE)
+        F(7,WM_SETFOCUS)
+        F(8,WM_KILLFOCUS)
+        F(10,WM_ENABLE)
+        F(11,WM_SETREDRAW)
+        F(12,WM_SETTEXT)
+        F(13,WM_GETTEXT)
+        F(14,WM_GETTEXTLENGTH)
+        F(15,WM_PAINT)
+        F(16,WM_CLOSE)
+        F(17,WM_QUERYENDSESSION)
+        F(18,WM_QUIT)
+        F(19,WM_QUERYOPEN)
+        F(20,WM_ERASEBKGND)
+        F(21,WM_SYSCOLORCHANGE)
+        F(22,WM_ENDSESSION)
+        F(24,WM_SHOWWINDOW)
+        F(26,WM_WININICHANGE)
+        F(27,WM_DEVMODECHANGE)
+        F(28,WM_ACTIVATEAPP)
+        F(29,WM_FONTCHANGE)
+        F(30,WM_TIMECHANGE)
+        F(31,WM_CANCELMODE)
+        F(32,WM_SETCURSOR)
+        F(33,WM_MOUSEACTIVATE)
+        F(34,WM_CHILDACTIVATE)
+        F(35,WM_QUEUESYNC)
+        F(36,WM_GETMINMAXINFO)
+        F(38,WM_PAINTICON)
+        F(39,WM_ICONERASEBKGND)
+        F(40,WM_NEXTDLGCTL)
+        F(42,WM_SPOOLERSTATUS)
+        F(43,WM_DRAWITEM)
+        F(44,WM_MEASUREITEM)
+        F(45,WM_DELETEITEM)
+        F(46,WM_VKEYTOITEM)
+        F(47,WM_CHARTOITEM)
+        F(48,WM_SETFONT)
+        F(49,WM_GETFONT)
+        F(50,WM_SETHOTKEY)
+        F(51,WM_GETHOTKEY)
+        F(55,WM_QUERYDRAGICON)
+        F(57,WM_COMPAREITEM)
+        F(61,WM_GETOBJECT)
+        F(65,WM_COMPACTING)
+        F(68,WM_COMMNOTIFY)
+        F(70,WM_WINDOWPOSCHANGING)
+        F(71,WM_WINDOWPOSCHANGED)
+        F(72,WM_POWER)
+        F(74,WM_COPYDATA)
+        F(75,WM_CANCELJOURNAL)
+        F(78,WM_NOTIFY)
+        F(80,WM_INPUTLANGCHANGEREQUEST)
+        F(81,WM_INPUTLANGCHANGE)
+        F(82,WM_TCARD)
+        F(83,WM_HELP)
+        F(84,WM_USERCHANGED)
+        F(85,WM_NOTIFYFORMAT)
+        F(123,WM_CONTEXTMENU)
+        F(124,WM_STYLECHANGING)
+        F(125,WM_STYLECHANGED)
+        F(126,WM_DISPLAYCHANGE)
+        F(127,WM_GETICON)
+        F(128,WM_SETICON)
+        F(129,WM_NCCREATE)
+        F(130,WM_NCDESTROY)
+        F(131,WM_NCCALCSIZE)
+        F(132,WM_NCHITTEST)
+        F(133,WM_NCPAINT)
+        F(134,WM_NCACTIVATE)
+        F(135,WM_GETDLGCODE)
+        F(136,WM_SYNCPAINT)
+        F(160,WM_NCMOUSEMOVE)
+        F(161,WM_NCLBUTTONDOWN)
+        F(162,WM_NCLBUTTONUP)
+        F(163,WM_NCLBUTTONDBLCLK)
+        F(164,WM_NCRBUTTONDOWN)
+        F(165,WM_NCRBUTTONUP)
+        F(166,WM_NCRBUTTONDBLCLK)
+        F(167,WM_NCMBUTTONDOWN)
+        F(168,WM_NCMBUTTONUP)
+        F(169,WM_NCMBUTTONDBLCLK)
+        F(171,WM_NCXBUTTONDOWN)
+        F(172,WM_NCXBUTTONUP)
+        F(173,WM_NCXBUTTONDBLCLK)
+        F(176,EM_GETSEL)
+        F(177,EM_SETSEL)
+        F(178,EM_GETRECT)
+        F(179,EM_SETRECT)
+        F(180,EM_SETRECTNP)
+        F(181,EM_SCROLL)
+        F(182,EM_LINESCROLL)
+        F(183,EM_SCROLLCARET)
+        F(185,EM_GETMODIFY)
+        F(187,EM_SETMODIFY)
+        F(188,EM_GETLINECOUNT)
+        F(189,EM_LINEINDEX)
+        F(190,EM_SETHANDLE)
+        F(191,EM_GETHANDLE)
+        F(192,EM_GETTHUMB)
+        F(193,EM_LINELENGTH)
+        F(194,EM_REPLACESEL)
+        F(196,EM_GETLINE)
+        F(197,(EM_LIMITTEXT,EM_SETLIMITTEXT))
+        F(198,EM_CANUNDO)
+        F(199,EM_UNDO)
+        F(200,EM_FMTLINES)
+        F(201,EM_LINEFROMCHAR)
+        F(203,EM_SETTABSTOPS)
+        F(204,EM_SETPASSWORDCHAR)
+        F(205,EM_EMPTYUNDOBUFFER)
+        F(206,EM_GETFIRSTVISIBLELINE)
+        F(207,EM_SETREADONLY)
+        F(209,(EM_SETWORDBREAKPROC,EM_GETWORDBREAKPROC))
+        F(210,EM_GETPASSWORDCHAR)
+        F(211,EM_SETMARGINS)
+        F(212,EM_GETMARGINS)
+        F(213,EM_GETLIMITTEXT)
+        F(214,EM_POSFROMCHAR)
+        F(215,EM_CHARFROMPOS)
+        F(216,EM_SETIMESTATUS)
+        F(217,EM_GETIMESTATUS)
+        F(224,SBM_SETPOS)
+        F(225,SBM_GETPOS)
+        F(226,SBM_SETRANGE)
+        F(227,SBM_GETRANGE)
+        F(228,SBM_ENABLE_ARROWS)
+        F(230,SBM_SETRANGEREDRAW)
+        F(233,SBM_SETSCROLLINFO)
+        F(234,SBM_GETSCROLLINFO)
+        F(235,SBM_GETSCROLLBARINFO)
+        F(240,BM_GETCHECK)
+        F(241,BM_SETCHECK)
+        F(242,BM_GETSTATE)
+        F(243,BM_SETSTATE)
+        F(244,BM_SETSTYLE)
+        F(245,BM_CLICK)
+        F(246,BM_GETIMAGE)
+        F(247,BM_SETIMAGE)
+        F(248,BM_SETDONTCLICK)
+        F(255,WM_INPUT)
+        F(256,WM_KEYDOWN)
+        F(257,WM_KEYUP)
+        F(258,WM_CHAR)
+        F(259,WM_DEADCHAR)
+        F(260,WM_SYSKEYDOWN)
+        F(261,WM_SYSKEYUP)
+        F(262,WM_SYSCHAR)
+        F(263,WM_SYSDEADCHAR)
+        F(265,(WM_UNICHAR))
+        F(269,WM_IME_STARTCOMPOSITION)
+        F(270,WM_IME_ENDCOMPOSITION)
+        F(271,WM_IME_COMPOSITION)
+        F(272,WM_INITDIALOG)
+        F(273,WM_COMMAND)
+        F(274,WM_SYSCOMMAND)
+        F(275,WM_TIMER)
+        F(276,WM_HSCROLL)
+        F(277,WM_VSCROLL)
+        F(278,WM_INITMENU)
+        F(279,WM_INITMENUPOPUP)
+        F(287,WM_MENUSELECT)
+        F(288,WM_MENUCHAR)
+        F(289,WM_ENTERIDLE)
+        F(290,WM_MENURBUTTONUP)
+        F(291,WM_MENUDRAG)
+        F(292,WM_MENUGETOBJECT)
+        F(293,WM_UNINITMENUPOPUP)
+        F(294,WM_MENUCOMMAND)
+        F(295,WM_CHANGEUISTATE)
+        F(296,WM_UPDATEUISTATE)
+        F(297,WM_QUERYUISTATE)
+        F(306,WM_CTLCOLORMSGBOX)
+        F(307,WM_CTLCOLOREDIT)
+        F(308,WM_CTLCOLORLISTBOX)
+        F(309,WM_CTLCOLORBTN)
+        F(310,WM_CTLCOLORDLG)
+        F(311,WM_CTLCOLORSCROLLBAR)
+        F(312,WM_CTLCOLORSTATIC)
+        F(512,WM_MOUSEMOVE)
+        F(513,WM_LBUTTONDOWN)
+        F(514,WM_LBUTTONUP)
+        F(515,WM_LBUTTONDBLCLK)
+        F(516,WM_RBUTTONDOWN)
+        F(517,WM_RBUTTONUP)
+        F(518,WM_RBUTTONDBLCLK)
+        F(519,WM_MBUTTONDOWN)
+        F(520,WM_MBUTTONUP)
+        F(521,WM_MBUTTONDBLCLK)
+        F(522,WM_MOUSEWHEEL)
+        F(523,WM_XBUTTONDOWN)
+        F(524,WM_XBUTTONUP)
+        F(525,WM_XBUTTONDBLCLK)
+        F(526,WM_MOUSEHWHEEL)
+        F(528,WM_PARENTNOTIFY)
+        F(529,WM_ENTERMENULOOP)
+        F(530,WM_EXITMENULOOP)
+        F(531,WM_NEXTMENU)
+        F(532,WM_SIZING)
+        F(533,WM_CAPTURECHANGED)
+        F(534,WM_MOVING)
+        F(536,WM_POWERBROADCAST)
+        F(537,WM_DEVICECHANGE)
+        F(544,WM_MDICREATE)
+        F(545,WM_MDIDESTROY)
+        F(546,WM_MDIACTIVATE)
+        F(547,WM_MDIRESTORE)
+        F(548,WM_MDINEXT)
+        F(549,WM_MDIMAXIMIZE)
+        F(550,WM_MDITILE)
+        F(551,WM_MDICASCADE)
+        F(552,WM_MDIICONARRANGE)
+        F(553,WM_MDIGETACTIVE)
+        F(560,WM_MDISETMENU)
+        F(561,WM_ENTERSIZEMOVE)
+        F(562,WM_EXITSIZEMOVE)
+        F(563,WM_DROPFILES)
+        F(564,WM_MDIREFRESHMENU)
+        F(641,WM_IME_SETCONTEXT)
+        F(642,WM_IME_NOTIFY)
+        F(643,WM_IME_CONTROL)
+        F(644,WM_IME_COMPOSITIONFULL)
+        F(645,WM_IME_SELECT)
+        F(646,WM_IME_CHAR)
+        F(648,WM_IME_REQUEST)
+        F(656,(WM_IME_KEYDOWN))
+        F(657,(WM_IME_KEYUP))
+        F(672,WM_NCMOUSEHOVER)
+        F(673,WM_MOUSEHOVER)
+        F(674,WM_NCMOUSELEAVE)
+        F(675,WM_MOUSELEAVE)
+        F(768,WM_CUT)
+        F(769,WM_COPY)
+        F(770,WM_PASTE)
+        F(771,WM_CLEAR)
+        F(772,WM_UNDO)
+        F(773,WM_RENDERFORMAT)
+        F(774,WM_RENDERALLFORMATS)
+        F(775,WM_DESTROYCLIPBOARD)
+        F(776,WM_DRAWCLIPBOARD)
+        F(777,WM_PAINTCLIPBOARD)
+        F(778,WM_VSCROLLCLIPBOARD)
+        F(779,WM_SIZECLIPBOARD)
+        F(780,WM_ASKCBFORMATNAME)
+        F(781,WM_CHANGECBCHAIN)
+        F(782,WM_HSCROLLCLIPBOARD)
+        F(783,WM_QUERYNEWPALETTE)
+        F(784,WM_PALETTEISCHANGING)
+        F(785,WM_PALETTECHANGED)
+        F(786,WM_HOTKEY)
+        F(791,WM_PRINT)
+        F(792,WM_PRINTCLIENT)
+        F(793,WM_APPCOMMAND)
+        F(856,WM_HANDHELDFIRST)
+        F(863,WM_HANDHELDLAST)
+        F(864,WM_AFXFIRST)
+        F(895,WM_AFXLAST)
+        F(896,WM_PENWINFIRST)
+        F(32768,WM_APP)
+      }
+      #undef F
+      return 0;
+    }
+    void timestamp(){
+      string local_cur_date_str_v4();
+      t=local_cur_date_str_v4();
+    }
+    void load(MSG src){msg=src;name=id2str(msg.message);}
+    //string to_str(){
+    //  vector<string> out;
+    //  qap_add_back(out)=t;
+    //  qap_add_back(out)=std::to_string(msg.time);
+    //  qap_add_back(out)=qpc_stamp::get();
+    //  qap_add_back(out)=name;
+    //  qap_add_back(out)="{x:"+IToS(msg.pt.x)+",y:"+IToS(msg.pt.y)+"}";
+    //  vector<string> A;{
+    //    #define F(FIELD)A.push_back((#FIELD":")+std::to_string((size_t)msg.FIELD));
+    //    F(hwnd);F(wParam);F(lParam);
+    //    #undef F
+    //  }
+    //  qap_add_back(out)="{"+join(A,",")+"}";
+    //  return join(out," ");
+    //}
+    //string to_str(){
+    //  #define G(A)A+" "+
+    //  return (
+    //    G(t)
+    //    G(std::to_string(msg.time))
+    //    G(qpc_stamp::get())
+    //    G(name)
+    //    G("{x:"+IToS(msg.pt.x)+",y:"+IToS(msg.pt.y)+"}")
+    //    #define F(FIELD)((#FIELD":")+std::to_string((size_t)msg.FIELD))
+    //    G(F(hwnd)+","+F(wParam)+","+F(lParam))
+    //    #undef F
+    //    ""
+    //  );
+    //  #undef G
+    //}
+  };
+  struct t_fast_msg{
+    MSG msg; qpc_stamp q; real qms; FILETIME ft; real fms; int qid;
+    string to_str(){
+      #define G(A)A+" "
+      return G(filetime_to_localstr(ft))+G(std::to_string(msg.time))+G(q.to_str())+G(t_cool_msg::id2str(msg.message))+
+             G("{x:"+IToS(msg.pt.x)+",y:"+IToS(msg.pt.y)+"}")+
+             G("hwnd:"+std::to_string((size_t)msg.hwnd)+",wParam:"+std::to_string((size_t)msg.wParam)+",lParam:"+std::to_string((size_t)msg.lParam))+
+             std::to_string(qms)+"qms "+std::to_string(fms)+"fms "+std::to_string(qid)+"qid";
+      #undef G
+    }
+    void load(MSG m,int qid){
+      {auto t0=now(); q.load(); qms=dmsc(now()-t0);}
+      {auto t0=now(); ft=get_systime_percise_as_filetime(); fms=dmsc(now()-t0);}
+      msg=m; this->qid=qid;
+    }
+  };
+  vector<t_fast_msg> msglog;
+  vector<string> get_msgarr(){vector<string> out;out.reserve(msglog.size()); for(auto&ex:msglog)out.push_back(ex.to_str()); return out;}
+  vector<MSG> msg_buff;
+  /*void Update(){
+    HWND&hWnd=Form.WinPair.hWnd; zDelta=0; Keyboard.Sync();
+    if(GetForegroundWindow()==hWnd)if(GetActiveWindow()==hWnd)mpos=unsafe_GetMousePos();
+    if(msglog.empty())msglog.reserve(1000*32);
+    for(int g_iter=0;;g_iter++){
+      for(int i=0;i<1000;i++){
+        MSG msg; if(!PeekMessageA(&msg,0,0,0,PM_REMOVE))break;
+        qap_add_back(msglog).load(msg,i); qap_add_back(msg_buff)=msg;
+      }
+      int i=0;
+      for(auto&ex:msg_buff){TranslateMessage(&ex); DispatchMessageA(&ex); i++;}
+      if(msg_buff.empty())break; msg_buff.clear();
+    }
+  }*/
+  void Close(){
+    NeedClose=true;
+    vector<t_tsc> buff;buff.resize(100); for(auto&ex:buff){ex.main();}
+    string head; for(auto&ex:buff)head+=ex.toStr()+"\n";
+    string s=head+join(get_msgarr(),"\n");
+    //file_put_contents("msglog7.txt",s);
+  }
+  void ScanWinPlacement(){
+    WINDOWPLACEMENT PL; GetWindowPlacement(Form.WinPair.hWnd,&PL);
+    Quad.SetWinRect(PL.rcNormalPosition); QapAssert(Quad.x>-1000);
+  }
+  static bool Equal(RECT&a,RECT&b){
+    return a.left==b.left&&a.top==b.top&&a.right==b.right&&a.bottom==b.bottom;
+  }
+  static void KeyboardUpdate(QapKeyboard&Keyboard,const HWND hWnd,const UINT msg,const WPARAM wParam,const LPARAM lParam){
+    bool any_key_up=(msg==WM_KEYUP)||(msg==WM_SYSKEYUP);
+    bool any_key_down=(msg==WM_KEYDOWN)||(msg==WM_SYSKEYDOWN);
+    //if(msg==WM_ACTIVATE){Keyboard=std::move(QapKeyboard());}
+    if(any_key_up||any_key_down){
+      bool value=any_key_down;
+      auto&KB=Keyboard; auto&Down=Keyboard.Down;
+      auto KeyUpdate=[&KB,&Down](int key,const bool value)->void{
+        if(Down[key]==value)return;
+        if(value!=IsKeyDown(key))return;
+        KB.KeyUpdate(key,value);
+      };
+      struct TSysKey{int Key,LKey,RKey;} key_array[]={{VK_SHIFT,VK_LSHIFT,VK_RSHIFT},{VK_CONTROL,VK_LCONTROL,VK_RCONTROL},{VK_MENU,VK_LMENU,VK_RMENU}};
+      for(int i=0;i<lenof(key_array);i++){
+        auto&ex=key_array[i];
+        if(wParam==ex.Key){KeyUpdate(ex.LKey,value); KeyUpdate(ex.RKey,value);}
+      }
+    }
+    if((msg==WM_KEYUP)&&(wParam==VK_SNAPSHOT)){Keyboard.KeyUpdate(VK_SNAPSHOT,true); Keyboard.KeyUpdate(VK_SNAPSHOT,false);}
+    if(any_key_up){Keyboard.KeyUpdate(wParam,false);}
+    if(any_key_down){Keyboard.KeyUpdate(wParam,true);}
+    if(msg==WM_LBUTTONUP){
+      ReleaseCapture();
+      g_log.push_back(FToS(g_sys_clock.MS())+":mbLeft-up");
+      Keyboard.KeyUpdate(mbLeft,false);
+    }
+    if(msg==WM_RBUTTONUP){
+      g_log.push_back(FToS(g_sys_clock.MS())+":mbRight-up");
+      Keyboard.KeyUpdate(mbRight,false);
+    }
+    if(msg==WM_MBUTTONUP){Keyboard.KeyUpdate(mbMiddle,false);}
+    if(msg==WM_LBUTTONDOWN){
+      SetCapture(hWnd);
+      g_log.push_back(FToS(g_sys_clock.MS())+":mbLeft-down");
+      Keyboard.KeyUpdate(mbLeft,true);
+    }
+    if(msg==WM_RBUTTONDOWN){
+      g_log.push_back(FToS(g_sys_clock.MS())+":mbRight-down");
+      Keyboard.KeyUpdate(mbRight,true);
+    }
+    if(msg==WM_MBUTTONDOWN){Keyboard.KeyUpdate(mbMiddle,true);}
+    if((msg==WM_CHAR)||(msg==WM_SYSCHAR)){Keyboard.CharUpdate(wParam);}
+  }
+  LRESULT WndProc(const HWND hWnd,const UINT msg,const WPARAM wParam,const LPARAM lParam){
+    KeyboardUpdate(Keyboard,hWnd,msg,wParam,lParam);
+    if(msg==WM_MOUSEWHEEL){zDelta=GET_WHEEL_DELTA_WPARAM(wParam);}
+    if(msg==WM_CHAR){auto kbl=GetKeyboardLayout(0); auto ENGLISH=0x409; auto RUSSIAN=0x419; char c=wParam; int gg=1;}
+    if(msg==WM_CLOSE){Close(); if(Runned)return 0;}
+    if(msg==WM_SHOWWINDOW){Visible=wParam;}
+    if(msg==WM_ERASEBKGND){DoPaint();}
+    //if(Keyboard.OnUp(VK_ESCAPE)){Close();}
+    return DefWindowProcA(hWnd,msg,wParam,lParam);
+  }
+  void DoPaint(){
+    HWND hWnd=Form.WinPair.hWnd; HDC DC=GetDC(hWnd);
+    RECT Rect; GetClientRect(Form.WinPair.hWnd,&Rect);
+    FillRect(DC,&Rect,(HBRUSH)(COLOR_BTNFACE)); ReleaseDC(hWnd,DC);
+  }
+  vec2i GetClientSize(){
+    RECT Rect; GetClientRect(Form.WinPair.hWnd,&Rect);
+    return vec2i(Rect.right-Rect.left,Rect.bottom-Rect.top);
+  }
+  vec2i GetMousePos(){return mpos;}
+  vec2i unsafe_GetMousePos(){
+    POINT P; GetCursorPos(&P); auto hWnd=Form.WinPair.hWnd; ScreenToClient(hWnd,&P);
+    vec2i p(P.x,-P.y); vec2i z=GetClientSize();
+    return p-vec2i(z.x/2,-z.y/2);
+  }
+};
+#endif
+#ifdef _WIN32
+void RegTexMem(...){}
+void UnRegTexMem(...){}
+void RegTex(...){}
+void UnRegTex(...){}
+#else
+void bindTex(/*QapDev&qDev,*/int Tex){
+  EM_ASM({bindTex(qDev,$0);},Tex);
+}
+void RegTexMem(...){}
+void UnRegTexMem(...){}
+typedef unsigned int DWORD;
+#endif
+class QapTexMem
+{
+public:
+  QapColor*pBits;
+  int W,H;
+  string Name;
+  int ID;
+public:
+  QapTexMem(const string&name):pBits(NULL),W(0),H(0),Name(name){RegTexMem(this);};
+  QapTexMem(const string&name,int w,int h,QapColor *pbits):pBits(pbits),W(w),H(h),Name(name){RegTexMem(this);};
+  void SaveToFile(const string&FN);
+  ~QapTexMem(){UnRegTexMem(this);delete[] pBits;};
+  QapTexMem*Clone(){
+    return new QapTexMem(Name+".Clone",W,H,(QapColor*)memcpy((void*)new QapColor[W*H],pBits,sizeof(QapColor)*W*H));
+  }
+  QapColor get_color_at(int x,int y)const{return pBits[x+y*W];}
+public:
+  class IPixelVisitor{
+  public:
+    virtual void Visit(const vec2i&p){}
+  };
+  class ITraceVisitor{
+  public:
+    virtual bool Visit(const vec2i&p){return true;}
+    virtual bool NextWave(){return true;}
+  };
+  inline bool IsValid(const vec2i&p){return InDip(0,p.x,W-1)&&InDip(0,p.y,H-1);}
+  inline QapColor&operator[](const vec2i&p){return pBits[p.x+p.y*W];}
+  void Accept(const vec2i&p,IPixelVisitor&Visitor)
+  {
+    #define N(A,B)
+    #define F(A,B){vec2i np=p+vec2i(A,B);if(IsValid(np))Visitor.Visit(np);};;;
+    N(-1,-1)F(+0,-1)N(+1,-1)
+    F(-1,+0)N(+0,+0)F(+1,+0)
+    N(-1,+1)F(+0,+1)N(+1,+1)
+    #undef F
+    #undef N
+  }
+  QapTexMem*GenEdge(const vec2i&p,const QapColor&color=0xFF000000)
+  {
+    //15:27 06.07.2011
+    QapTexMem*pDest=Clone()->Clear(0xffffffff);
+    class TraceVisitor:public ITraceVisitor{
+    public:
+      QapTexMem*pSrc;
+      QapTexMem*pDest;
+      QapColor color;
+      TraceVisitor(QapTexMem*pSrc,QapTexMem*pDest,const QapColor&color):pSrc(pSrc),pDest(pDest){}
+    public:
+      bool Visit(const vec2i&p){
+        QapColor&S=pSrc->operator[](p);
+        QapColor&D=pDest->operator[](p);
+        //if(&D==&S)exit(0);
+        bool flag=S==color;
+        if(flag)D=0xffffffff;
+        if(!flag)D=0xff000000;
+        return flag;
+      }
+    }TV(this,pDest,color);
+    Accept(p,TV);
+    return pDest->InvertRGB();
+  }
+  void Accept(const vec2i&p,ITraceVisitor&Visitor)
+  {  
+    class Tracer{
+    public:
+      vector<vec2i>NArr,DArr,Arr,IA;
+      vector<int>Check;
+    public:
+      ITraceVisitor&Visitor;
+      QapTexMem*pMem;
+      Tracer(ITraceVisitor&Visitor,QapTexMem*pMem,const vec2i&p):pMem(pMem),Visitor(Visitor){NArr.push_back(p);Init();}
+      void Init()
+      {
+        Check.resize(pMem->W*pMem->H);
+        for(int i=0;i<Check.size();i++)Check[i]=1;
+      }
+    public:
+      class PixelVisitor:public IPixelVisitor{
+      public:
+        Tracer*pT;
+        PixelVisitor(Tracer*pT):pT(pT){}
+        ~PixelVisitor(){}
+        void Visit(const vec2i&p){
+          vector<vec2i>*Arr[2]={&pT->DArr,&pT->NArr};
+          bool Accepted=!!pT->Visitor.Visit(p);
+          Arr[Accepted]->push_back(p);
+        }
+      };
+      int GetID(const vec2i&p){return p.x+p.y*pMem->W;}
+      void Run()
+      {
+        while(!NArr.empty()&&Visitor.NextWave())
+        {
+          Arr=NArr;NArr.clear();DArr.clear();
+          for(int j=0;j<Arr.size();j++)
+          {
+            vec2i&p=Arr[j];
+            int ID=GetID(p);
+            if(ID<0||!Check[ID])continue;
+            PixelVisitor PV(this);
+            pMem->Accept(p,PV);
+            Check[ID]=false;
+          }
+        }
+      }
+    } tracer(Visitor,this,p);
+    tracer.NArr.push_back(p);
+    tracer.Run();  
+  }
+public:
+  QapTexMem*FillBorder(int x,int y,QapTexMem*Source,int n=4)
+  {
+    if(!Source||!Source->pBits)return this;
+    int sW=Source->W;
+    int sH=Source->H;
+    int mX=min(W,x+sW);
+    int mY=min(H,y+sH);
+    QapColor*pT=this->pBits;
+    QapColor*pS=Source->pBits;
+    #define F(i,j)pS[(i-x)+(j-y)*sW]
+    for(int k=1;k<=n;k++)
+    {
+      {int j=00+y;if(InDip<int>(0,j-k,H-1))for(int i=max(0,x);i<mX;i++){pT[i+(j-k)*W]=F(i,j);}}
+      {int j=mY-1;if(InDip<int>(0,j+k,H-1))for(int i=max(0,x);i<mX;i++){pT[i+(j+k)*W]=F(i,j);}}
+      {int i=00+x;if(InDip<int>(0,i-k,W-1))for(int j=max(0,y);j<mY;j++){pT[(i-k)+j*W]=F(i,j);}}
+      {int i=mX-1;if(InDip<int>(0,i+k,W-1))for(int j=max(0,y);j<mY;j++){pT[(i+k)+j*W]=F(i,j);}}
+    }
+    #undef F
+    return this;
+  }
+  QapTexMem*FillMem(int x,int y,QapTexMem*Source)
+  {
+    if(!Source||!Source->pBits)return this;
+    int sW=Source->W;
+    int sH=Source->H;
+    int mX=min(W,x+sW);
+    int mY=min(H,y+sH);
+    QapColor*pT=this->pBits;
+    QapColor*pS=Source->pBits;
+    for(int j=max(0,y);j<mY;j++){
+      for(int i=max(0,x);i<mX;i++){
+        pT[i+j*W]=pS[(i-x)+(j-y)*sW];
+      }
+    }
+    return this;
+  }
+  QapTexMem*Clear(const QapColor&color=0xFF000000){
+    for(int i=0;i<W*H;i++)pBits[i]=color;
+     return this;
+  }
+  QapTexMem*FillLine(const int Line,const QapColor&Color){
+    for(int i=0;i<W;i++){QapColor&pix=pBits[Line*W+i];pix=Color;}
+    return this;
+  }
+  QapTexMem*Circle(const QapColor&color,int x,int y,int r){
+    vec2i pos(x,y);
+    int rr=r*r;
+    int i0=max(0,x-r);
+    int iz=min(W-1,x+r);
+    int j0=max(0,y-r);
+    int jz=min(H-1,y+r);
+    for(int j=j0;j<=jz;j++)
+      for(int i=i0;i<=iz;i++)
+      {
+        int mm=abs(r-(vec2i(i,j)-pos).SqrMag());
+        if(mm<rr)
+        {
+          QapColor&FragColor=pBits[j*W+i];
+          FragColor=color;
+        }
+      }
+    return this;
+  }
+  QapTexMem*Draw(int x,int y,QapTexMem*Source,const QapColor&color){
+    if(!Source||!Source->pBits)return this;
+    int sW=Source->W;
+    int sH=Source->H;
+    int mX=min(W,x+sW);
+    int mY=min(H,y+sH);
+    QapColor*pT=this->pBits;
+    QapColor*pS=Source->pBits;
+    for(int j=max(0,y);j<mY;j++){
+      for(int i=max(0,x);i<mX;i++){
+        QapColor src=Source->pBits[(i-x)+(j-y)*sW]*color;
+        QapColor&dest=pBits[j*W+i];
+        dest=QapColor::Mix(dest,src,real(src.a)/255.0);
+        //dest.a=;
+      }
+    }
+    return this;
+  }
+  QapTexMem*Circle(const QapColor&color,int x,int y,int r,int hs){
+    vec2i pos(x,y);
+    int minr=r-hs;
+    int maxr=r+hs;
+    int r1=minr*minr;
+    int r2=maxr*maxr;
+    int i0=max(0,x-r-hs);
+    int iz=min(W-1,x+r+hs);
+    int j0=max(0,y-r-hs);
+    int jz=min(H-1,y+r+hs);
+    for(int j=j0;j<=jz;j++)
+      for(int i=i0;i<=iz;i++)
+      {
+        int mm=abs(r-(vec2i(i,j)-pos).SqrMag());
+        if(InDip(r1,mm,r2))
+        {
+          QapColor&FragColor=pBits[j*W+i];
+          FragColor=color;
+        }
+      }
+    return this;
+  }
+  QapTexMem*FillColomn(const int Colomn,const QapColor&Color){
+    for(int i=0;i<H;i++)pBits[W*i+Colomn]=Color;
+    return this;
+  }
+  QapTexMem*CalcAlphaToRGB_and_set_new_alpha(uchar new_alpha=uchar(0xff)){
+    for(int i=0;i<W*H;i++){auto a=pBits[i].a;pBits[i]=QapColor(new_alpha,a,a,a);}
+    return this;
+  }
+  QapTexMem*CalcAlphaToRGB_and_keep_alpha(){
+    for(int i=0;i<W*H;i++){auto a=pBits[i].a;pBits[i]=QapColor(a,a,a,a);}
+    return this;
+  }
+  QapTexMem*CalcAlpha(){
+    for(int i=0;i<W*H;i++)pBits[i].a=pBits[i].GetLuminance();
+    return this;
+  }
+  template<class FUNC>
+  QapTexMem*ForEachPixel(FUNC&&func){
+    for(int i=0;i<W*H;i++)func(pBits[i]);
+    return this;
+  }
+  QapTexMem*CopyAlpha(QapTexMem*Alpha){
+    if(Alpha->W!=W||Alpha->H!=H)return this;
+    for(int i=0;i<W*H;i++)pBits[i].a=Alpha->pBits[i].a;
+    return this;
+  }
+  QapTexMem*CalcAlpha(const QapColor&Color,int threshold=0){
+    for(int i=0;i<W*H;i++)pBits[i].a=pBits[i]==Color?0:255;
+    const QapColor&c=Color;
+    int t=threshold;
+    int t3=t*3;
+    for(int i=0;i<W*H;i++){
+      QapColor&p=pBits[i];
+      #define F(r)int f##r=abs(int(p.r)-int(c.r));
+      F(r);F(g);F(b);
+      #undef F
+      //int esqr=fr*fr+fg*fg+fb*fb;
+      int sum=fr+fg+fb;
+      p.a=sum>t3?255:t3?255*sum/t3:0;
+    }
+    return this;
+  }
+  QapTexMem*FillChannel(const QapColor&Source,DWORD BitMask){
+    for(int i=0;i<W*H;i++){QapColor&C=pBits[i];C=(~BitMask&C)|(BitMask&Source);};
+    return this;
+  }
+  QapTexMem*InvertRGB(){for(int i=0;i<W*H;i++){QapColor&C=pBits[i];C.r=~C.r;C.g=~C.g;C.b=~C.b;}return this;}
+  Dip2i GetDipAlpha(){Dip2i Dip(256,-1);for(int i=0;i<W*H;i++)Dip.Take(pBits[i].a);return Dip;}
+  Dip2i GetDipR(){Dip2i Dip(256,-1);for(int i=0;i<W*H;i++)Dip.Take(pBits[i].r);return Dip;}
+  Dip2i GetDipG(){Dip2i Dip(256,-1);for(int i=0;i<W*H;i++)Dip.Take(pBits[i].g);return Dip;}
+  Dip2i GetDipB(){Dip2i Dip(256,-1);for(int i=0;i<W*H;i++)Dip.Take(pBits[i].b);return Dip;}
+  QapTexMem*NormRGB(){
+    typedef Dip2i::Transform D2iXF;
+    Dip2i Cur[4]={GetDipR(),GetDipG(),GetDipB(),GetDipAlpha()};
+    Dip2i cur(256,-1);for(int i=0;i<4;i++){cur.Take(Cur[i].a);cur.Take(Cur[i].b);}
+    Dip2i norm(0,255);
+    D2iXF xf(cur,norm);
+    D2iXF arr[4]={D2iXF(Cur[0],norm),D2iXF(Cur[1],norm),D2iXF(Cur[2],norm),D2iXF(Cur[3],norm)};
+    for(int i=0;i<W*H;i++){
+      QapColor&C=pBits[i];
+      C.r=uchar(xf*C.r);
+      C.g=uchar(xf*C.g);
+      C.b=uchar(xf*C.b);
+    }
+    return this;
+  }
+  QapTexMem*NormAlpha(){
+    Dip2i Cur=GetDipAlpha();
+    Dip2i Norm(0,255);
+    Dip2i::Transform xf(Cur,Norm);
+    for(int i=0;i<W*H;i++)
+    {
+      QapColor&C=pBits[i];
+      C.a=uchar(xf*C.a);
+    }
+    return this;
+  }
+  QapTexMem*InvertY(){
+    QapColor*line=new QapColor[W];
+    size_t Size=sizeof(QapColor)*W;
+    for(int i=0;i<H/2;i++)
+    {
+      int a(W*(i)),b(W*(H-i-1));
+      memcpy((void*)line,&pBits[a],Size);
+      memcpy((void*)&pBits[a],&pBits[b],Size);
+      memcpy((void*)&pBits[b],line,Size);
+    }
+    delete[] line;
+    return this;
+  }
+  QapTexMem*InvertX(){
+    for(int i=0;i<H;i++)
+    {
+      QapColor*line=&pBits[i];
+      for(int j=0;j<W/2;j++)
+      {
+        int a(j),b(H-j-1);
+        std::swap(line[a],line[b]);
+      }
+    }
+    return this;
+  }
+  static float gauss(float x,float sigma)
+  {
+    float x_sqr=x*x;
+    float sigma_sqr=sigma*sigma;
+    float sqrt_value=1.0/sqrt(2.0*Pi*sigma_sqr);
+    float exp_value=exp(-x_sqr/(2.0*sigma_sqr));
+    return sqrt_value*exp_value;
+  }/*
+  static void PascalRow(IntArray&arr,int n)
+  {
+    arr.resize(n+1);
+    for(int i=0;i<arr.size();i++)arr[i]=0;
+    int*c=&arr[0];
+    c[0]=1;
+    for(int j=1;j<n;j++)for(int i=j;i>=1;i--)c[i]=c[i-1]+c[i];
+  }*/
+  private:
+    inline vec4f tex2Df(vec4f*C,const vec2i&uv){return C[Clamp(uv.x,int(0),int(W-1))+W*Clamp(uv.y,int(0),int(H-1))];}
+    inline vec4f tex2D(QapColor*C,const vec2i&uv){return vec4f(C[Clamp(uv.x,int(0),int(W-1))+W*Clamp(uv.y,int(0),int(H-1))]);}
+    inline vec4i tex2Di(QapColor*C,const vec2i&uv){return vec4i(C[Clamp(uv.x,int(0),int(W-1))+W*Clamp(uv.y,int(0),int(H-1))]);}
+    void DirBlur(vec4f*SysMem,vec4f*SysOut,float radius,const vec2i&texrad){
+      float sigma=radius/3.0;
+      vector<float> garr;
+      for(int x=0;x<=radius;x++){
+        garr.push_back(gauss(float(x),sigma));
+      }
+      float*g=&garr[0];
+      for(int j=0;j<H;j++)
+        for(int i=0;i<W;i++)
+        {
+          vec4f&FragColor=SysOut[j*W+i];
+          vec2i texcoord(i,j);
+          float sum=0.0;
+          int x=1;
+          vec4f value(0,0,0,0);
+          for(int x=-radius;x<+radius-1;x++)if(x)
+          {
+            float currentScale=g[abs(x)];
+            sum+=currentScale;
+            vec2i dudv=x*texrad;
+            value+=currentScale*tex2Df(SysMem,texcoord+dudv);
+          }
+          value+=(1.f-sum)*tex2Df(SysMem,texcoord);
+          FragColor=value;
+        }
+    }
+  public:
+  QapTexMem*Blur(const float&radius)
+  {
+    static vec4f SysMem[1024*1024*4];
+    vec4f*tmp=&SysMem[W*H];
+    for(int i=0;i<W*H;i++)SysMem[i]=vec4f(pBits[i].b,pBits[i].g,pBits[i].r,pBits[i].a);
+    //memcpy_s(SysMem,sizeof(SysMem),pBits,W*H*sizeof(QapColor));//copy image
+    DirBlur(SysMem,tmp,radius,vec2i(1,0));
+    DirBlur(tmp,SysMem,radius,vec2i(0,1));
+    for(int i=0;i<W*H;i++)pBits[i]=QapColor(SysMem[i].a,SysMem[i].r,SysMem[i].g,SysMem[i].b);
+    return this;
+  }
+};
+class QapTex{
+public:
+  #ifdef _WIN32
+  IDirect3DTexture9*Tex;
+  #else
+  int Tex;
+  #endif
+  int W,H;
+  string Name;
+  int ID;
+public:
+  #ifdef _WIN32
+  QapTex(QapTexMem*TexMem,IDirect3DTexture9*Tex):Tex(Tex){W=TexMem->W;H=TexMem->H;Name=TexMem->Name;RegTex(this);};
+  ~QapTex(){
+    UnRegTex(this);
+    Tex->Release();
+    Tex=0;
+  };
+  #else
+  QapTex(QapTexMem*TexMem,int Tex):Tex(Tex){W=TexMem->W;H=TexMem->H;Name=TexMem->Name;/*RegTex(this);*/};
+  ~QapTex(){
+  };
+  #endif
+};
+struct t_quad{
+  vec2d pos;
+  vec2d size;
+  t_quad&set(const vec2d&p,const vec2d&s){pos=p;size=s;return *this;}
+  vec2d get_vertex_by_dir(const vec2d&dir)const{return pos+vec2d::sign(dir).Mul(size)*0.5;}
+  vec2d get_left_top()const{return pos+vec2d(-1,+1).Mul(size)*0.5;}
+  void set_pos_by_vertex_and_dir(const vec2d&vertex,const vec2d&dir)
+  {
+    auto d=vec2d::sign(dir);
+    //QapAssert(d.x&&d.y);
+    pos=vertex+d.Mul(size)*0.5;
+  }
+  t_quad add_size(real ds)const{t_quad q=*this;q.size+=vec2d(ds,ds);return q;}
+  t_quad add_size(vec2d size)const{t_quad q=*this;q.size+=size;return q;}
+  t_quad add_pos(const vec2d&pos)const{t_quad q=*this;q.pos+=pos;return q;}
+  vec2d clamp(const vec2d&point)const
+  {
+    return clamp(point-pos,size)+pos;
+  }
+  static vec2d clamp(const vec2d&p,const vec2d&size)
+  {
+    return vec2d(Clamp<real>(p.x,-size.x*0.5,+size.x*0.5),Clamp<real>(p.y,-size.y*0.5,+size.y*0.5));
+  }
+};
+
+static bool point_in_quad(t_quad q, vec2d p)
+{
+  auto s=q.size*0.5;
+  auto o=p-q.pos;
+  return abs(s.x)>=abs(o.x)&&abs(s.y)>=abs(o.y);
+}
+
+static vec2d join_quads_by_y(const vector<t_quad>&arr)
+{
+  real total_y=0; real max_x=0;
+  for(int i=0;i<arr.size();i++){auto&s=arr[i].size;total_y+=s.y;max_x=std::max<real>(max_x,s.x);}
+  return vec2d(max_x,total_y);
+}
+static vec2d join_quads_by_x(const vector<t_quad>&arr)
+{
+  real total_x=0; real max_y=0;
+  for(int i=0;i<arr.size();i++){auto&s=arr[i].size;total_x+=s.x;max_y=std::max<real>(max_y,s.y);}
+  return vec2d(total_x,max_y);
+}
+static vec2d join_quads_by_dir(const vector<t_quad>&arr,char dir='x')
+{
+  if(dir=='x')return join_quads_by_x(arr);
+  if(dir=='y')return join_quads_by_y(arr);
+  QapNoWay();
+  return {};
+}
+static vec2d join_quads_by_y_ex(const vector<t_quad>&arr,real space){return join_quads_by_y(arr)+vec2d(0,space*std::max<int>(0,int(arr.size())-1));}
+static vec2d join_quads_by_x_ex(const vector<t_quad>&arr,real space){return join_quads_by_x(arr)+vec2d(space*std::max<int>(0,int(arr.size())-1),0);}
+
+static vec2d join_quads_by_dir_ex(const vector<t_quad>&arr,char dir='x',real space=0)
+{
+  if(dir=='x')return join_quads_by_x_ex(arr,space);
+  if(dir=='y')return join_quads_by_y_ex(arr,space);
+  QapNoWay();
+  return {};
+}
+static void layout_by_dir(vector<t_quad>&arr,char dir='x',real space=0)
+{
+  QapAssert(dir=='x'||dir=='y');
+  t_quad q;
+  q.size=join_quads_by_dir_ex(arr,dir,space);
+  vec2d vdir=dir=='x'?vec2i(+1,0):vec2d(0,-1);
+  auto p=q.get_vertex_by_dir(-vdir);
+  for(int i=0;i<arr.size();i++)
+  {
+    auto&ex=arr[i];
+    ex.set_pos_by_vertex_and_dir(p,vdir);
+    auto dp=dir=='x'?vec2d(space+ex.size.x,0):vec2d(0,-space-ex.size.y);
+    p+=dp;
+  }
+}
+static vector<t_quad> split_quad_by_dir(t_quad q,char dir='x',int n=2)
+{
+  vector<t_quad> arr;
+  vec2d dv=vec2d(dir=='x'?1:0,dir=='y'?1:0);
+  vec2d dn=vec2d(dv.y,dv.x);
+  auto d=dv*(1.0/n)+dn;
+  auto size=q.size.Mul(d);
+  for(int i=0;i<n;i++)qap_add_back(arr).size=size;
+  layout_by_dir(arr,dir,0.0);
+  return arr;
+}
+class QapDev{
+public:
+  struct Ver
+  {
+    float x,y,z;
+    QapColor color;
+    float tu,tv;
+    Ver():x(0),y(0),z(0),tu(0),tv(0) {}
+    Ver(float x,float y,const QapColor&color,float u=0.0,float v=0.0):x(x),y(y),z(0),color(color),tu(u),tv(v) {}
+    Ver(const vec2f&pos,const QapColor&color,float u=0.0,float v=0.0):x(pos.x),y(pos.y),z(0),color(color),tu(u),tv(v) {}
+    Ver(const vec2f&pos,const QapColor&color,const vec2f&texcoord):x(pos.x),y(pos.y),z(0),color(color),tu(texcoord.x),tv(texcoord.y) {}
+    vec2f&get_pos()
+    {
+      return *(vec2f*)&x;
+    }
+    vec2f&get_pos()const
+    {
+      return *(vec2f*)&x;
+    }
+    vec2f&get_tpos()
+    {
+      return *(vec2f*)&tu;
+    }
+    vec2f&get_tpos()const
+    {
+      return *(vec2f*)&tu;
+    }
+  };
+  struct BatchScope
+  {
+    QapDev&RD;
+    bool flag;
+    BatchScope(QapDev&RD):RD(RD)
+    {
+      flag=!RD.Batching;
+      if(flag)RD.BeginBatch();
+    }
+    ~BatchScope()
+    {
+      if(flag)RD.EndBatch();
+    }
+  };
+  struct BatchScopeEx
+  {
+    QapDev&RD;
+    bool flag;
+    bool drawpass;
+    BatchScopeEx(QapDev&RD,bool drawpass):RD(RD)
+    {
+      if(!drawpass)return;
+      flag=!RD.Batching;
+      if(flag)RD.BeginBatch();
+    }
+    ~BatchScopeEx()
+    {
+      if(!drawpass)return;
+      if(flag)RD.EndBatch();
+    }
+  };
+  struct ViewportScope
+  {
+    QapDev&RD;
+    const t_quad&viewport;
+    bool auto_clamp;
+    int vpos;
+    ViewportScope(QapDev&RD,const t_quad&viewport):RD(RD),viewport(viewport),vpos(0)
+    {
+      vpos=0;
+      auto_clamp=RD.auto_clamp;
+      if(auto_clamp)vpos=RD.VPos;
+      RD.push_viewport(viewport);
+    }
+    ~ViewportScope()
+    {
+      if(auto_clamp)
+      {
+        for(int i=vpos;i<RD.VPos;i++)
+        {
+          auto&p=RD.VBA[i].get_pos();
+          p=RD.viewport.clamp(p);
+        }
+      }
+      RD.pop_viewport();
+    }
+  };
+public:
+  typedef QapDev SelfClass;
+public:
+#ifdef _WIN32
+  class TDynamicResource:public QapD3D9Resource{
+  public:
+    typedef QapDev OwnerClass;
+    void operator=(OwnerClass*pOwner){
+      this->pOwner=pOwner;
+    }
+  public:
+    TDynamicResource():pOwner(nullptr),flag(false),pDev(nullptr){
+      if(pDev)pDev->Resources.Reg(this);
+    };
+    ~TDynamicResource(){
+      Free();
+    };
+  public:
+    void Free(){
+      if(pDev){pDev->Resources.UnReg(this);pDev=nullptr;}
+    }
+  public:
+    QapD3DDev9*pDev;
+    void Mount(OwnerClass*pOwner,QapD3DDev9*pDev)
+    {
+      QapAssert(pOwner);
+      QapAssert(pDev);
+      this->pOwner=pOwner;
+      this->pDev=pDev;
+      if(pDev)pDev->Resources.Reg(this);
+    }
+  public:
+    OwnerClass*pOwner;
+    bool flag;
+    void OnLost()
+    {
+      if(pOwner)
+      {
+        flag=bool(pOwner->VB);
+        pOwner->Free();
+      }
+      else
+      {
+        QapDebugMsg("fail");
+        flag=false;
+      }
+    }
+    void OnReset()
+    {
+      if(pOwner&&flag)pOwner->ReInit();
+    }
+  };
+public:
+  typedef QapD3DDev9::BlendType BlendType;
+  typedef QapD3DDev9::AlphaType AlphaType;
+public:
+  TDynamicResource DynRes;
+  IDirect3DDevice9*pDev;
+  IDirect3DVertexBuffer9*VB;
+  IDirect3DIndexBuffer9*IB;
+#else
+  vector<Ver> VB;
+  vector<int> IB;
+#endif
+  Ver*VBA{};
+  int*IBA{};
+  QapColor color;
+  int VPos=0;
+  int IPos=0;
+  int MaxVPos=0;
+  int MaxIPos=0;
+  int DIPs=0;
+  int Verts=0;
+  int Tris=0;
+  //BlendType BlendMode;
+  //AlphaMode AlphaMode;
+  bool Batching=false;
+  bool Textured=false;
+  b2Transform xf,txf;
+  vector<t_quad> stack;
+  t_quad viewport;
+  bool auto_clamp=false;
+  bool use_viewport=false;
+  //static const DWORD FVF=D3DFVF_XYZ|D3DFVF_DIFFUSE|D3DFVF_TEX1;
+public:
+  QapDev():color(0xFFFFFFFF),VB(NULL),IB(NULL),VBA(NULL),IBA(NULL),VPos(0),IPos(0),MaxVPos(0),MaxIPos(0),Batching(false)/*,BlendMode(BT_SUB),AlphaMode(AM_NONE)*/{}
+  ~QapDev(){Free();}
+public:
+  #ifdef _WIN32
+  static constexpr DWORD FVF=D3DFVF_XYZ|D3DFVF_DIFFUSE|D3DFVF_TEX1;
+  #endif
+public:
+  void ReInit(){Init(MaxVPos,MaxIPos);}
+  #ifdef _WIN32
+  void MountDev(QapD3DDev9&Dev)
+  {
+    this->pDev=Dev.pDev;
+    this->DynRes.Mount(this,&Dev);
+  }
+  #endif
+  void Init(int VCount,int ICount)
+  {
+    #ifdef _WIN32
+    if(VB)return;
+    #else
+    if(VB.size())return;
+    #endif
+    MaxVPos=VCount; MaxIPos=ICount;
+    #ifdef _WIN32
+    pDev->CreateVertexBuffer(VCount*sizeof(Ver),D3DUSAGE_DYNAMIC,FVF,D3DPOOL_DEFAULT,&VB,NULL);
+    pDev->CreateIndexBuffer(ICount*sizeof(int),D3DUSAGE_DYNAMIC,D3DFMT_INDEX32,D3DPOOL_DEFAULT,&IB,NULL);
+    #else
+    VB.resize(VCount);
+    IB.resize(ICount);
+    #endif
+    VBA=0; IBA=0; VPos=0; IPos=0; DIPs=0; Verts=0; Tris=0;
+    xf.set_ident();
+    txf.set_ident();
+  }
+  void Free(){
+    VB={};IB={};VPos=0;IPos=0;Batching=false;//BlendMode=BT_SUB;AlphaMode=AM_NONE;
+    #ifdef _WIN32
+    if(VB){
+      VB->Release();
+      VB=nullptr;
+      VBA=nullptr;
+    }
+    if(IB){
+      IB->Release();
+      IB=nullptr;
+      IBA=nullptr;
+    }
+    DynRes.Free();
+    #endif
+  };
+public:
+  void push_viewport(const t_quad&quad){
+    stack.push_back(viewport);
+    viewport=quad;
+  }
+  void pop_viewport(){
+    QapAssert(!stack.empty());
+    viewport=stack.back();
+    stack.pop_back();
+  }
+public:
+  void BeginBatch()
+  {
+    Batching=true;Textured=true;
+    VBA=0;IBA=0;VPos=0;IPos=0;//Test it
+    #ifndef _WIN32
+    if(!IB.size()||!VB.size())return;
+    IBA=IB.data();
+    VBA=VB.data();
+    #else
+    IB->Lock(0,sizeof(int)*MaxIPos,(void**)&IBA,0);
+    VB->Lock(0,sizeof(Ver)*MaxVPos,(void**)&VBA,0);
+    #endif
+  };
+  void EndBatch()
+  {
+    Batching=false;
+    #ifndef _WIN32
+    if(!IB.size()||!VB.size())return;
+    #else
+    IB->Unlock(); VB->Unlock();  
+    #endif
+    DIP();
+    VBA=0;IBA=0;
+  }
+  void DIP()
+  {
+    #ifdef _WIN32
+    pDev->SetFVF(FVF);
+    pDev->SetStreamSource(0,VB,0,sizeof(Ver));
+    pDev->SetIndices(IB);
+    pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST,0,0,VPos,0,IPos/3);
+    #else
+    auto&qDev=*this;
+    EM_ASM({
+      if(qDev.gl&&qDev.prog)qDev.DIP_v2(qDev,$0,$1,$2,$3);
+    },int(qDev.VB.data()),int(qDev.IB.data()),qDev.VPos,qDev.IPos);
+    #endif
+    DIPs++;Verts+=VPos;Tris+=IPos/3;
+  }
+  bool IsBatching(){return Batching;}
+  int GetIPos(){return IPos;}
+  int GetVPos(){return VPos;}
+  int GetDIPs(){return DIPs;}
+  int GetVerts(){return Verts;}
+  int GetTris(){return Tris;}
+  const QapColor&GetColor(){return color;}
+  void NextFrame(){
+    DIPs=0;Verts=0;Tris=0;
+    #ifdef _WIN32
+    SetBlendMode(BlendMode);/*SetAlphaMode(AlphaMode);*/
+    #endif
+  }
+  #ifdef _WIN32
+  BlendType BlendMode=QapD3DDev9::BT_SUB;
+  void SetBlendMode(BlendType Mode){
+    DynRes.pDev->Blend(BlendMode=Mode);
+  }
+  #endif
+public:
+  void HackMode(bool Textured){this->Textured=Textured;}
+  #ifdef _WIN32
+  void BindTex(int Stage,QapTex*Tex){pDev->SetTexture(Stage,Tex?Tex->Tex:NULL);txf.set_ident();}
+  #else
+  void BindTex(int Stage,QapTex*pTex){bindTex(pTex?pTex->Tex:0);txf.set_ident();}
+  #endif
+public:
+  inline Ver&AddVertexRaw(){return VBA[VPos++];}
+  inline int AddVertex(const Ver&Source)
+  {
+    Ver&Dest=VBA[VPos];
+    Dest=Source;
+    if(1){auto&v=Dest.get_pos();v=xf*v;}
+    if(Textured){auto&v=Dest.get_tpos();v=txf*v;}
+    return VPos++;
+  }
+  inline void AddTris(int A,int B,int C)
+  {
+    IBA[IPos++]=A;
+    IBA[IPos++]=B;
+    IBA[IPos++]=C;
+  };
+public:
+  inline void SetColor(const QapColor&C){color=C;}
+  inline void SetTransform(b2Transform const&val){xf=val;}
+  inline b2Transform GetTransform(){return xf;}
+  inline void SetTextureTransform(b2Transform const&val){txf=val;}
+  inline b2Transform GetTextureTransform(){return txf;}
+  inline real GetZoom(){return vec2d(xf.r.col1).Mag();}
+public:
+  //BlendType GetBlendMode(){return BlendMode;}
+  //AlphaMode GetAlphaMode(){return AlphaMode;}
+  //void SetBlendMode(BlendType Mode){Blend(BlendMode=Mode);}
+  //void SetAlphaMode(AlphaMode Mode){Alpha(AlphaMode=Mode);}
+public:
+  inline int AddVertex(float x,float y,const QapColor&c,float u,float v)
+  {
+    QapDev::Ver tmp;
+    tmp.x=x;
+    tmp.y=y;
+    tmp.z=0;
+    tmp.color=c;
+    tmp.tu=u;
+    tmp.tv=v;
+    auto id=AddVertex(tmp);
+    return id;
+  }
+  inline int AddVertex(const vec2f&pos,const QapColor&c,float u,float v)
+  {
+    QapDev::Ver tmp;
+    tmp.get_pos()=pos;
+    tmp.z=0;
+    tmp.color=c;
+    tmp.tu=u;
+    tmp.tv=v;
+    auto id=AddVertex(tmp);
+    return id;
+  }
+  inline int AddVertex(const vec2f&pos,const QapColor&c,const vec2f&tpos)
+  {
+    QapDev::Ver tmp;
+    tmp.get_pos()=pos;
+    tmp.z=0;
+    tmp.color=c;
+    tmp.get_tpos()=tpos;
+    auto id=AddVertex(tmp);
+    return id;
+  }
+public:
+  void DrawCircleOld(const vec2d&pos,real r,real ang,real ls,int seg)
+  {
+    static vector<vec2d> PA;
+    PA.resize(seg);
+    for(int i=0;i<seg;i++)
+    {
+      vec2d v=Vec2dEx((real)i/(real)seg*2.0*Pi,r);
+      PA[i]=pos+v;
+    };
+    DrawPolyLine(PA,ls,true);
+  }
+  void DrawCircle(const vec2d&pos,real r,real ang,real ls,int seg)
+  {
+    DrawCircleEx(pos,r-ls*0.5,r+ls*0.5,seg,ang);
+  }
+  void DrawCircleEx(const vec2d&pos,real r0,real r1,int seg,real ang)
+  {
+    int n=seg;
+    if(n<=0)return;
+    BatchScope Scope(*this);
+    static vector<int> VID;
+    VID.resize(n*2);
+    for(int i=0;i<n;i++)
+    {
+      vec2d v=Vec2dEx(ang+Pi2*(real(i)/real(n)),1);
+      VID[0+i]=AddVertex(pos+v*r0,color,0,0);
+      VID[n+i]=AddVertex(pos+v*r1,color,0,0);
+    }
+    for(int i=0;i<n;i++)
+    {
+      int a=VID[0+(i+0)%n];
+      int b=VID[0+(i+1)%n];
+      int c=VID[n+(i+0)%n];
+      int d=VID[n+(i+1)%n];
+      AddTris(a,b,d);
+      AddTris(d,c,a);
+    }
+  }
+public:
+  void DrawQuad(float x,float y,float w, float h)
+  {  
+    BatchScope Scope(*this);
+    {
+      #define F(X,Y,U,V){AddVertex(Ver(x+(X)*w,y+(Y)*h,color,U,V));}
+      vec2d O(x,y);
+      int n=VPos;
+      F(-0.5f,-0.5f,0.0f,1.0f);
+      F(+0.5f,-0.5f,1.0f,1.0f);
+      F(+0.5f,+0.5f,1.0f,0.0f);
+      F(-0.5f,+0.5f,0.0f,0.0f); 
+      AddTris(n+1,n+0,n+3);
+      AddTris(n+3,n+2,n+1);
+      #undef F
+    }
+  }
+  void DrawQuad(float x,float y,float w, float h, float a)
+  {
+    BatchScope Scope(*this);
+    {
+      #define F(X,Y,U,V){AddVertex(Ver(O+vec2d(X*w,Y*h).UnRot(OZ),color,U,V));}
+      vec2d OZ=Vec2dEx(a,1.0);
+      vec2d O(x,y);
+      int n=VPos;
+      F(-0.5f,-0.5f,0.0f,1.0f);
+      F(+0.5f,-0.5f,1.0f,1.0f);
+      F(+0.5f,+0.5f,1.0f,0.0f);
+      F(-0.5f,+0.5f,0.0f,0.0f); 
+      AddTris(n+1,n+0,n+3);
+      AddTris(n+3,n+2,n+1);
+      #undef F
+    }
+  }
+  void DrawTrigon(const vec2d&A,const vec2d&B,const vec2d&C)
+  {
+    BatchScope Scope(*this);
+    {
+      AddTris(
+        AddVertex(Ver(A,color)),
+        AddVertex(Ver(B,color)),
+        AddVertex(Ver(C,color))
+      );
+    }
+  }
+  void DrawConvex(const vector<vec2d>&Points)
+  {
+    BatchScope Scope(*this);
+    {
+      if(Points.empty())return;
+      int c=Points.size();
+      int n=VPos;
+      for(int i=0;i<c;i++)AddVertex(Ver(Points[i],color,0.5,0.5));
+      for(int i=2;i<c;i++)AddTris(n,n+i-1,n+i-0);
+    }
+  }
+public:
+  template<typename TYPE>
+  void DrawPolyLine(const vector<TYPE>&PA,const real&LineSize,const bool&Loop)
+  {
+    if(PA.empty())return;
+    BatchScope Scope(*this);
+    {
+      int Count=PA.size();
+      int c=Loop?Count:Count-1;
+      for(int i=0;i<c;i++)
+      {
+        TYPE const&a=PA[(i+0)%Count];
+        TYPE const&b=PA[(i+1)%Count];
+        TYPE n=vec2d(b-a).Ort().SetMag(LineSize);
+        int A[4]={
+        #define F(pos)AddVertex(Ver(pos,color,0.5f,0.5f))
+          F(a+n),
+          F(b-n),
+          F(a-n),
+          F(b+n),
+        #undef F
+        };
+        AddTris(A[0],A[1],A[2]);
+        AddTris(A[0],A[1],A[3]);
+      }
+    }
+  }
+  template<typename TYPE>
+  void DrawLineList(const vector<TYPE>&PA,const real&LineSize)
+  {
+    if(PA.empty())return;
+    BatchScope Scope(*this);
+    {
+      int Count=PA.size();
+      for(int i=0;i<Count;i+=2)
+      {
+        TYPE const&a=PA[i+0];
+        TYPE const&b=PA[i+1];
+        TYPE n=vec2d(b-a).Ort().SetMag(LineSize);
+        int A[4]={
+        #define F(A)AddVertex(Ver(A,color,0.5,0.5))
+          F(a+n),
+          F(b-n),
+          F(a-n),
+          F(b+n),
+        #undef F
+        };
+        AddTris(A[0],A[1],A[2]);
+        AddTris(A[0],A[1],A[3]);
+      }
+    }
+  }
+  /*template<typename TYPE>
+  void DrawMesh(const vector<TYPE>&VA,const vector<int>&IA)
+  {
+    if(VA.empty())return;
+    BatchScope Scope(*this);
+    {
+      int base=GetVPos();
+      static vector<int> VID;VID.resize(VA.size());
+      for(int i=0;i<VA.size();i++)VID[i]=AddVertex(MakeVer(VA[i],color,p.x,p.y));
+      for(int i=0;i<IA.size();i+=3)AddTris(VID[IA[i+0]],VID[IA[i+1]],VID[IA[i+2]]);
+    }
+  }*/
+  struct t_geom{
+    #define DEF_PRO_TEMPLATE_DATAIO()
+    #define DEF_PRO_CLASSNAME()t_geom
+    #define DEF_PRO_VARIABLE(ADD)\
+    ADD(vector<vec2d>,VA,{})\
+    ADD(vector<int>,IA,{})\
+    //===
+    #include "defprovar.inl"
+    //===
+    void AddTris(int a,int b,int c)
+    {
+      qap_add_back(IA)=a;
+      qap_add_back(IA)=b;
+      qap_add_back(IA)=c;
+    }
+    void AddVertex(real x,real y){VA.push_back(vec2d(x,y));}
+    void AddVertex(const vec2d&pos){VA.push_back(pos);}
+    int AddVertexAndRetVID(const vec2d&pos){VA.push_back(pos);return VA.size()-1;}
+    void add(const t_geom&geom)
+    {
+      QapAssert(0==geom.IA.size()%3);
+      auto vpos=VA.size();
+      for(int i=0;i<geom.VA.size();i++)VA.push_back(geom.VA[i]);
+      for(int i=0;i<geom.IA.size();i++)IA.push_back(vpos+geom.IA[i]);
+    }
+    void add_with_offset(const t_geom&geom,const vec2d&pos)
+    {
+      auto vpos=VA.size();
+      for(int i=0;i<geom.VA.size();i++)
+      {
+        auto&ex=geom.VA[i];
+        AddVertex(pos+ex);
+      }
+      QapAssert(0==geom.IA.size()%3);
+      auto&IA=geom.IA;
+      for(int i=0;i<IA.size();i+=3)
+      {
+        auto&a=IA[i+0];
+        auto&b=IA[i+1];
+        auto&c=IA[i+2];
+        AddTris(vpos+a,vpos+b,vpos+c);
+      }
+    }
+  };
+  static t_geom GenGeomQuad(const vec2d&pos,float w,float h){return GenGeomQuad(pos.x,pos.y,w,h);}
+  static t_geom GenGeomQuad(float x,float y,float w,float h)
+  {
+    t_geom geom;
+    #define F(X,Y,U,V){geom.AddVertex(x+(X)*w,y+(Y)*h);}
+    vec2d O(x,y);
+    F(-0.5f,-0.5f,0.0f,1.0f);
+    F(+0.5f,-0.5f,1.0f,1.0f);
+    F(+0.5f,+0.5f,1.0f,0.0f);
+    F(-0.5f,+0.5f,0.0f,0.0f); 
+    geom.AddTris(1,0,3);
+    geom.AddTris(3,2,1);
+    #undef F
+    return geom;
+  }
+  static t_geom GenGeomCircleSolid(real r,int seg,real ang)
+  {
+    t_geom geom;
+    int n=seg;
+    if(n<=0)return t_geom();
+    for(int i=0;i<n;i++)
+    {
+      vec2d v=Vec2dEx(ang+Pi2*(real(i)/real(n)),1);
+      qap_add_back(geom.VA)=v*r;
+    }
+    for(int i=2;i<n;i++)
+    {
+      geom.AddTris(0,i-1,i);
+    }
+    return geom;
+  }
+  static t_geom GenGeomCircleEx(real r0,real r1,int seg,real ang)
+  {
+    t_geom geom;
+    int n=seg;
+    if(n<=0)return t_geom();
+    geom.VA.resize(n*2);
+    for(int i=0;i<n;i++)
+    {
+      vec2d v=Vec2dEx(ang+Pi2*(real(i)/real(n)),1);
+      geom.VA[i+0]=v*r0;
+      geom.VA[i+n]=v*r1;
+    }
+    for(int i=0;i<n;i++)
+    {
+      int a=0+(i+0)%n;
+      int b=0+(i+1)%n;
+      int c=n+(i+0)%n;
+      int d=n+(i+1)%n;
+      geom.AddTris(a,b,d);
+      geom.AddTris(d,c,a);
+    }
+    return geom;
+  }
+  template<typename TYPE>
+  static t_geom GenGeomLineList(const vector<TYPE>&PA,const real&LineSize)
+  {
+    t_geom geom;
+    if(PA.empty())return geom;
+    int Count=PA.size();
+    for (int i=0;i+1<Count;i+=2)
+    {
+      auto&a=PA[i+0];
+      auto&b=PA[i+1];
+      TYPE n=vec2d(b-a).Ort().SetMag(LineSize*0.5);
+      int A=geom.AddVertexAndRetVID(a+n);
+      int B=geom.AddVertexAndRetVID(b-n);
+      int C=geom.AddVertexAndRetVID(a-n);
+      int D=geom.AddVertexAndRetVID(b+n);
+      geom.AddTris(A,B,C);
+      geom.AddTris(A,B,D);
+    }
+    return geom;
+  }
+  void DrawGeomWithOffset(t_geom&geom,const vec2d&pos)
+  {
+    auto&qDev=*this;
+    QapDev::BatchScope Scope(qDev);
+    auto vpos=qDev.VPos;
+    for(int i=0;i<geom.VA.size();i++)
+    {
+      auto&ex=geom.VA[i];
+      //auto&v=qDev.AddVertexRaw();
+      //v.get_pos()=pos+ex;
+      //v.color=qDev.color;
+      qDev.AddVertex(pos+ex,qDev.color,0,0);
+    }
+    QapAssert(0==geom.IA.size()%3);
+    auto&IA=geom.IA;
+    for(int i=0;i<IA.size();i+=3)
+    {
+      auto&a=IA[i+0];
+      auto&b=IA[i+1];
+      auto&c=IA[i+2];
+      qDev.AddTris(vpos+a,vpos+b,vpos+c);
+    }
+  }
+};
+#ifdef _WIN32
+class IResource
+{
+public:
+  virtual void OnLost()=0;
+  virtual void OnReset()=0;
+  static IResource* Reg(IResource *A);
+  static IResource* UnReg(IResource *A);
+};
+class QapBitmapInfo{
+public:
+  BITMAPINFO BI;
+  BITMAPINFOHEADER&BH;
+public:
+  QapBitmapInfo(int W,int H):BH(BI.bmiHeader){
+    ZeroMemory(&BI,sizeof(BI));
+    BH.biSize=sizeof(BI.bmiHeader);
+    BH.biWidth=W;BH.biHeight=H;
+    BH.biPlanes=1;BH.biBitCount=32;
+    BH.biSizeImage=W*H*4;
+  }
+};
+#else
+#endif
+struct QapFont
+{
+  QapTex*Tex;
+  int W[256],H[256],Size;
+  QapFont():Tex(NULL),Size(0){};
+  QapFont(QapTex*Tex,int Size):Tex(Tex),Size(Size){};
+  ~QapFont(){
+    if(Tex)delete Tex;
+  };
+  void Transmit(QapFont&ref)
+  {
+    if(Tex)delete Tex;
+    Tex=ref.Tex;ref.Tex=NULL;
+    for(int i=0;i<256;i++)W[i]=ref.W[i];
+    for(int i=0;i<256;i++)H[i]=ref.H[i];
+    Size=ref.Size;
+  }
+  QapFont(QapFont&ref):Tex(NULL),Size(0){Transmit(ref);}
+  QapFont&operator=(QapFont&ref){Transmit(ref);return *this;}
+  #ifdef _WIN32
+  QapTexMem*CreateFontMem(string Name,int Size,bool Bold,int TexSize,HWND Sys_hWnd)
+  {
+    QapColor*pix=new QapColor[TexSize*TexSize];
+    this->Size=TexSize;
+    {
+      HDC DC=GetDC(Sys_hWnd);
+      int W=Bold?FW_BOLD:FW_NORMAL;
+      int H=-MulDiv(Size,GetDeviceCaps(DC,LOGPIXELSY),72);
+      {
+        HFONT FNT=CreateFontA(H,0,0,0,W,0,0,0,RUSSIAN_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,Name.c_str());
+        {
+          HDC MDC=CreateCompatibleDC(DC);
+          {
+            HBITMAP BMP=CreateCompatibleBitmap(DC,TexSize,TexSize);
+            SelectObject(MDC,BMP);
+            RECT Rect; SetRect(&Rect,0,0,TexSize,TexSize);
+            FillRect(MDC,&Rect,(HBRUSH)GetStockObject(BLACK_BRUSH));
+            SelectObject(MDC,FNT);
+            SetBkMode(MDC,TRANSPARENT);
+            SetTextColor(MDC,0xFFFFFF);
+            for(int i=0;i<256;i++)TextOutA(MDC,i%16*(TexSize/16),i/16*(TexSize/16),(LPCSTR)&i,1);
+            {QapBitmapInfo QBI(TexSize,TexSize);GetDIBits(MDC,BMP,0,TexSize,pix,&QBI.BI,DIB_RGB_COLORS);}
+            for(int i=0;i<TexSize*TexSize;i++){pix[i].a=pix[i].r;pix[i].r=255;pix[i].g=255;pix[i].b=255;}
+            for(int i=0;i<256;i++){SIZE cs;GetTextExtentPoint32A(MDC,(LPCSTR)&i,1,&cs);this->W[i]=cs.cx;this->H[i]=cs.cy;}
+            DeleteObject(BMP);
+          }
+          DeleteDC(MDC);
+        }
+        DeleteObject(FNT); 
+      }
+      ReleaseDC(Sys_hWnd,DC);
+    }
+    //for(int i=0;i<TexSize*TexSize;i++){
+    //  QapAssert(pix[i]==QapColor(0x00ffffff));
+    //}
+    QapTexMem*pMem=new QapTexMem("Font_"+Name+"_"+to_string(TexSize),TexSize,TexSize,(QapColor*)pix);
+    return pMem;
+  }
+  #else
+  QapTexMem*CreateFontMem(string Name,int Size,bool Bold,int TexSize,...)
+  {
+    QapColor*pix=new QapColor[TexSize*TexSize];
+    this->Size=TexSize;
+    emscripten_run_script(string("g_font=initFont("+to_string(Size)+",'"+Name+"',"+to_string(TexSize)+","+to_string(int(Bold))+");").c_str());
+    EM_ASM({
+      initFont_v2(g_font,$0,$1,$2);
+    },int(pix),int(&W[0]),int(&H[0]));
+    QapTexMem*pMem=new QapTexMem("Font_"+Name+"_"+to_string(TexSize),TexSize,TexSize,(QapColor*)pix);
+    pMem->InvertY();
+    return pMem;
+  }
+  #endif
+};
+#ifdef _WIN32
+QapTex*GenTextureMipMap(QapDev&qDev,QapTexMem*&Tex,int MaxLevelCount=16)//only D3DFMT_A8R8G8B8
+{
+  if(!Tex)return NULL;
+  int &W=Tex->W;int &H=Tex->H;QapColor *&pBits=Tex->pBits;
+  if(0){fail:QapDebugMsg("NPOT texture \""+Tex->Name+"\"("+IToS(W)+"x"+IToS(H)+")");return NULL;}
+  int SW=1,SWC=0;for(int &i=SWC;SW<W;i++)SW*=2; if(SW>W)goto fail;
+  int SH=1,SHC=0;for(int &i=SHC;SH<H;i++)SH*=2; if(SH>H)goto fail;
+  int Levels=min(MaxLevelCount,min(SWC,SHC));
+  IDirect3DTexture9 *tex;
+  qDev.pDev->CreateTexture(SW,SH,Levels,0,D3DFMT_A8R8G8B8,D3DPOOL_MANAGED,&tex,NULL);
+  D3DLOCKED_RECT rect[16]; struct QapARGB{uchar B,G,R,A;}; QapARGB*pBitsEx[16];
+  for(int i=0;i<Levels;i++){tex->LockRect(i,&rect[i],NULL,0);pBitsEx[i]=(QapARGB*)rect[i].pBits;};
+  {
+    QapColor*pDestBits=(QapColor*)rect[0].pBits;
+    memcpy_s(pDestBits,SW*SH*sizeof(QapColor),pBits,SW*SH*sizeof(QapColor));
+    SW/=2; SH/=2;
+  }
+  for(int k=1;k<Levels;k++)
+  {
+    QapARGB *PC=(QapARGB*)rect[k].pBits;
+    for(int j=0;j<SH;j++)
+      for(int i=0;i<SW;i++)
+      {
+        #define F(X,Y)pBitsEx[k-1][X+2*Y*SW+2*i+4*j*SW]
+          QapARGB A[4]={F(0,0),F(0,1),F(1,0),F(1,1)};
+        #undef F
+        float AF[4]={0,0,0,0};
+        for(int t=0;t<4;t++)
+        {
+          AF[0]+=A[t].R;
+          AF[1]+=A[t].G;
+          AF[2]+=A[t].B;
+          AF[3]+=A[t].A;
+        };
+        for(int t=0;t<4;t++)AF[t]*=0.25*(1.0/255.0);
+        QapColor PCC=D3DCOLOR_COLORVALUE(AF[0],AF[1],AF[2],AF[3]);
+        *PC=*((QapARGB*)&PCC);
+        PC++;
+      }
+    SW/=2; SH/=2;
+  }
+  for(int i=0;i<Levels;i++)tex->UnlockRect(i);
+  //MACRO_ADD_LOG("Loaded \""+Tex->Name+"\"",lml_HINT);
+  QapTex*pTex=new QapTex(Tex,tex);
+  delete Tex;Tex=NULL;
+  return pTex;
+}
+#else
+QapTex*GenTextureMipMap(QapDev&qDev,QapTexMem*&pMem,int MaxLevelCount=16){
+  int&W=pMem->W;int&H=pMem->H;QapColor*&pBits=pMem->pBits;
+  auto tex=EM_ASM_INT({
+    return makeTexture(qDev,$0,$1,$2);
+  },W,H,int(pBits));
+  auto*pTex=new QapTex(pMem,tex);
+  delete pMem;pMem=NULL;
+  return pTex;
+}
+#endif
+QapTexMem*BlurTexture(QapTexMem*Tex,int PassCount)//only D3DFMT_A8R8G8B8
+{
+  int &W=Tex->W;int &H=Tex->H;QapColor *&pBits=Tex->pBits;
+  #define BlurLog(X,Y)//MACRO_ADD_LOG(X,Y)
+  BlurLog("Blur \""+Tex->Name+"\" x"+IToS(PassCount),lml_HINT);
+  struct QapARGB{uchar B,G,R,A;};
+  static QapARGB VoidMem[2048*2048*4];
+  #define qap_memcpy_s(DEST,DSIZE,SRC,SIZE)memcpy(DEST,SRC,SIZE)
+  qap_memcpy_s(VoidMem,sizeof(VoidMem),pBits,W*H*sizeof(QapARGB));
+  static int BBM[9]={
+    1,2,1, 
+    2,4,2, 
+    1,2,1};
+  #define INIT_STATIC_VAR(TYPE,VALUE,INIT_CODE)static TYPE VALUE;{static bool _STATIC_SYS_FLAG=true;if(_STATIC_SYS_FLAG){INIT_CODE;_STATIC_SYS_FLAG=false;};};
+    INIT_STATIC_VAR(int,MartixSum,for(int i=0;i<9;i++)MartixSum+=BBM[i];);
+  #undef INIT_STATIC_VAR
+  int PosRange[9]={
+    -W-1,-W,-W+1,
+    -1,0,+1,
+    +W-1,+W,+W+1};
+  float inv_255=1.0/255;
+  for(int PassId=0;PassId<PassCount;PassId++)
+  {
+    QapARGB *PC=0;
+    QapARGB *VM=0;
+    for(int j=1;j<H-1;j++)
+      for(int i=1;i<W-1;i++)
+      {
+        PC=(QapARGB*)pBits+j*W+i; VM=(QapARGB*)VoidMem+j*W+i;
+        float AF[4]={0,0,0,0};
+        for(int t=0;t<9;t++)
+        {
+          QapARGB T=*(VM+PosRange[t]);
+          AF[0]+=T.R*BBM[t];
+          AF[1]+=T.G*BBM[t];
+          AF[2]+=T.B*BBM[t];
+          AF[3]+=T.A*BBM[t];
+        };    
+        for(int i=0;i<4;i++)AF[i]/=MartixSum*255.0;
+        #define F(r,g,b,a)QapColor((DWORD)((r)*255.f),(DWORD)((g)*255.f),(DWORD)((b)*255.f),(DWORD)((a)*255.f))
+        QapColor PCC=F(AF[3],AF[0],AF[1],AF[2]);
+        #undef F
+        *PC=*((QapARGB*)&PCC);
+      }
+    //PassId++;
+    qap_memcpy_s(VoidMem,sizeof(VoidMem),pBits,W*H*sizeof(QapARGB));
+    #undef qap_memcpy_s
+  }
+  BlurLog("Blur \""+Tex->Name+"\" x"+IToS(PassCount),lml_HINT);
+  #undef BlurLog
+  return Tex;
+}
+void DrawQapText(QapDev&qDev,QapFont&Font,float X,float Y,const string&Text)
+{
+  static QapColor CT[]={
+    0xFF252525,0xFFFF0000,0xFF00FF00,0xFFFFFF00,
+    0xFF0000FF,0xFFFF00FF,0xFF00FFFF,0xFFFFFFFF,
+    0xFFFFFFA8,0xFFFFA8FF,
+    0xFFFF8000,0xFF0080FF,0xFFA0A0A0,0xFF808080,0xFFF0F000,0xFF00F0F0,
+  };
+  bool _4it=!qDev.IsBatching();
+  if(_4it)qDev.BeginBatch();
+  int QuadCount=0;
+  int VPos=qDev.GetVPos();
+  {
+    float xp=0; int i=0;
+    while(i<(int)Text.length())
+    {
+      if(Text[i]!='^')
+      {
+        int I=(uchar)Text[i];
+        float s=((float)(I%16))/16,t=((float)(I/16))/16;
+        float cx=(float)Font.W[I],cy=(float)Font.H[I],ts=(float)Font.Size;
+        #define F(var,x,y,z,color,u,v)int var=qDev.AddVertex(QapDev::Ver(X+x,Y+y,color,u,v));
+          F(A,xp+0,-cy,0,qDev.GetColor(),s,1-t-cy/ts);
+          F(B,xp+cx,-cy,0,qDev.GetColor(),s+cx/ts,1-t-cy/ts);
+          F(C,xp+cx,0,0,qDev.GetColor(),s+cx/ts,1-t);
+          F(D,xp+0,0,0,qDev.GetColor(),s,1-t);
+        #undef F
+        qDev.AddTris(A,B,C);
+        qDev.AddTris(C,D,A);
+        xp+=cx; QuadCount++; i++; continue;
+      };
+      i++; if(i>(int)Text.length())continue;
+      if((Text[i]>='0')&&(Text[i]<='9')){qDev.SetColor(CT[Text[i]-'0']); i++; continue;};
+      if((Text[i]>='A')&&(Text[i]<='F')){qDev.SetColor(CT[Text[i]-'A'+10]); i++; continue;};
+    }
+  };
+  if(_4it)qDev.EndBatch();
+}
+string Q3TextToNormal(const string&Text)
+{
+  string s; int i=0;
+  while(i<(int)Text.length())
+  {
+    if(Text[i]!='^'){s.push_back(Text[i++]);continue;}
+    i++;if(i>(int)Text.length())continue;
+    if((Text[i]>='0')&&(Text[i]<='9')){i++;continue;};
+    if((Text[i]>='A')&&(Text[i]<='F')){i++;continue;};
+  }
+  return s;
+}
+int GetQ3TextLength(const QapFont &Font,const string &Text)
+{
+  float xp=0; int i=0;
+  while(i<(int)Text.size())
+  {
+    if(Text[i]!='^')
+    {
+      int I=(uchar)Text[i];
+      float cx=(float)Font.W[I];
+      xp+=cx; i++; continue;
+    };
+    i++; if(i>(int)Text.size())continue;
+    if((Text[i]>='0')&&(Text[i]<='9')){i++; continue;};
+    if((Text[i]>='A')&&(Text[i]<='F')){i++; continue;};
+  }
+  return xp;
+}
+class TextRender{
+public:
+  QapDev*RD;
+  bool dummy=false;
+  struct TextLine{
+  public:
+    string text;
+    int x,y;
+  public:
+    TextLine(int x,int y,const string&text):x(x),y(y),text(text){}
+  public:
+    void DrawRaw(QapDev&qDev,QapFont*Font,int dv){DrawQapText(qDev,*Font,x+dv+0.5,y-dv+0.5,Q3TextToNormal(text));}
+    void DrawSys(QapDev&qDev,QapFont*Font,int dv){DrawQapText(qDev,*Font,x+dv+0.5,y-dv+0.5,text);}
+  };
+  vector<TextLine> LV;
+  TextRender(QapDev*RD):RD(RD){}
+public:
+  int x,y,ident,bx;
+  QapFont*NormFont;
+  QapFont*BlurFont;
+public:
+  void BeginScope(int X,int Y,QapFont*NormFont,QapFont*BlurFont){
+    bx=X;x=X;y=Y;ident=24;this->NormFont=NormFont;this->BlurFont=BlurFont;
+  }
+  void BR(){y-=ident;x=bx;}
+  void AddText(const string&text)
+  {
+    LV.push_back(TextLine(x,y,text));BR();
+  }
+  int text_len(const string&text){return GetQ3TextLength(*NormFont,text);}
+  void AddTextNext(const string&text)
+  {
+    LV.push_back(TextLine(x,y,text));x+=GetQ3TextLength(*NormFont,text);
+  }
+  void EndScope(){
+    if(dummy)return;
+    {
+      RD->BindTex(0,BlurFont->Tex);
+      RD->SetColor(0xff000000);
+      RD->BeginBatch();
+      for(int i=0;i<LV.size();i++)LV[i].DrawRaw(*RD,BlurFont,1.0);
+      RD->EndBatch();
+    }
+    {
+      RD->BindTex(0,NormFont->Tex);
+      RD->SetColor(0xffffffff);
+      RD->BeginBatch();
+      for(int i=0;i<LV.size();i++)LV[i].DrawSys(*RD,NormFont,0.0);
+      RD->EndBatch();
+    }
+  }
+};
+#ifdef _WIN32
+#else
+QapDev qDev;
+#endif
+class QapAtlas{
+public:
+  int W,H;
+  int X,Y;
+  int Ident,dY;
+  QapTexMem*pMem{};
+  QapTex*pTex{};
+  struct TFrame{
+    QapAtlas*atlas;
+    int x,y,w,h;
+    TFrame():atlas(NULL),x(0),y(0),w(0),h(0){}
+    TFrame(QapAtlas*atlas,QapTexMem*Mem,int x,int y):atlas(atlas),x(x),y(y),w(Mem->W),h(Mem->H){}
+    void Bind(QapDev&qDev){atlas->Bind(qDev,this);}
+  };
+  QapPool<TFrame>pool;
+  vector<TFrame*>frames;
+public:
+  QapAtlas():pMem(NULL),pTex(NULL),W(1024*2),H(1024*2),X(0),Y(0),Ident(8),dY(0),pool(256){
+    pMem=new QapTexMem("Atlas.qap",W,H,new QapColor[W*H]);
+  }
+  TFrame*AddFrame(QapTexMem*Mem)
+  {
+    if(!Mem||!Mem->pBits)return NULL;
+    if(X<Ident||Ident+X+Mem->W>W)
+    {
+      QapAssert(W>=Mem->W);
+      X=Ident;Y+=dY+Ident;dY=Mem->H;
+      pMem->FillLine(Y-Ident/2,0xff000000);
+    }
+    {
+      TFrame*pFrame;
+      pool.NewInstance(pFrame);
+      *pFrame=TFrame(this,Mem,X,Y);
+      frames.push_back(pFrame);
+      pMem->FillBorder(X,Y,Mem);
+      pMem->FillMem(X,Y,Mem);
+      X+=Mem->W+Ident;dY=max(dY,Mem->H);
+      //QAP_EM_LOG("AddFrame done");
+      return pFrame;
+    }
+  }
+  QapTex*AddTex(QapDev&qDev,QapTexMem*Mem)
+  {
+    AddFrame(Mem);
+    return GenTextureMipMap(qDev,Mem);
+  }
+  QapTex*GenTex(QapDev&qDev){return pTex=GenTextureMipMap(qDev,pMem);}
+  void Bind(QapDev&qDev,TFrame*frame)
+  {
+    b2Transform xf;
+    float inv_w=1.f/float(W);
+    float inv_h=1.f/float(H);
+    xf.p=vec2f(float(frame->x)*inv_w,float(frame->y)*inv_h);
+    xf.r=MakeZoomTransform(vec2d(float(frame->w)*inv_w,float(frame->h)*inv_h)).r;
+    qDev.SetTextureTransform(xf);
+  }
+};
+QapKeyboard kb;
+struct t_global_img{
+  string fn;
+  std::function<void(const string&,int,int,int)> on_load;
+  bool done=false;
+};
+struct t_global_url{
+  string url;
+  std::function<void(const string&,int,int)> on_load;
+  bool done=false;
+};
+map<string,t_global_img> g_global_imgs;
+map<string,t_global_url> g_global_urls;
+extern "C" {
+  int qap_on_load_img(char*pfn,int ptr,int w,int h){
+    string fn=pfn;
+    QAP_EM_LOG("on_load:"+fn);
+    auto it=g_global_imgs.find(fn);
+    if(it==g_global_imgs.end())return 0;
+    QAP_EM_LOG("on_load_bef:"+fn);
+    it->second.on_load(fn,ptr,w,h);
+    QAP_EM_LOG("on_load_aft:"+fn);
+    it->second.done=true;
+    return 0;
+  }
+  int qap_on_load_url(char*purl,int ptr,int size){
+    string url=purl;
+    QAP_EM_LOG("on_load_url:"+url);
+    auto it=g_global_urls.find(url);
+    if(it==g_global_urls.end())return 0;
+    QAP_EM_LOG("on_load_url_bef:"+url);
+    it->second.on_load(url,ptr,size);
+    QAP_EM_LOG("on_load_url_aft:"+url);
+    it->second.done=true;
+    return 0;
+  }
+}
+#ifdef _WIN32
+#include "thirdparty/lodepng.cpp"
+struct ImgLoader{
+  struct string
+  {
+    const char*ptr;
+    int size;
+  };
+  struct TextureMemory
+  {
+    void*ptr;
+    int W;
+    int H;
+    TextureMemory(){ptr=0;W=0;H=0;}
+  };
+  struct IEnv
+  {
+    virtual void InitMemory(TextureMemory&out,int W,int H)=0;
+    virtual void FreeMemory(TextureMemory&in)=0;
+  };
+  virtual void LoadTextureFromFile(IEnv&Env,TextureMemory&Mem,string FileName)=0;
+  virtual void SaveTextureToFile(IEnv&Env,TextureMemory&Mem,string FileName)=0;
+  virtual bool KeepExt(string ext)=0;
+};
+struct TLoaderEnv:ImgLoader::IEnv
+{
+  static ImgLoader::string SToS(const std::string&in)
+  {
+    ImgLoader::string tmp;
+    if(in.empty()){tmp.ptr=0;tmp.size=0;return tmp;}
+    tmp.ptr=&in[0];
+    tmp.size=in.size();
+    return tmp;
+  }
+  typedef ImgLoader::TextureMemory TextureMemory;
+  //using ImgLoader::TextureMemory;
+  void InitMemory(TextureMemory&out,int W,int H)
+  {
+    if(W*H<=0)return;
+    assert(!out.ptr);
+    assert(!out.W);
+    assert(!out.H);
+    out.ptr=new int[W*H];
+    out.W=W;
+    out.H=H;
+    int*p=(int*)out.ptr;
+    for(int i=0;i<W*H;i++)p[i]=0;
+  }
+  void FreeMemory(TextureMemory&in)
+  {
+    int*ptr=(int*)in.ptr;
+    delete[] ptr;
+    in.ptr=0;
+    in.W=0;
+    in.H=0;
+  }
+  struct bgra{unsigned char b,g,r,a;};
+  bool LoadTextureFromFile_v2(TextureMemory&mem,const std::string&fn)
+  {
+    return load_tex(mem,fn.c_str());
+  }
+  bool load_tex(TextureMemory&mem,const char*fn)
+  {
+    std::vector<unsigned char> image;
+    unsigned cx=0,cy=0;
+    decodeOneStep(fn,image,cx,cy);
+    if(!cx||!cy)return false;
+    InitMemory(mem,cx,cy);auto*arr=(bgra*)mem.ptr;
+    for(unsigned y=0;y<cy;y++)
+    for(unsigned x=0;x<cx;x++)
+    {
+      auto&out=arr[x+cx*y];
+      auto&inp=*(bgra*)(void*)&image[4*cx*y+4*x+0];
+      out=inp;
+      std::swap(out.r,out.b);
+    }
+    return true;
+  }
+  static void decodeOneStep(const char*fn,std::vector<unsigned char>&image,unsigned&width,unsigned&height)
+  {
+    unsigned error=lodepng::decode(image,width,height,fn);
+    //if(error)QapDebugMsg("encoder error "+std::to_string(error)+": "+lodepng_error_text(error));
+  }
+  void SaveTextureToFile_v2(TextureMemory&mem,const string&fn){
+    assert(mem.ptr);
+    save_tex(mem.W,mem.H,(bgra*)mem.ptr,fn.c_str());
+  }
+  //void save_tex(int cx,int cy,const vector<QapColor>&arr,const char*fn)
+  void save_tex(int cx,int cy,bgra*arr,const char*fn)
+  {
+    std::vector<unsigned char> image;
+    image.resize(cx*cy*4);
+    for(unsigned y=0;y<cy;y++)
+    for(unsigned x=0;x<cx;x++)
+    {
+      auto c=arr[x+cx*y];
+      auto&out=*(bgra*)(void*)&image[4*cx*y+4*x+0];
+      out=c;
+      std::swap(out.r,out.b);
+    }
+    encodeOneStep(fn,image,cx,cy);
+  }
+  static void encodeOneStep(const char*fn,std::vector<unsigned char>&image,unsigned width,unsigned height)
+  {
+    unsigned error=lodepng::encode(fn,image,width,height);
+    //if(error)QapDebugMsg("encoder error "+std::to_string(error)+": "+lodepng_error_text(error));
+  }
+};
+template<class FUNC>
+QapTexMem*LoadTexture(const string&FN,FUNC&&func)
+{
+  static TLoaderEnv env;
+  TLoaderEnv::TextureMemory mem;
+  env.LoadTextureFromFile_v2(mem,FN);
+  if(!mem.ptr){QapDebugMsg("Error Loading \""+FN+"\"");return NULL;}
+  QapTexMem*pTex=new QapTexMem(FN);
+  pTex->W=mem.W;
+  pTex->H=mem.H;
+  pTex->pBits=(QapColor*)mem.ptr;
+  //pTex->Clear(QapColor(255,0,0,0));
+  //pTex->Clear(0xffff00ff);
+  func(FN,int(pTex->pBits),mem.W,mem.H);
+  return pTex;
+}
+#else
+template<class FUNC>
+QapTexMem*LoadTexture(string fn,FUNC&&func){
+  auto&m=g_global_imgs[fn];
+  m.fn=fn;
+  m.on_load=std::move(func);
+  EM_ASM({
+    loadTexture_v2(UTF8ToString($0));
+  },int(fn.c_str()));
+  return nullptr;
+}
+#endif
+#ifdef _WIN32
+#include "inetdownloader.hpp"
+#endif
+string g_host="185.92.223.117";
+QapClock g_clock;
+class TGame{
+public:
+  typedef QapAtlas::TFrame TFrame;
+public:
+  class ILevel{
+  public:
+    virtual void Render(QapDev&qDev)=0;
+    virtual void Update(TGame*Game)=0;
+    virtual bool Win()=0;
+    virtual bool Fail()=0;
+    virtual void AddText(TextRender&TR){}
+    virtual ~ILevel(){}
+  };
+  class ILevelFactory{
+  public:
+    virtual ILevel*Build(TGame*Game)=0;
+  };
+  struct TLevelInfo{
+    string Name;
+    ILevelFactory&Factory;
+    TLevelInfo(const string&Name,ILevelFactory&Factory):Name(Name),Factory(Factory){}
+  };
+  template<typename TYPE>
+  class TLevelFactory:public ILevelFactory{
+  public:
+    virtual ILevel*Build(TGame*Game){
+      auto*Result=new TYPE();
+      *Result={};
+      Result->Init(Game);
+      return Result;
+    }
+  };/*
+  template<typename TYPE>
+  class AutoPtr:public std::auto_ptr<TYPE>{
+  public:
+    TYPE*operator->(){return get();}
+    operator bool(){return 
+  };*/
+public:
+  class TCounterInc{
+  public:
+    int Value=0;
+    int Minimum=0;
+    int Maximum=32;
+  public:
+    TCounterInc(){;}
+    TCounterInc(int Value,int Minimum,int Maximum){this->Value=Value;this->Minimum=Minimum;this->Maximum=Maximum;}
+    void Start(){Value=Minimum;}
+    void Stop(){Value=Maximum;}
+    operator bool(){return Value<Maximum;}
+    void operator++(){Value++;}
+    void operator++(int){Value++;}
+    int DipSize(){return Maximum-Minimum;}
+    operator string(){return IToS(Value)+"/"+IToS(DipSize());}
+  };  
+  class TCounterIncEx{
+  public:
+    int Value=0;
+    int Minimum=0;
+    int Maximum=32;
+    bool Runned=false;
+  public:
+    TCounterIncEx(){;}
+    TCounterIncEx(int Value,int Minimum,int Maximum){;this->Value=Value;this->Minimum=Minimum;this->Maximum=Maximum;}
+    void Start(){Value=Minimum;Runned=true;}
+    void Stop(){Value=Minimum;Runned=false;}
+    operator bool(){return Value<Maximum;}
+    void operator++(){if(Runned)Value++;}
+    void operator++(int){if(Runned)Value++;}
+    int DipSize(){return Maximum-Minimum;}
+    operator string(){return IToS(Value)+"/"+IToS(DipSize());}
+  };
+public:
+#include "LevelPack.inl"
+class IOnClick;
+class TMenu;
+struct MenuItem{
+public:
+  string Caption;
+  IOnClick*OnClick;
+  MenuItem(const string&Caption,IOnClick*OnClick){this->Caption=Caption;this->OnClick=OnClick;};
+};
+class IOnClick{
+public:
+  virtual void Call(TMenu*EX)=0;
+  virtual bool IsEnabled(TMenu*EX){return true;}
+};
+class TMenu{
+private:
+  bool in_game;
+public:
+  bool InGame(){return in_game;}
+  void Up(){in_game=false;}
+  void Down(){if(Game->Level.get())in_game=true;}
+public:
+  vector<MenuItem>Items;
+  string Caption;
+  TGame*Game;
+  std::unique_ptr<TMenu>OldMenu;
+  vec2d oldmp;
+  int CurID;
+  TMenu(TGame*Game,const string&Caption){this->Game=Game;this->Caption=Caption;};
+  void Add(const string&s,IOnClick*p){Items.push_back(MenuItem(s,p));}
+  void Back(){
+    QapAssert(OldMenu.get());
+    Game->Menu.release();
+    Game->Menu.reset(OldMenu.release());
+    //create memory leak
+    delete this;
+  }
+  void AddText(real&y,TextRender&TE,const string&s,const real dy=32){
+    real x=GetQ3TextLength(*TE.NormFont,s);
+    TE.LV.push_back(TextRender::TextLine(-x*0.5,y+TE.NormFont->H[0]*0.5,s));y-=dy;
+  };
+  void Render(QapDev&qDev,TextRender&TE)
+  {
+    if(!Game->FrameMenuItem||!Game->Atlas.pTex)return;
+    const real dy=32;
+    real y=+0.5*Items.size()*dy;
+    qDev.BindTex(0,Game->Atlas.pTex);
+    Game->FrameMenuItem->Bind(qDev);
+    qDev.SetColor(0x80ffffff);
+    qDev.DrawQuad(0,y-dy*CurID,Game->FrameMenuItem->w,Game->FrameMenuItem->h,0);
+    for(int i=0;i<Items.size();i++)AddText(y,TE,string(Items[i].OnClick->IsEnabled(this)?CurID==i?"^3":"^7":"^D")+Items[i].Caption,dy);
+  }
+  void Update(TGame*Game)
+  {
+    CurID%=Items.size();
+    const real dy=32;
+    real y=+0.5*Items.size()*dy;
+    auto mp=kb.MousePos;
+    vec2d hmis=vec2d(Game->FrameMenuItem->w,dy)*0.5;
+    if(mp!=oldmp)
+    {
+      for(int i=0;i<Items.size();i++)
+      {
+        if(Items[i].OnClick->IsEnabled(this))if(CD_Rect2Point(-hmis+vec2d(0,y),hmis+vec2d(0,y),mp))CurID=i;
+        y-=dy;
+      }
+      oldmp=mp;
+    }
+    for(int i=CurID;i<CurID+Items.size();i++)if(Items[i%Items.size()].OnClick->IsEnabled(this)){CurID=i;break;}
+    if(kb.OnDown(VK_DOWN)){
+      CurID++;
+      for(int i=CurID;i<CurID+Items.size();i++)if(Items[i%Items.size()].OnClick->IsEnabled(this)){CurID=i;break;}
+    }
+    if(kb.OnDown(VK_UP)){
+      CurID--;
+      for(int i=CurID+Items.size();i>CurID;i--)
+        if(Items[i%Items.size()].OnClick->IsEnabled(this))
+        {
+          CurID=i;break;
+        }
+    }
+    CurID+=Items.size();
+    CurID%=Items.size();
+    if(kb.OnDown(VK_RETURN)){
+      Items[CurID].OnClick->Call(this);
+    }
+    if(kb.OnDown(mbLeft)){
+      vec2d dY(0,0.5*Items.size()*dy-CurID*dy);
+      if(Items[CurID].OnClick->IsEnabled(this))if(CD_Rect2Point(-hmis+dY,hmis+dY,mp))
+      {
+        Items[CurID].OnClick->Call(this);
+      }
+    }
+  }
+};
+public:
+  struct t_frame{
+    TFrame*pF=0;
+    TFrame*pS=0;
+    string name,file,fn;
+    int mode=0;
+    operator bool()const{return pF&&pS;}
+  };
+#define ADDFRAME(NAME,FILE,MODE)TFrame*Frame##NAME;TFrame*Frame##NAME##_s;t_frame frame_##NAME={0,0,#NAME,FILE,"",MODE};
+  FRAMESCOPE(ADDFRAME)
+#undef ADDFRAME
+public:
+  TCounterIncEx WaitWin=TCounterIncEx(0,0,Sys.UPS*2);
+  TCounterIncEx WaitFail=TCounterIncEx(0,0,Sys.UPS*2);
+  TCounterInc LevelCounter=TCounterInc(0,0,0);
+public:
+  vector<TLevelInfo>LevelsInfo;
+  std::unique_ptr<ILevel>Level;
+  std::unique_ptr<TMenu>Menu;
+public:
+  QapAtlas Atlas;
+  QapDev qDev;
+  QapFont NormFont;
+  QapFont BlurFont;
+  QapTex*th_rt_tex{};
+  QapTex*th_rt_tex_full{};
+public:
+  TGame(){}
+public:
+  QapTexMem*AddBorder(QapTexMem*pMem,int dHS=8,const QapColor&Color=0xffffffff)
+  {
+    int dS=dHS*2;
+    QapTexMem*sm=new QapTexMem("ShadowBot",pMem->W+dS,pMem->H+dS,NULL);
+    sm->pBits=new QapColor[sm->W*sm->H];
+    sm->Clear(Color);
+    sm->FillMem(dHS,dHS,pMem);
+    //sm->FillBorder(dHS,dHS,pMem,dHS);
+    return sm;
+  }
+  QapTexMem*GenShadow(QapTexMem*pMem,int dHS=8)
+  {
+    int dS=dHS*2;
+    vec4f acc={0,0,0,0};
+    for(int x:{0,1})for(int y:{0,1})acc+=pMem->get_color_at(x*(pMem->W-1),y*(pMem->H-1));
+    acc*=0.25;
+    QapColor c=acc.GetColor();
+    auto*sm=AddBorder(pMem,dHS,c);
+    sm->CalcAlpha(0xffffffff);
+    sm->FillChannel(0x00ffffff,0x00ffffff);
+    BlurTexture(sm,dHS);
+    return sm;
+  }
+  TFrame*GenShadowFrame(QapTexMem*pMem,int dHS=8)
+  {
+    QapTexMem*sm=GenShadow(pMem,dHS);
+    TFrame*FrameX=Atlas.AddFrame(sm);
+    delete sm;
+    return FrameX;
+  }
+  string GFX_DIR="GFX/v4/";
+  void LoadFrames(bool need_save_atlas=0,bool need_rewrite_tex=0)
+  {
+    //auto*ball=LoadTexture("GFX\\Ball.png");
+    //#define F(NAME)LoadTexture("GFX\\"#NAME".png")->CopyAlpha(ball)->SaveToFile("GFX\\"#NAME".png");
+    //auto LT=LoadTexture;
+    auto m2=[&](QapTexMem*p){return p->CalcAlpha()->FillChannel(0xffffffff,0x00ffffff);};
+    /*
+    if(bool hack=false)
+    {
+      auto f=[&](auto NAME,string FILE,auto MODE){
+        auto fn="GFX\\"+FILE+".png";
+        if(MODE==2){auto*p=m2(LT(fn));if(need_rewrite_tex)p->SaveToFile(fn);}
+        if(MODE==0){auto*p=LT(fn)->CalcAlpha(0xffffffff);if(need_rewrite_tex)p->SaveToFile(fn);}
+        if(MODE==1){auto*p=LT(fn)->CopyAlpha(LT("GFX\\"+FILE+"_a.png")->CalcAlpha());if(need_rewrite_tex)p->SaveToFile(fn);}
+      };
+      #define F(NAME,FILE,MODE)f(Frame##NAME,FILE,MODE);
+        FRAMESCOPE(F);
+        //LoadTexture("GFX\\You.png")->CopyAlpha(GenBall(32))->SaveToFile("GFX\\You.png");
+      #undef F
+    }*/
+    static int frames=0;static bool done=false;
+    {
+      static auto on_load_tex=[&](string fn){
+        frames--;
+        QAP_EM_LOG("on_load_tex:"+fn);
+        if(frames||done)return;
+        QAP_EM_LOG("on_load_tex_done_at:"+fn);
+        done=true;
+        Atlas.GenTex(qDev);
+        QAP_EM_LOG("on_load_tex_done_at_aft_GenTex:"+fn);
+      };
+      #define F(NAME,FILE,MODE)frames++;
+      FRAMESCOPE(F);
+      #undef F
+      #define F(NAME,FILE,MODE){\
+        t_frame&f=frame_##NAME;f.fn=GFX_DIR+ FILE ".png";\
+        LoadTexture(f.fn,[&](const string&fn,int ptr,int w,int h){\
+          QAP_EM_LOG("on_LoadTexture:"+fn+" "+IToS(w)+" "+IToS(h));\
+          QapTexMem*pMem=new QapTexMem(fn+"_"+to_string(w),w,h,(QapColor*)ptr);\
+          if(MODE==2)pMem=m2(pMem);\
+          Frame##NAME=Atlas.AddFrame(pMem);\
+          if(MODE==2)pMem->CalcAlphaToRGB_and_set_new_alpha()->InvertRGB();\
+          if(MODE==2)Frame##NAME##_s=GenShadowFrame(pMem);\
+          f.pF=Frame##NAME;f.pS=Frame##NAME##_s;\
+          delete pMem;\
+          on_load_tex(fn);\
+        });\
+      }
+      FRAMESCOPE(F);
+      #undef F
+    }
+    //if(need_save_atlas)Atlas.pMem->SaveToFile("Atlas.png");
+    //Atlas.GenTex();
+  }
+  #ifdef _WIN32
+  HWND Sys_HWND=0;
+  #else
+  int Sys_HWND=0;
+  #endif
+  void Init()
+  {
+    srand(time(NULL));
+    
+    QAP_EM_LOG("before CreateFontMem");
+    {
+      QapTexMem*pNormMem=NormFont.CreateFontMem("Consolas",14,false,512,Sys_HWND);
+      QapTexMem*pBlurMem=pNormMem->Clone();
+      //pBlurMem->Blur(10);
+      //pBlurMem->Blur(4);
+      BlurTexture(pBlurMem,4);
+      BlurFont=NormFont;
+      BlurFont.Tex=GenTextureMipMap(qDev,pBlurMem);
+      NormFont.Tex=GenTextureMipMap(qDev,pNormMem);
+      //SysFont=FontCreate("Arial",16,false,512);
+    }
+    QAP_EM_LOG("before LoadFrames");
+    LoadFrames();
+    
+    QAP_EM_LOG("before LoadTexture");
+    if(1)
+    {
+      LoadTexture(GFX_DIR+"market_car_v2_512.png",[&](const string&fn,int ptr,int w,int h){
+        QapTexMem*pMem=new QapTexMem(fn+"_"+to_string(w),w,h,(QapColor*)ptr);
+        th_rt_tex=GenTextureMipMap(qDev,pMem);
+      });
+      //th_rt_tex=GenTextureMipMap(ptm);
+      
+      LoadTexture(GFX_DIR+"market_car_v2_full_512.png",[&](const string&fn,int ptr,int w,int h){
+        QapTexMem*pMem=new QapTexMem(fn+"_"+to_string(w),w,h,(QapColor*)ptr);
+        th_rt_tex_full=GenTextureMipMap(qDev,pMem);
+      });
+      //ptm=LoadTexture("GFX\\market_car_v2_full.png");
+      //th_rt_tex_full=GenTextureMipMap(ptm);
+    }
+    QAP_EM_LOG("before qDev.Init();");
+    qDev.Init(1024*32,1024*32*2);
+    QAP_EM_LOG("after qDev.Init();");
+    InitLevelsInfo();
+    //RestartLevel();
+    InitMenuSystem();
+    update_user_name(true);
+    RestartLevel();
+    Menu->Down();
+    
+    QAP_EM_LOG("after init");
+  }
+  void InitLevelsInfo()
+  {
+    #define ADDLEVEL(CLASS){static TLevelFactory<CLASS>tmp;LevelsInfo.push_back(TLevelInfo(#CLASS,tmp));}
+    LEVEL_LIST(ADDLEVEL);
+    #undef ADDLEVEL
+    LevelCounter.Maximum=LevelsInfo.size();
+  }
+  void NewGame(){
+    LevelCounter.Value=0;
+    RestartLevel();
+  }
+  void RestartLevel()
+  {
+    if(!LevelCounter){
+      return;
+    };
+    Level.reset(LevelsInfo[LevelCounter.Value].Factory.Build(this));
+    WaitWin.Stop();
+    WaitFail.Stop();
+  }
+  void InitMenuSystem(){
+    static class TOnResume:public IOnClick{
+    public:
+      void Call(TMenu*EX){
+        EX->Game->Menu->Down();
+      }
+      virtual bool IsEnabled(TMenu*EX){return EX->Game->Level.get();}
+    } OnResume;
+    static class TOnRestartLevel:public IOnClick{
+    public:
+      void Call(TMenu*EX){
+        EX->Game->RestartLevel();
+        EX->Game->Menu->Down();
+      }
+      virtual bool IsEnabled(TMenu*EX){return EX->Game->LevelCounter.Value;}
+    } OnRestartLevel;
+    static class TOnNewGame:public IOnClick{
+    public:
+      void Call(TMenu*EX){
+        EX->Game->NewGame();
+        EX->Game->Menu->Down();
+      }
+    } OnNewGame;
+    static class TOnBack:public IOnClick{
+    public:
+      void Call(TMenu*EX){
+        EX->Back();
+      }
+    } OnBack;
+    static class TOnNothing:public IOnClick{
+    public:
+      void Call(TMenu*EX){}
+      virtual bool IsEnabled(TMenu*EX){return false;}
+    } OnNothing;
+    static class TOnUserName:public IOnClick{
+    public:
+      void Call(TMenu*EX){
+        EX->Game->user_name_scene=true;
+        EX->Game->user_name="";
+      }
+    } OnUserName;
+    static class TOnSettings:public IOnClick{
+    public:
+      void Call(TMenu*EX){
+        auto&Menu=EX->Game->Menu;
+        auto OldMenu=std::unique_ptr<TMenu>(Menu.release());
+        Menu.reset(new TMenu(EX->Game,"Settings"));
+        Menu->Add("Under construction",&OnNothing);
+        Menu->Add("Back",&OnBack);
+        Menu->OldMenu=std::unique_ptr<TMenu>(OldMenu.release());
+        Menu->Up();
+      }
+      //virtual bool IsEnabled(TMenu*EX){return false;}
+    } OnSettings;
+    static class TOnLevel:public IOnClick{
+    public:
+      void Call(TMenu*EX){
+        auto&m=*EX->Game->Menu.get();
+        //auto&lvls=EX->Game->LevelsInfo;
+        //m.Items[m.CurID].Caption
+        EX->Game->LevelCounter.Value=m.CurID;
+        EX->Game->RestartLevel();
+        m.Down();
+      }
+      //virtual bool IsEnabled(TMenu*EX){return false;}
+    } TOnLevel;
+    static class TOnLevels:public IOnClick{
+    public:
+      void Call(TMenu*EX){
+        auto&Menu=EX->Game->Menu;
+        auto OldMenu=std::unique_ptr<TMenu>(Menu.release());
+        Menu.reset(new TMenu(EX->Game,"Levels"));
+        for(int i=0;i<EX->Game->LevelsInfo.size();i++){
+          auto&ex=EX->Game->LevelsInfo[i];
+          Menu->Add(ex.Name,&TOnLevel);
+        }
+        Menu->Add("Back",&OnBack);
+        Menu->OldMenu=std::unique_ptr<TMenu>(OldMenu.release());
+        Menu->Up();
+      }
+      //virtual bool IsEnabled(TMenu*EX){return false;}
+    } OnLevels;
+    static class TOnAbout:public IOnClick{
+    public:
+      void Call(TMenu*EX){
+        auto&Menu=EX->Game->Menu;
+        auto OldMenu=std::unique_ptr<TMenu>(Menu.release());
+        Menu.reset(new TMenu(EX->Game,"About"));
+        Menu->Add("^2Aut^2hor ^2: ^8Ad^8ler^33D",&OnNothing);
+        Menu->Add("^2Co^2de ^2: ^8Ad^8ler^33D",&OnNothing);
+        Menu->Add("^2A^2r^2t ^2: ^8Ad^8ler^33D",&OnNothing);
+        Menu->Add("Back",&OnBack);
+        Menu->OldMenu=std::unique_ptr<TMenu>(OldMenu.release());
+        Menu->Up();
+      }
+      //virtual bool IsEnabled(TMenu*EX){return false;}
+    } OnAbout;
+    static class TOnExit:public IOnClick{
+    public:
+      void Call(TMenu*EX){
+        #ifdef _WIN32
+        Sys.NeedClose=true;
+        #endif
+      }
+    } OnExit;
+    Menu.reset(new TMenu(this,"Main menu"));
+    Menu->Add("Resume",&OnResume);
+    Menu->Add("Restart level",&OnRestartLevel);
+    Menu->Add("New game",&OnNewGame);
+    Menu->Add("Levels",&OnLevels);
+    Menu->Add("Change user_name",&OnUserName);
+    Menu->Add("Settings",&OnSettings);
+    Menu->Add("About",&OnAbout);
+    Menu->Add("Exit",&OnExit);
+    LevelCounter.Value=0;
+    Menu->Down();
+    //Menu->Up();
+  }
+  void Resume()
+  {
+
+  }
+  #ifdef _WIN32
+  string user_name=to_string(g_clock.MS()*1000);
+  #else
+  string user_name=to_string(([](){return (unsigned long int)EM_ASM_INT({
+    let arr=new Uint32Array(1);window.crypto.getRandomValues(arr);
+    return arr[0];
+  });})());
+  #endif
+  bool user_name_scene=false;
+  void InputUserNameRender(){
+    TextRender TE(&qDev);
+    vec2d hs=vec2d(Sys.SM.W,Sys.SM.H)*0.5;
+    real ident=24.0;
+    real Y=0;
+    qDev.SetColor(0xff000000);
+    TE.BeginScope(-hs.x+ident,+hs.y-ident,&NormFont,&BlurFont);
+    {
+      const string PreesR=" ^7(^3press ^2R^7 ^3or ^2F9^7)";
+      const string PreesSpace=" ^7(^3press ^2Space^7)";
+      const string PreesEnter=" ^7(^3press ^2Return^7)";
+      string BEG="^7";
+      string SEP=" ^2: ^8";
+      TE.AddText("^7The ^2Market Game");
+      TE.AddText("");
+      TE.AddText("^7Type your ^8user_name ^7 in english and press enter!");
+      TE.AddText("^8user_name ^2: ^7"+user_name);
+    }
+    TE.EndScope();
+  }
+  bool need_init=false;
+  bool check_char(char c){
+    return InDip('a',c,'z')||InDip('A',c,'Z')||/*InDip('а',c,'я')||InDip('А',c,'Я')||*/InDip('0',c,'9');//||c=='ё'||c=='Ё';
+  }
+  void update_user_name(bool init){
+    string un2=file_get_contents(user_name_fn);
+    string un,un3;
+    for(auto&c:un2)if(check_char(c))un.push_back(c);
+    for(auto&c:user_name)if(check_char(c))un3.push_back(c);
+    user_name=un.empty()?(un3.empty()?"unk_hacker"+IToS(g_clock.MS()):un3):un;
+    if(init){file_put_contents(user_name_fn,user_name);}
+  }
+  string user_name_fn="user_name.txt";
+  void InputUserNameUpdate(){
+    if(need_init){
+      need_init=false;
+      update_user_name(false);
+      user_name_scene=user_name.empty();
+    }
+    bool done=false;
+    if(kb.News){
+      auto c=kb.LastChar;
+      if(check_char(c))user_name.push_back(c);
+      if(user_name.size()>15)done=true;
+    }
+    if(kb.OnDown(VK_BACK))if(user_name.size())user_name.pop_back();
+    if(kb.OnDown(VK_RETURN)||done){
+      if(user_name.size()){
+        user_name_scene=false;
+        file_put_contents(user_name_fn,user_name);
+      }
+    }
+  }
+  bool RenderScene_debug=false;
+  void RenderScene()
+  {
+    /*
+    qDev.BindTex(0,0);
+    qDev.SetColor(0xff000000);
+    qDev.DrawQuad(0,0,512,512);
+    if(!EndScene())return;
+    Present();
+    return;*/
+    if(user_name_scene)return InputUserNameRender();
+    if(bool need_draw_tank_hodun_rt=true)if(th_rt_tex)if(!Menu->InGame()){
+      qDev.BindTex(0,th_rt_tex);
+      qDev.SetColor(0xffffffff);
+      qDev.DrawQuad(-512,0,th_rt_tex->W,th_rt_tex->H,0);
+      qDev.BindTex(0,0);
+    }
+    if(RenderScene_debug)QAP_EM_LOG("before kb.A");
+    if(kb.Down['A']&&!Menu->InGame()){
+      if(1){
+        qDev.BindTex(0,0);
+        qDev.SetColor(0xffffffff);
+        qDev.DrawQuad(kb.MousePos.x,kb.MousePos.y,96,96,0);
+        qDev.SetColor(0xffff0000);
+        qDev.DrawQuad(kb.MousePos.x,kb.MousePos.y,64,64,0);
+      }
+      qDev.BindTex(0,Atlas.pTex);
+      //qDev.SetBlendMode(BT_SUB);
+      qDev.SetColor(0xffffffff);
+      qDev.DrawQuad(0.5,0.5,Atlas.W,Atlas.H,0);
+    }
+    if(RenderScene_debug)QAP_EM_LOG("after kb.A");
+    QapAssert(Menu.get());
+    if(Menu->InGame())
+    {
+      auto check_frames=[&](){
+        for(auto&ex:g_global_imgs)if(!ex.second.done){QAP_EM_LOG("inside check_frames::fail");return false;}
+        return true;
+      };
+      if(Level.get())if(check_frames()){
+        if(RenderScene_debug)QAP_EM_LOG("before Level->Render");
+        Level->Render(qDev);
+      }
+    }else{
+      TextRender TE(&qDev);
+      qDev.SetColor(0xff000000);
+      TE.BeginScope(0,0,&NormFont,&BlurFont);
+      Menu->Render(qDev,TE);
+      TE.EndScope();
+    };
+    {
+      if(RenderScene_debug)QAP_EM_LOG("before RenderText");
+      RenderText(qDev);
+      if(RenderScene_debug)QAP_EM_LOG("after RenderText");
+    }
+  }
+  #ifdef _WIN32
+  void Render()
+  {
+    //if(!qDev.pDev->BeginScene())return;
+    //qDev.Set2D();
+    ////QapDX::Clear2d(1?QapColor(180,180,180):0xffc8c8c8);
+    //{int v=231*0+206*0+210;qDev.pDev->Clear(QapColor(v,v,v));}
+    //qDev.NextFrame();
+    //RenderScene();
+    //if(!qDev.pDev->EndScene())return;
+    //qDev.Present();
+  }
+  #endif
+  void RenderText(QapDev&qDev)
+  {
+    TextRender TE(&qDev);
+    vec2d hs=vec2d(Sys.SM.W,Sys.SM.H)*0.5;
+    real ident=24.0;
+    qDev.SetColor(0xff000000);
+    TE.BeginScope(-hs.x+ident,+hs.y-ident,&NormFont,&BlurFont);
+    {
+      const string PreesR=" ^7(^3press ^2R^7 ^3or ^2F9^7)";
+      const string PreesSpace=" ^7(^3press ^2Space^7)";
+      const string PreesEnter=" ^7(^3press ^2Return^7)";
+      string BEG="^7";
+      string SEP=" ^2: ^8";
+      TE.AddText("^7The ^2Game");
+      TE.AddText("");
+      TE.AddText("^8user_name ^2: ^7"+user_name);
+      TE.AddText("");
+      #define GOO(TEXT,VALUE)TE.AddText(string(BEG)+string(TEXT)+string(SEP)+string(VALUE));
+      GOO("Level",string(LevelCounter)+" ["+string(LevelCounter?LevelsInfo[LevelCounter.Value].Name:"noname")+"]");
+      #undef GOO
+      TE.AddText("");
+      if(Level.get())Level->AddText(TE);
+      TE.AddText("");
+      if(WaitWin.Runned)TE.AddText("^2You win!"+PreesEnter);
+      if(WaitFail.Runned)TE.AddText("^1You lose!"+PreesR);
+      if(!WaitFail||!WaitWin){TE.AddText("^7game over!");}
+    }
+    TE.EndScope();
+    if(bool need_draw_font=false){
+      qDev.color=0xFF000000;
+      qDev.BindTex(0,BlurFont.Tex);
+      qDev.DrawQuad(1.5,-0.5,-512,512,Pi);
+      qDev.color=0xFFFFFFFF;
+      qDev.BindTex(0,NormFont.Tex);
+      qDev.DrawQuad(0.5,0.5,-512,512,Pi);
+    }
+  }
+  void Collide()
+  {    
+  }
+  void NextLevel()
+  {
+    LevelCounter++;
+    RestartLevel();
+  }
+  void OnWin(){
+    //Level.reset();
+  }
+  void OnFail(){
+    //Level.reset();
+  }
+  void Win(){WaitWin.Start();}
+  void Fail(){WaitFail.Start();}
+  void ReloadWinFail(){WaitFail.Stop();WaitWin.Stop();}
+  void Update()
+  {
+    if(user_name_scene)return InputUserNameUpdate();
+    QapAssert(Menu.get());
+    if(kb.OnDown(VK_ESCAPE)){if(Menu->InGame()){Menu->Up();}else{Menu->Down();}}
+    //kb.UpdateMouse();
+    if(Menu->InGame())
+    {
+      if(Level.get())
+      {
+        //QAP_EM_LOG("bef_update_level");
+        Level->Update(this);
+        //QAP_EM_LOG("aft_update_level");
+        {WaitFail++;WaitWin++;}
+        if(!WaitWin.Runned&&!WaitFail.Runned)
+        {
+          bool w=Level->Win();bool f=Level->Fail();
+          if(f)Fail();
+          if(w&&!f)Win();
+        }else{
+          if(!WaitFail)OnFail();
+          if(!WaitWin)OnWin();
+        }
+      };
+      if(kb.OnDown('R')){RestartLevel();}
+      if(WaitFail.Runned||WaitWin.Runned)
+      {
+        if(WaitWin.Runned&&kb.Down[VK_RETURN]){NextLevel();}
+      }
+    }else{
+      Menu->Update(this);
+    }
+  }
+  void Free()
+  {
+    /*FreeFont(NormFont);FreeFont(BlurFont);
+    UnloadTextures();*/
+  }
+  template<class FUNC>
+  static void wget(const string&host,const string&dir,FUNC&&cb){
+    //emscripten_run_script(string("console.log('host = "+host+"');").c_str());
+    auto url=host+dir;
+    #ifndef _WIN32
+    static int counter=0;counter++;
+    auto fn=std::to_string(counter)+" "+url;
+    auto&m=g_global_urls[fn];
+    m.url=fn;
+    m.on_load=std::move(cb);
+    EM_ASM({
+      fetchFile_v2(UTF8ToString($0));
+    },int(fn.c_str()));
+    return;
+    #else
+    QapClock clock;
+    DownLoader dl(host,dir,"");
+    dl.port=80;
+    dl.start();
+    for(;dl.update();){
+      Sleep(0);
+      if(clock.MS()>5000.0)break;
+    }
+    auto s=dl.GetContent(dl.data,true);
+    dl.stop();
+    cb(url,int(s.data()),s.size());
+    #endif
+  }
+  static string get_host(){
+    static string host="185.92.223.117";static bool need_init=true;
+    if(need_init){
+      //wget("adler3d.github.io","/qap_vm/trash/test2025/game_host.txt",cb);
+    }
+    need_init=false;
+    if(host.size()&&host.back()=='\n')host.pop_back();
+    return host;
+  }
+};
+TGame Game;
+void update_last_char_from_keyboard(QapKeyboard&kb){
+  kb.News=false;
+  for(int key=0;key<QapKeyboard::TKeyState::MAX_KEY;key++){
+    if(!(kb.Changed[key]&&kb.Down[key]))continue;
+    if((key>='A'&&key<='Z')||(key>='a'&&key<='z')){
+      bool shift=kb.Down[VK_SHIFT];
+      char c=shift?toupper(key):tolower(key);
+      kb.LastChar=c;kb.News=true;
+      return;
+    }
+    if(key>='0'&&key<='9'){kb.LastChar=(char)key;kb.News=true;return;}
+    if(key==VK_SPACE){kb.LastChar=' ';kb.News=true;return;}
+    // printable ascii
+    if(key>=32&&key<=126){kb.LastChar=char(key);kb.News=true;return;}
+    if(key>=VK_NUMPAD0&&key<=VK_NUMPAD9){kb.LastChar='0'+(key-VK_NUMPAD0);kb.News=true;return;}
+    if(key>='0'&&key<='9'){kb.LastChar=key;kb.News=true;return;}
+  }
+}
+#ifndef _WIN32
+void update_kb(){
+  EM_ASM({update_kb($0,$1);},int(&kb.Down[0]),int(&kb.Changed[0]));
+  kb.MousePos.x=+EM_ASM_INT({return g_mpos.x;})-Sys.SM.W/2;
+  kb.MousePos.y=-EM_ASM_INT({return g_mpos.y;})+Sys.SM.H/2;
+  update_last_char_from_keyboard(kb);
+}
+extern "C" {
+  int render(int nope){
+    Game.RenderScene();
+    return 0;
+  }
+  int update(int nope){
+    //QAP_EM_LOG("Game.RenderScene();");
+    //Game.RenderScene();
+    //QAP_EM_LOG("update_kb();");
+    update_kb();
+    Game.Update();
+    return 0;
+  }
+}
+void init(){
+  qDev.Init(1024*64,1024*64*3);
+  Game.Init();
+}
+extern "C" {
+  int qap_main(char*phost){
+    g_host=phost;
+    EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+window.innerWidth+'" height="'+window.innerHeight+'"></canvas>';});
+    //EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+d.Width+'" height="'+d.height+'"></canvas>';});
+    Sys.SM.W=EM_ASM_INT({return window.innerWidth;});
+    Sys.SM.H=EM_ASM_INT({return window.innerHeight;});
+    srand(time(NULL));
+    EM_ASM(main(););
+    init();
+    return 0;
+  }
+}
+#else
+class TD3DGameBoxBuilder
+{
+public:
+public:
+  typedef TD3DGameBoxBuilder SelfClass;
+public:
+  TD3DGameBox win;
+  QapD3D9 D9;
+  QapD3DDev9 D9Dev;
+  QapDev qDev;
+  int SleepMs;
+public:
+  void DoReset()
+  {
+    {
+    }
+    detail::FieldTryDoReset(this->win);
+    detail::FieldTryDoReset(this->D9);
+    detail::FieldTryDoReset(this->D9Dev);
+    detail::FieldTryDoReset(this->qDev);
+    (this->SleepMs)=(16);
+  }
+public:
+  TD3DGameBoxBuilder(const TD3DGameBoxBuilder&)
+  {
+    QapDebugMsg("TD3DGameBoxBuilder"" is noncopyable");
+    DoReset();
+  };
+  TD3DGameBoxBuilder()
+  {
+    DoReset();
+  };
+public:
+  TD3DGameBoxBuilder(TD3DGameBoxBuilder&&_Right)
+  {
+    operator=(std::move(_Right));
+  }
+  void operator=(TD3DGameBoxBuilder&&_Right)
+  {
+    if(&_Right==this)return;
+    {
+    }
+    this->win=std::move(_Right.win);
+    this->D9=std::move(_Right.D9);
+    this->D9Dev=std::move(_Right.D9Dev);
+    this->qDev=std::move(_Right.qDev);
+    this->SleepMs=std::move(_Right.SleepMs);
+  }
+public:
+  void DoNice()
+  {
+    auto&builder=*this;
+    builder.init("2025.05.28 21:30:14.960");
+    builder.win.WindowMode();
+    builder.init_d3d();
+    UpdateWindow(builder.win.Form.WinPair.hWnd);
+    builder.mainloop_v0(128);
+  }
+public:
+  void SceneUpdate()
+  {
+    SceneUpdateEx();
+    SceneRenderEx();
+  }
+public:
+  void SceneUpdateEx()
+  {
+    SceneDoMove();
+  }
+  void SceneRenderEx()
+  {
+    auto&Dev=D9Dev;
+    vec2i ClientSize=win.GetClientSize();
+    if(!Dev.BeginScene())return;
+    {
+      D3DVIEWPORT9 ViewPort={0,0,(DWORD)ClientSize.x,(DWORD)ClientSize.y,-1.f,+1.f};
+      Dev.pDev->SetViewport(&ViewPort);
+      Dev.Set2D(vec2i(0,0),1.0,0,&ClientSize);
+      Dev.Clear2D(0xffc8c8c8);
+      qDev.NextFrame();
+      SceneDoDraw();
+    }
+    if(!Dev.EndScene())return;
+    RECT Rect={0,0,ClientSize.x,ClientSize.y};
+    Dev.Present(&Rect,&Rect);
+  }
+public:
+  virtual void DoMove() {};
+  virtual void DoDraw() {};
+public:
+  void SceneDoMove()
+  {
+    auto&Dev=D9Dev;
+    if(!qDev.DynRes.pDev)
+    {
+      qDev.MountDev(Dev);
+      qDev.Init(1024*1024,1024*1024*3);
+    }
+    DoMove();
+  }
+  void SceneDoDraw()
+  {
+    DoDraw();
+  }
+public:
+  void init_d3d()
+  {
+    HWND hwnd=win.Form.WinPair.hWnd;
+    D9.Init();
+    D9Dev.PresParams.SetToDef(hwnd,true);
+    D9Dev.Init(hwnd,D9);
+  }
+  void init(const string&caption)
+  {
+    win.Caption=caption;
+    win.Init(caption);
+    win.Visible=false;
+    win.WindowMode();
+    init_d3d();
+    win.Visible=true;
+    win.WindowMode();
+    UpdateWindow(win.Form.WinPair.hWnd);
+  }
+  /*
+  void at_iter_begin(){
+    HWND&hWnd=win.Form.WinPair.hWnd;
+    win.zDelta=0;kb;
+    QapAssert(!win.Keyboard.Down[mbLeft]);
+    QapAssert(!win.Keyboard.Changed[mbLeft]);
+    win.Keyboard.Sync();
+    QapAssert(!win.Keyboard.Down[mbLeft]);
+    QapAssert(!win.Keyboard.Changed[mbLeft]);
+    if(GetForegroundWindow()==hWnd){
+      win.mpos=win.unsafe_GetMousePos();
+    }
+  }
+  std::atomic<bool> finished=false;
+  static void app_mainloop(TD3DGameBoxBuilder*pbox){
+    auto&box=*pbox;auto&win=box.win;auto&finished=box.finished;
+    QapKeyboard tmp;
+    for(;!finished;){
+
+      QapAssert(!win.Keyboard.Down[mbLeft]);
+      QapAssert(!win.Keyboard.Changed[mbLeft]);
+      box.SceneUpdate();
+      QapAssert(!win.Keyboard.Down[mbLeft]);
+      QapAssert(!win.Keyboard.Changed[mbLeft]);
+      box.at_iter_begin();
+      //Sleep(0);
+    }
+    win.Runned=false;
+    finished=true;
+  }
+  void loop()
+  {
+    std::thread th(app_mainloop,this);
+    auto&NeedClose=(std::atomic<bool>&)win.NeedClose;
+    for(;!finished&&!NeedClose;)
+    {
+      MSG msg;msg.pt={0,0};
+      auto bRet=GetMessageA(&msg,0,0,0);
+      if(!bRet)break;
+      if(bRet==-1){
+        QapDebugMsg("handle the error and possibly exit");
+        break;
+      }
+      if(bool msg_debug=false)qap_add_back(win.msglog).load(msg,0);
+      TranslateMessage(&msg);
+      DispatchMessage(&msg);
+      QapAssert(!win.Keyboard.Down[mbLeft]);
+      QapAssert(!win.Keyboard.Changed[mbLeft]);
+    }
+    finished=true;
+    th.join();
+    //for(int i=0;win.Runned;i++)
+    //{
+    //  win.Update();
+    //  if(win.NeedClose)win.Runned=false;
+    //}
+  }
+  */
+public:
+  typedef QapDev::t_geom t_geom;
+public:
+#if(0)
+  struct t_simbol{
+    struct t_quad{
+      vec2i p;
+      vec2i s;
+      void set(int x,int y,int w,int h){p.x=x;p.y=y;s.x=w;s.y=h;}
+    };
+    vector<t_quad> arr;
+  };
+  struct qap_text{
+    struct t_simbol{
+      struct t_quad{
+        vec2i p;
+        vec2i s;
+        void set(int x,int y,int w,int h){p.x=x;p.y=y;s.x=w;s.y=h;}
+      };
+      t_geom geom;
+      real ps;
+      vector<t_quad> arr;
+      void make_geom(real ps)
+      {
+        this->ps=ps;
+        for(int j=0;j<arr.size();j++)
+        {
+          auto&ex=arr[j];
+          auto p=vec2d(ex.p.x,-ex.p.y)*ps+(vec2d(ex.s)-vec2d(1,1))*ps*0.5;
+          auto sx=ps*ex.s.x;
+          auto sy=ps*ex.s.y;
+          geom.add(QapDev::GenGeomQuad(p,sx,sy));
+        }
+      }
+    };
+    struct t_mem{
+      QapTexMem out;
+      QapFontInfo info;
+      vector<t_simbol> arr;
+      vector<unsigned char> x_chars;
+      //int def_text_size;
+      real ms;
+      t_mem():ms(0){}
+      void prepare(HWND hwnd){if(arr.empty())init(hwnd);}
+      void init(HWND hwnd)
+      {
+        QapAssert(arr.empty());
+        if(!out.W)CreateFontMem(hwnd,out,info,"system",8,false,512,true);
+        arr.resize(256);
+        for(int i=0;i<256;i++)
+        {
+          unsigned char c=i;
+          auto&cinfo=arr[c];
+          cinfo.ps=-1;
+          auto size=info.Coords[c];
+          auto p=vec2i(c%16,c/16);
+          int n=out.W/16;
+          auto s=out.Arr.get();
+          auto buffx=cinfo.arr;
+          auto buffy=cinfo.arr;
+          //if(use_x)
+          {
+            for(int y=0;y<n;y++)for(int x=0;x<size.x;x++)
+            {
+              auto addr=p.x*n+x+(p.y*n+y)*out.W;
+              auto&ex=s[addr];
+              if(!ex.a)continue;
+              int sx=1;
+              for(int cx=x+1;cx<size.x;cx++){
+                if(!s[addr-x+cx].a)break;
+                sx++;
+              }
+              qap_add_back(buffx).set(x,y,sx,1);
+              if(sx>1)x+=sx-1;
+            }
+          }
+          //if(!use_x)
+          {
+            for(int x=0;x<size.x;x++)for(int y=0;y<n;y++)
+            {
+              auto addr=p.x*n+x+(p.y*n+y)*out.W;
+              auto&ex=s[addr];
+              if(!ex.a)continue;
+              int sy=1;
+              for(int cy=y+1;cy<n;cy++){
+                auto naddr=p.x*n+x+(p.y*n+cy)*out.W;
+                if(!s[naddr].a)break;
+                sy++;
+              }
+              qap_add_back(buffy).set(x,y-1,1,-sy);
+              if(sy>1){
+                y+=sy-1;
+              }
+            }
+          }
+          bool best_x=buffx.size()<buffy.size();
+          if(best_x){
+            qap_add_back(x_chars)=c;
+          }
+          cinfo.arr=best_x?buffx:buffy;
+        }
+      }
+    };
+    static t_mem&get_mem(HWND hwnd){static t_mem mem;mem.prepare(hwnd);return mem;}
+    static vec2i get_size(QapDev&qDev,const string&text,int cell_size=32)
+    {
+      auto&mem=get_mem(qDev.DynRes.pDev->PresParams.pp.hDeviceWindow);
+      QapFontInfo&info=mem.info;
+      vector<t_simbol>&arr=mem.arr;
+      auto ps=cell_size*0.125*0.5;
+      auto offset=vec2i_zero;
+      for(int i=0;i<text.size();i++)
+      {
+        unsigned char c=text[i];
+        auto size=info.Coords[c];
+        offset.x+=size.x*ps;
+      }
+      return vec2i(offset.x,info.Coords[' '].y);
+    }
+    static void draw(QapDev&qDev,int px,int py,const string&text,int cell_size=32){draw(qDev,vec2i(px,py),text,cell_size);}
+    static void draw(QapDev&qDev,const vec2d&pos,const string&text,int cell_size=32){draw(qDev,vec2i(pos.x,pos.y),text,cell_size);}
+    static void draw(QapDev&qDev,const vec2i&pos,const string&text,int cell_size=32)
+    {
+      auto&mem=get_mem(qDev.DynRes.pDev->PresParams.pp.hDeviceWindow);
+      QapFontInfo&info=mem.info;
+      vector<t_simbol>&arr=mem.arr;
+      auto ps=cell_size*0.125*0.5;
+      auto offset=pos;
+      for(int i=0;i<text.size();i++)
+      {
+        unsigned char c=text[i];
+        auto size=info.Coords[c];
+        auto&ex=arr[c];
+        if(ex.ps<0)ex.make_geom(ps);
+        if(ex.ps==ps)
+        {
+          qDev.DrawGeomWithOffset(ex.geom,offset);
+        }
+        if(ex.ps!=ps)
+        {
+          auto&quads=ex.arr;
+          for(int j=0;j<quads.size();j++)
+          {
+            auto&ex=quads[j];
+            auto p=vec2d(ex.p.x,-ex.p.y)*ps+(vec2d(ex.s)-vec2d(1,1))*ps*0.5;
+            auto sx=ps*ex.s.x;
+            auto sy=ps*ex.s.y;
+            qDev.DrawQuad(offset+p,sx,sy);
+          }
+        }
+        offset.x+=size.x*ps;
+      }
+    }
+  };
+#endif
+public:
+  vec2d get_dir_from_keyboard_wasd_and_arrows()
+  {
+    auto&kb=win.Keyboard;
+    vec2d dp={};
+    auto dir_x=vec2d(1,0);
+    auto dir_y=vec2d(0,1);
+    #define F(dir,key_a,key_b)if(kb.Down[key_a]||kb.Down[key_b]){dp+=dir;}
+    F(-dir_x,VK_LEFT,'A');
+    F(+dir_x,VK_RIGHT,'D');
+    F(+dir_y,VK_UP,'W');
+    F(-dir_y,VK_DOWN,'S');
+    #undef F
+    return dp;
+  }
+public:
+  QapKeyboard&kb=win.Keyboard;
+  bool UPS_enabled=true;
+  bool ResetFlag=false;
+  void mainloop_v0(int UPS){
+    kb_v2= new QapKeyboard();
+    kb_v3= new QapKeyboard();
+    auto sync_kb_and_mouse=[&](){
+      win.mpos=win.unsafe_GetMousePos();
+      kb.MousePos=win.mpos;
+      kb.Sync();
+      win.zDelta=0;
+    };
+    MSG msg;
+    auto&IsQuit=win.NeedClose;
+    IsQuit=false;
+    real dt=real(1000.0)/real(UPS),t=0;QapClock LoopClock;
+    int WarningCounter=0;bool new_state=true;
+    while(!IsQuit&&!Sys.NeedClose)
+    {  
+      LoopClock.Stop();t+=LoopClock.MS();LoopClock.Start();
+      QapClock UpdateClock,RenderClock;
+      if(UPS_enabled){
+        for(;(t>0)&&!IsQuit&&UPS_enabled;t-=dt)
+        {
+          UpdateClock.Start();
+          sync_kb_and_mouse();
+          struct t_kb{uchar data[sizeof(kb)];};
+          ((t_kb&)(*kb_v3))=(t_kb&)kb;
+          while(PeekMessage(&msg,win.Form.WinPair.hWnd,0,0,PM_REMOVE)){TranslateMessage(&msg);DispatchMessage(&msg);}
+          ((t_kb&)(*kb_v2))=(t_kb&)kb;
+          //if(paused)PrevPauseCounter=PauseCounter;
+          //if(!paused&&(PauseCounter-PrevPauseCounter>1)){exit(0);}  // - костыль для проверки слишком быстрого нажатия паузы
+          //PrevPauseCounter=PauseCounter;
+          SceneUpdateEx();new_state=true;
+          UpdateClock.Stop();
+          if(ResetFlag){ResetFlag=false;t=0;break;};
+          if(t/dt>real(UPS))if(UpdateClock.MS()*UPS>1000.0){WarningCounter++;/*MACRO_ADD_LOG("("+FToS(t)+"ms)Too much load on the CPU",lml_WARNING);*/t=0;break;}
+        }
+        {
+          RenderClock.Start();
+          if(new_state){SceneRenderEx();}new_state=false;
+          RenderClock.Stop();
+          if(RenderClock.MS()>500.0){WarningCounter++;/*MACRO_ADD_LOG("("+FToS(RenderClock.MS())+"ms)Too much load on the GPU",lml_WARNING);*/}
+        }
+        if(WarningCounter>64){/*MACRO_ADD_LOG("Too weak system",lml_ERROR);*/break;}
+      }else{
+        sync_kb_and_mouse();
+        while(PeekMessage(&msg,win.Form.WinPair.hWnd,0,0,PM_REMOVE)){TranslateMessage(&msg);DispatchMessage(&msg);}
+        SceneUpdateEx();
+        SceneRenderEx();
+      }
+    }
+  }
+};
+//auto&g_qDev=qDev;
+auto&g_kb=kb;
+class TWin32Game:public TD3DGameBoxBuilder{
+public:
+  bool need_init=true;
+  void auto_init(){
+    if(!need_init)return;
+    need_init=false;
+    Game.Sys_HWND=win.Form.WinPair.hWnd;
+    Game.qDev.MountDev(D9Dev);
+    Game.qDev.Init(1024*64,1024*64*3);
+    Game.Init();
+  }
+  void DoMove()override{
+    auto_init();
+    struct t_kb{uchar data[sizeof(kb)];};
+    ((t_kb&)g_kb)=(t_kb&)win.Keyboard;
+    g_kb.MousePos=win.mpos;
+    Game.Update();
+  };
+  void DoDraw()override{
+    auto_init();
+    Game.qDev.NextFrame();
+    Game.RenderScene();
+  };
+  void Free(){Game.qDev.Free();}
+};
+int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow)
+{
+  //auto s=TGame::wget("185.92.223.117","/logs.json");
+  //MACRO_ADD_LOG("App.version : "+IToS(AfterBuildCount)+"/"+IToS(BeforeBuildCount+AfterBuildCount),lml_EVENT);
+  GlobalEnv global_env(hInstance,hPrevInstance,lpCmdLine,nCmdShow);
+  TScreenMode SM=GetScreenMode();
+  Sys.SM=SM;
+  TWin32Game Game;
+  Game.DoNice();
+  Game.Free();
+	return 0;
+}
+#endif
