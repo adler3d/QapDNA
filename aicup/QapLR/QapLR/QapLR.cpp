@@ -263,6 +263,10 @@ inline string FToS2(const float&val){std::stringstream ss;ss<<std::fixed<<std::s
 #ifdef __EMSCRIPTEN__
 #define __debugbreak()EM_ASM({throw new Error("__debugbreak");});
 #endif
+#ifdef QAP_UNIX
+#include <signal.h>
+#define __debugbreak()raise(SIGTRAP);
+#endif
 inline bool SysQapAssert(const string&exp,bool&ignore,const string&filename,const int line,const string&funcname);
 inline bool SysQapDebugMsg(const string&msg,bool&ignore,const string&filename,const int line,const string&funcname);
 #if(defined(_DEBUG)||defined(QAP_DEBUG))
@@ -295,6 +299,10 @@ inline int WinMessageBox(const string&caption,const string&text)
   EM_ASM({alert(UTF8ToString($0)+"\n"+UTF8ToString($1));},int(caption.c_str()),int(text.c_str()));
   return qmbrBreak;
   #endif
+  #endif
+  #ifdef QAP_UNIX
+  std::cerr<<"WinMessageBox:"+caption+"\n"+text<<std::endl;
+  return qmbrBreak;
   #endif
 }
 typedef int(*TQapMessageBox)(const string&caption,const string&text);
@@ -4840,6 +4848,7 @@ void update_last_char_from_keyboard(QapKeyboard&kb){
   }
 }
 #ifndef _WIN32
+#ifndef QAP_UNIX
 void update_kb(){
   EM_ASM({update_kb($0,$1);},int(&kb.Down[0]),int(&kb.Changed[0]));
   kb.MousePos.x=+EM_ASM_INT({return g_mpos.x;})-Sys.SM.W/2;
@@ -4877,6 +4886,7 @@ extern "C" {
     return 0;
   }
 }
+#endif
 #else
 class TD3DGameBoxBuilder
 {
@@ -5322,5 +5332,12 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
   Game.DoNice();
   Game.Free();
 	return 0;
+}
+#endif
+#ifdef QAP_UNIX
+#include <iostream>
+int main(int argc, char* argv[]){
+  std::cout<<"QAP_UNIX==true"<<endl;
+  return 0;
 }
 #endif
