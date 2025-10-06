@@ -4346,24 +4346,8 @@ public:
   string GFX_DIR="GFX/v4/";
   void LoadFrames(bool need_save_atlas=0,bool need_rewrite_tex=0)
   {
-    //auto*ball=LoadTexture("GFX\\Ball.png");
-    //#define F(NAME)LoadTexture("GFX\\"#NAME".png")->CopyAlpha(ball)->SaveToFile("GFX\\"#NAME".png");
-    //auto LT=LoadTexture;
+    #ifndef QAP_UNIX
     auto m2=[&](QapTexMem*p){return p->CalcAlpha()->FillChannel(0xffffffff,0x00ffffff);};
-    /*
-    if(bool hack=false)
-    {
-      auto f=[&](auto NAME,string FILE,auto MODE){
-        auto fn="GFX\\"+FILE+".png";
-        if(MODE==2){auto*p=m2(LT(fn));if(need_rewrite_tex)p->SaveToFile(fn);}
-        if(MODE==0){auto*p=LT(fn)->CalcAlpha(0xffffffff);if(need_rewrite_tex)p->SaveToFile(fn);}
-        if(MODE==1){auto*p=LT(fn)->CopyAlpha(LT("GFX\\"+FILE+"_a.png")->CalcAlpha());if(need_rewrite_tex)p->SaveToFile(fn);}
-      };
-      #define F(NAME,FILE,MODE)f(Frame##NAME,FILE,MODE);
-        FRAMESCOPE(F);
-        //LoadTexture("GFX\\You.png")->CopyAlpha(GenBall(32))->SaveToFile("GFX\\You.png");
-      #undef F
-    }*/
     static int frames=0;static bool done=false;
     {
       static auto on_load_tex=[&](string fn){
@@ -4395,8 +4379,7 @@ public:
       FRAMESCOPE(F);
       #undef F
     }
-    //if(need_save_atlas)Atlas.pMem->SaveToFile("Atlas.png");
-    //Atlas.GenTex();
+    #endif
   }
   #ifdef _WIN32
   HWND Sys_HWND=0;
@@ -4817,6 +4800,7 @@ public:
   }
   template<class FUNC>
   static void wget(const string&host,const string&dir,FUNC&&cb){
+    #ifndef QAP_UNIX
     //emscripten_run_script(string("console.log('host = "+host+"');").c_str());
     auto url=host+dir;
     #ifndef _WIN32
@@ -4841,6 +4825,7 @@ public:
     auto s=dl.GetContent(dl.data,true);
     dl.stop();
     cb(url,int(s.data()),s.size());
+    #endif
     #endif
   }
   static string get_host(){
