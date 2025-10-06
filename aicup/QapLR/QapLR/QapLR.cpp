@@ -10,7 +10,9 @@
 #include <memory.h>
 //#include <tchar.h>
 #ifndef _WIN32
+#ifndef QAP_UNIX
 #include <emscripten.h>
+#endif
 #else
 #include <d3d9.h>
 #pragma comment(lib,"d3d9")
