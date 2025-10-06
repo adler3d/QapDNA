@@ -264,6 +264,7 @@ inline string FToS2(const float&val){std::stringstream ss;ss<<std::fixed<<std::s
 #define __debugbreak()EM_ASM({throw new Error("__debugbreak");});
 #endif
 #ifdef QAP_UNIX
+#include <iostream>
 #include <signal.h>
 #define __debugbreak()raise(SIGTRAP);
 #endif
@@ -1276,8 +1277,20 @@ struct Sys$${
   }
 };
 
-template<class TYPE>void QapSave(TDataIO&IO,TYPE*){static_assert(false,"fail");}
-template<class TYPE>void QapLoad(TDataIO&IO,TYPE*){static_assert(false,"fail");}
+template<class TYPE>void QapSave(TDataIO&IO,TYPE*){
+  #ifdef _WIN32
+  static_assert(false,"fail");
+  #else
+  QapNoWay();
+  #endif
+}
+template<class TYPE>void QapLoad(TDataIO&IO,TYPE*){
+  #ifdef _WIN32
+  static_assert(false,"fail");
+  #else
+  QapNoWay();
+  #endif
+}
 
 template<class TYPE>void QapSave(TDataIO&IO,TYPE&ref){Sys$$<TYPE>::Save(IO,ref);}
 template<class TYPE>void QapLoad(TDataIO&IO,TYPE&ref){Sys$$<TYPE>::Load(IO,ref);}
@@ -2367,7 +2380,7 @@ struct t_cool_msg{
   }
 };
 #endif
-#ifdef _WIN32
+#if(defined(_WIN32)||defined(QAP_UNIX))
 void RegTexMem(...){}
 void UnRegTexMem(...){}
 void RegTex(...){}
@@ -3036,7 +3049,7 @@ public:
   bool use_viewport=false;
   //static const DWORD FVF=D3DFVF_XYZ|D3DFVF_DIFFUSE|D3DFVF_TEX1;
 public:
-  QapDev():color(0xFFFFFFFF),VB(NULL),IB(NULL),VBA(NULL),IBA(NULL),VPos(0),IPos(0),MaxVPos(0),MaxIPos(0),Batching(false)/*,BlendMode(BT_SUB),AlphaMode(AM_NONE)*/{}
+  QapDev():color(0xFFFFFFFF),VB{},IB{},VBA{},IBA{},VPos(0),IPos(0),MaxVPos(0),MaxIPos(0),Batching(false)/*,BlendMode(BT_SUB),AlphaMode(AM_NONE)*/{}
   ~QapDev(){Free();}
 public:
   #ifdef _WIN32
@@ -3129,10 +3142,12 @@ public:
     pDev->SetIndices(IB);
     pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST,0,0,VPos,0,IPos/3);
     #else
+    #ifndef QAP_UNIX
     auto&qDev=*this;
     EM_ASM({
       if(qDev.gl&&qDev.prog)qDev.DIP_v2(qDev,$0,$1,$2,$3);
     },int(qDev.VB.data()),int(qDev.IB.data()),qDev.VPos,qDev.IPos);
+    #endif
     #endif
     DIPs++;Verts+=VPos;Tris+=IPos/3;
   }
@@ -3608,6 +3623,7 @@ struct QapFont
     return pMem;
   }
   #else
+  #ifndef QAP_UNIX
   QapTexMem*CreateFontMem(string Name,int Size,bool Bold,int TexSize,...)
   {
     QapColor*pix=new QapColor[TexSize*TexSize];
@@ -3620,6 +3636,7 @@ struct QapFont
     pMem->InvertY();
     return pMem;
   }
+  #endif
   #endif
 };
 #ifdef _WIN32
