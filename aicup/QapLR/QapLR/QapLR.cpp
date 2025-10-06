@@ -2380,19 +2380,19 @@ struct t_cool_msg{
   }
 };
 #endif
-#if(defined(_WIN32)||defined(QAP_UNIX))
-void RegTexMem(...){}
-void UnRegTexMem(...){}
+#ifdef _WIN32
 void RegTex(...){}
 void UnRegTex(...){}
 #else
+#ifndef QAP_UNIX
 void bindTex(/*QapDev&qDev,*/int Tex){
   EM_ASM({bindTex(qDev,$0);},Tex);
 }
-void RegTexMem(...){}
-void UnRegTexMem(...){}
+#endif
 typedef unsigned int DWORD;
 #endif
+void RegTexMem(...){}
+void UnRegTexMem(...){}
 class QapTexMem
 {
 public:
@@ -3175,7 +3175,11 @@ public:
   #ifdef _WIN32
   void BindTex(int Stage,QapTex*Tex){pDev->SetTexture(Stage,Tex?Tex->Tex:NULL);txf.set_ident();}
   #else
+  #ifdef QAP_UNIX
+  void BindTex(int Stage,QapTex*pTex){}
+  #else
   void BindTex(int Stage,QapTex*pTex){bindTex(pTex?pTex->Tex:0);txf.set_ident();}
+  #endif
   #endif
 public:
   inline Ver&AddVertexRaw(){return VBA[VPos++];}
@@ -3688,6 +3692,9 @@ QapTex*GenTextureMipMap(QapDev&qDev,QapTexMem*&Tex,int MaxLevelCount=16)//only D
   return pTex;
 }
 #else
+#ifdef QAP_UNIX
+QapTex*GenTextureMipMap(QapDev&qDev,QapTexMem*&pMem,int MaxLevelCount=16){return {};}
+#else
 QapTex*GenTextureMipMap(QapDev&qDev,QapTexMem*&pMem,int MaxLevelCount=16){
   int&W=pMem->W;int&H=pMem->H;QapColor*&pBits=pMem->pBits;
   auto tex=EM_ASM_INT({
@@ -3697,6 +3704,7 @@ QapTex*GenTextureMipMap(QapDev&qDev,QapTexMem*&pMem,int MaxLevelCount=16){
   delete pMem;pMem=NULL;
   return pTex;
 }
+#endif
 #endif
 QapTexMem*BlurTexture(QapTexMem*Tex,int PassCount)//only D3DFMT_A8R8G8B8
 {
