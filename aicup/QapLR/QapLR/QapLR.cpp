@@ -4592,7 +4592,7 @@ public:
   {
 
   }
-  #ifdef _WIN32
+  #if(defined(_WIN32)||defined(QAP_UNIX))
   string user_name=to_string(g_clock.MS()*1000);
   #else
   string user_name=to_string(([](){return (unsigned long int)EM_ASM_INT({

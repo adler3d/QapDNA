@@ -581,6 +581,7 @@ public:
   string game_version="market_v4";
   void reinit_top20(){
     tops={};
+    /*
     TGame::wget(g_host,"/c/game_players_table.js?unique&csv&game="+game_version+"&n=15&ref="+ref+"&user="+Game->user_name,[&](const string&url,int p,int size){
       string s;
       s.resize(size);
@@ -599,7 +600,7 @@ public:
         r.game=t[5];
         tops.push_back(r);
       }
-    });
+    });*/
   }
   void Init(TGame*Game){
     this->Game=Game;
