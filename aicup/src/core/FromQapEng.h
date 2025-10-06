@@ -1008,8 +1008,9 @@ QapToolsVector<TYPE> QapToolsVectorEx(vector<TYPE>&ref)
   QapToolsVector<TYPE> tmp={ref};return std::move(tmp);
 }
 template<class TYPE>bool qap_includes(const vector<TYPE>&arr,const TYPE&value){for(int i=0;i<arr.size();i++){if(arr[i]==value)return true;}return false;}
-
-
+template<class TYPE>static bool qap_check_id(const vector<TYPE>&arr,int id){return id>=0&&id<arr.size();}
+template<class TYPE>static bool qap_check_id(int id,const vector<TYPE>&arr){return id>=0&&id<arr.size();}
+template<class TYPE>static bool qap_check_id(size_t id,const vector<TYPE>&arr){return id<arr.size();}
 template<class TYPE,class FUNC>
 int qap_minval_id_for_vec(vector<TYPE>&arr,FUNC func){
   if(arr.empty())return -1;

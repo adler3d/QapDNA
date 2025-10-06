@@ -172,17 +172,45 @@ struct t_node:t_process,t_node_cache{
         }
     }
     t_docker_api_v2() {
-        decoder.cb = [this](const string& z, const string& msg) {
-            if (z == "ai_stdout") {
-                on_stdout(string_view(msg));
-            } else if (z == "ai_stderr") {
-                on_stderr(string_view(msg));
-            } else if (z == "log") {
-                on_stderr("[CTRL] " + msg + "\n");
-            } else if(z=="ai_binary_ack"){
-              pnode->send_vpow(*pgame,player_id);
+      decoder.cb = [this](const string& z, const string& msg) {
+        if (z == "ai_stdout") {
+          on_stdout(string_view(msg));
+        } else if (z == "ai_stderr") {
+          on_stderr(string_view(msg));
+        } else if (z == "log") {
+          on_stderr("[CTRL] " + msg + "\n");
+        } else if(z=="ai_binary_ack"){
+          pnode->send_vpow(*pgame,player_id);
+        } else if (z == "vpow") {
+          if (pgame->runner.get()!= this)return;
+          try {
+            auto j = json::parse(msg);
+            if (!j.contains("to")||!j.contains("data"))return;
+            int player_id = j["to"];
+            auto d=j["data"];
+            if(!d.is_string())return;
+            string data=d;
+            if(!qap_check_id(player_id,pgame->slot2api))return;
+            auto& api = pgame->slot2api[player_id];
+            auto& status = pgame->slot2status[player_id];
+            if (api && status.ok()) {
+              string packet = qap_zchan_write("vpow", data);
+              api->write_stdin(packet);
             }
-        };
+          } catch (...) {
+            LOG("Invalid vpow format from runner: " + msg);
+          }
+        } else if (z == "event") {
+          if (pgame->runner.get()!= this)return;
+          auto j = json::parse(msg);
+          if (j["type"] != "player_eliminated")return;
+          int id = j["id"];
+          if(!qap_check_id(id,pgame->slot2status))return;
+          pgame->slot2status[id].EL=true;
+          if(!qap_check_id(id,pgame->slot2api))return;
+          t_node::kill(pgame->slot2api[id]->conid);
+        }
+      };
     }
     void start_reading() {
         pnode->loop_v2.add(socket.sock, [this](int fd) {
@@ -227,13 +255,17 @@ struct t_node:t_process,t_node_cache{
   struct t_status{
     bool TL=false;
     bool PF=false;
-    bool ok()const{return !TL&&!PF;}
-    string to_str(){if(ok())return "ok";string out=TL?"TL":"";if(PF)out+="PF";return out;}
+    bool EL=false;
+    bool ok()const{return !TL&&!PF&!EL;}
+    string to_str(){if(ok())return "ok";string out=TL?"TL":"";if(PF)out+="PF";if(EL)out+="EL";return out;}
   };
   struct t_runned_game{
     t_game_decl gd;
     int tick=0;
     bool started=true;
+    pid_t runner_pid = 0;
+    string runner_socket_path;
+    unique_ptr<t_docker_api_v2> runner;
     vector<unique_ptr<t_docker_api_v2>> slot2api;
     vector<t_cmd> slot2cmd;
     vector<t_status> slot2status;
@@ -242,7 +274,7 @@ struct t_node:t_process,t_node_cache{
     vector<vector<t_cmd>> tick2cmds;
     vector<emitter_on_data_decoder> slot2eodd;
     string cdn_upload_token=UPLOAD_TOKEN;
-    t_world w;
+    //t_world w;
     void init(){
       slot2cmd.resize(gd.arr.size());
       slot2status.resize(gd.arr.size());
@@ -251,8 +283,20 @@ struct t_node:t_process,t_node_cache{
       slot2eodd.resize(gd.arr.size());
     }
     void free(){
+      if (runner_pid > 0) {
+        kill_by_pid(runner_pid);
+        runner_pid = 0;
+      }
+      if (runner) {
+        runner->socket.qap_close();
+      }
+      if (!runner_socket_path.empty()) {
+        unlink(runner_socket_path.c_str());
+        runner_socket_path.clear();
+      }
       for (auto& api : slot2api) {
         if (api) {
+          //t_node::kill(api->conid);
           api->pnode->loop_v2.remove(api->socket.sock);
           api->socket.qap_close();
         }
@@ -423,14 +467,67 @@ struct t_node:t_process,t_node_cache{
       on_done(error);
     }).detach();
   }
-  t_net_api capi;
+  //t_net_api capi;
   void t_main_api_send(const string& z, const t_finished_game& ref) {
-    string payload=qap_zchan_write("game_finished:"+UPLOAD_TOKEN,serialize(ref));
-    capi.write_to_socket(local_main_ip_port,payload);
+    //string payload=qap_zchan_write("game_finished:"+UPLOAD_TOKEN,serialize(ref));
+    //capi.write_to_socket(local_main_ip_port,payload);
+    swd->try_write("game_finished:"+UPLOAD_TOKEN,serialize(ref));
   }
   void t_main_api_send(const string& z, const t_game_uploaded_ack& ref) {
-    string payload=qap_zchan_write("game_uploaded:"+UPLOAD_TOKEN,serialize(ref));
-    capi.write_to_socket(local_main_ip_port,payload);
+    //string payload=qap_zchan_write("game_uploaded:"+UPLOAD_TOKEN,serialize(ref));
+    //capi.write_to_socket(local_main_ip_port,payload);
+    swd->try_write("game_uploaded:"+UPLOAD_TOKEN,serialize(ref));
+  }
+  bool new_runner(t_runned_game&g){
+    auto& runner_api_ptr = g.runner;
+    runner_api_ptr = make_unique<t_docker_api_v2>();
+    t_docker_api_v2& runner_api = *runner_api_ptr;
+    runner_api.pnode = this;
+    runner_api.player_id = -1;  // не игрок
+    runner_api.pgame = &g;
+    runner_api.conid = "runner_host_" + to_string(g.gd.game_id);
+
+    // Путь к сокету
+    string socketDir = "/tmp/runner_sockets";
+    system(("mkdir -p " + socketDir).c_str());
+    runner_api.socket_path_on_host = socketDir + "/runner_" + to_string(g.gd.game_id) + ".sock";
+    unlink(runner_api.socket_path_on_host.c_str());
+    g.runner_socket_path = runner_api.socket_path_on_host;
+
+    pid_t pid = fork();
+
+    if (pid == 0) {
+      // Дочерний процесс
+      execl("./runner", "runner", g.runner_socket_path.c_str(), nullptr);
+      // Если сюда дошло — ошибка
+      perror("execl failed");
+      _exit(1);
+    } else if (pid < 0) {
+      perror("fork failed");
+      return false;
+    }
+
+    // Родитель
+    g.runner_pid = pid;
+    LOG("Started t_runner with PID=" + to_string(pid));
+
+    // Ждём создания сокета
+    loop_v2.wait_for_socket(g.runner_socket_path, 5000);
+
+    if (!runner_api.socket.connect_unix(g.runner_socket_path)) {
+      LOG("Failed to connect to runner socket: " + g.runner_socket_path);
+      kill_by_pid(pid);  // немедленно убиваем
+      g.runner_pid = 0;
+      unlink(g.runner_socket_path.c_str());
+      return false;
+    }
+
+    runner_api.start_reading();
+
+    // Отправляем init
+    string init_data = serialize(g.gd);  // или в JSON
+    stream_write(runner_api.socket, "init", init_data);
+    return true;
   }
   int game_n=0;mutex rgarr_mutex;
   bool new_game(const t_game_decl&gd){
@@ -439,6 +536,14 @@ struct t_node:t_process,t_node_cache{
     auto&g=*pgame;
     g.gd=gd;
     g.init();
+    if(!new_runner(g)){
+      LOG("t_runner spawn failed, aborting game " + to_string(gd.game_id));
+      lock_guard<mutex> lock(rgarr_mutex);
+      QapCleanIf(rgarr, [&](const auto& ref) {
+        return ref->gd.game_id == gd.game_id;
+      });
+      return false;
+    }
     int i=-1;
     for(auto&ex:gd.arr){
       i++;
@@ -678,7 +783,7 @@ struct t_node:t_process,t_node_cache{
   unique_ptr<SocketWithDecoder> swd;
   string unique_token;
   int main(){
-    auto cores=to_string(thread::hardware_concurrency());
+    static auto cores=to_string(thread::hardware_concurrency());
     auto cb=[&](const string&z,const string&payload){
       if(z=="hi"){
         if(unique_token.empty())unique_token=payload;

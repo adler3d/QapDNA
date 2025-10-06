@@ -1209,10 +1209,15 @@ static inline pollfd make_pollin(...){return {};}
 static inline pollfd make_pollinout(...){return {};}
 #define unlink(...)
 #define getsockopt(...)0
+typedef int pid_t;
+void kill_by_pid(...){}
+pid_t fork(...){return {};}
+void execl(...){return;}
 #else
 static inline pollfd make_pollin(int fd){return pollfd{fd,POLLIN,0};}
 static inline pollfd make_pollinout(int fd){return pollfd{fd,POLLIN|POLLOUT,0};}
 #define qap_close close
+void kill_by_pid(pid_t runner_pid){kill(runner_pid,SIGTERM);}
 #endif
 
 #include <cstdlib>
