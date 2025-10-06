@@ -3975,7 +3975,7 @@ extern "C" {
     return 0;
   }
 }
-#ifdef _WIN32
+#if(defined(_WIN32)||defined(QAP_UNIX))
 #include "thirdparty/lodepng.cpp"
 struct ImgLoader{
   struct string
