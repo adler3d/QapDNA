@@ -1,5 +1,8 @@
 #define LEVEL_LIST(F)F(Level_SplinterWorld);
 #define FRAMESCOPE(F)\
+  F(MenuItem,"MenuItem",0)\
+  //---
+#define FRAMESCOPE2(F)\
   F(Dot,"dot",2)\
   F(MenuItem,"MenuItem",0)\
   F(Market,"market_128",0)\
@@ -341,7 +344,7 @@ public:
     }
   }
 public:
-  t_world w;
+  t_world w;t_world&world=w;
 public:
   TGame*Game=nullptr;
 public:
@@ -382,8 +385,99 @@ public:
     TE.y=cy;
     #undef GOO
   }
-  void Render(QapDev&qDev){
+  int frame=-1;vector<t_world> ws;
+  void RenderImpl(QapDev&qDev){
+    vec2d mpos=kb.MousePos;
+    qDev.BindTex(0, nullptr);
 
+    static bool set_frame=false;if(kb.OnDown('N'))set_frame=!set_frame;
+    frame=-1;
+    static TScreenMode SM=GetScreenMode();
+    if(set_frame)frame=mpos.x+SM.W/2;
+    if(frame<0||frame>=ws.size())frame=-1;
+    auto&world=frame<0?this->world:ws[frame];
+
+    // --- Рисуем арену ---
+    qDev.SetColor(0x40000000);
+    qDev.DrawCircle(vec2d(0, 0), world.ARENA_RADIUS,0,2, 64);
+
+    // --- Рисуем цель ---
+    qDev.SetColor(0x8000FF00); // полупрозрачный зелёный
+    qDev.DrawCircle(vec2d(0, 0), 5,0,2, 32);
+
+    auto center=world.get_center_of_mass(0);auto&w=world;auto p=0;
+    struct t_beste{double v;bool ok=false;int e;void use(t_beste c){if(!ok||c.v>v)*this=c;}};
+    t_beste be;
+    for(int e=0;e<4;e++)if(e!=p&&!w.slot2deaded[e])for(int i=0;i<3;i++){
+      auto&ex=w.balls[i+e*3];
+      be.use({-ex.pos.dist_to(center),true,e});
+    }
+    // --- Рисуем пружины ---
+    for (const auto& spring : world.springs) {
+        const auto& a = world.balls[spring.a].pos;
+        const auto& b = world.balls[spring.b].pos;
+        int player_id = spring.a / 3; // определяем игрока по индексу шарика
+        qDev.SetColor(player_colors[player_id] & 0x80FFFFFF); // полупрозрачные
+        qDev.DrawLine(a, b, 3.0);
+        qDev.SetColor(0xff000000);
+        qDev.DrawLine(a, b, 1.0);
+    }
+    if(0)
+    for(int i=0;i<1;i++){
+      vec2d c,v;
+      for(int j=0;j<3;j++){
+        int id=i*3+j;
+        auto&ex=world.balls[id];v+=ex.vel;c+=ex.pos;
+      }
+      c*=(1/3.0);v*=(1/3.0);
+      auto t=c+(v.Norm()*0.5+v.Ort().Norm())*200;
+      qDev.SetColor(0xFFFFFFFF);
+      qDev.DrawCircleEx(t, 0, 8.0, 16, 0);
+      qDev.SetColor(0xFFFF0000);
+      qDev.DrawCircleEx(c+v.SetMag(200), 0, 8.0, 16, 0);
+    }
+      
+    for(int i=0;i<world.parr.size();i++){
+      auto&ex=world.parr[i];
+      qDev.SetColor(player_colors[ex.color]);
+      qDev.DrawCircleEx(ex.pos, 0, 8.0, 10, 0);
+    }
+
+    // --- Рисуем шарики ---
+    for (int p = 0; p < 4; p++) {
+        for (int i = 0; i < 3; i++) {
+            int idx = p * 3 + i;
+            const auto& ball = world.balls[idx];
+            qDev.SetColor(world.slot2deaded[p]?0x40000000:player_colors[p]&0xAAFFFFFF);
+            qDev.DrawCircleEx(ball.pos, 0, 8.0+(world.cmd_for_player[p].f(i)*4), 32, 0);
+            qDev.SetColor(0xff000000);
+            qDev.DrawCircleEx(ball.pos, 8.0, 9.0, 32, 0);
+            // Стрелка скорости
+            if(0)if (ball.vel.Mag() > 0.1) {
+                vec2d head = ball.pos + ball.vel.Norm() * 20;
+                qDev.SetColor(0xFFFFFFFF);
+                //DrawLine(qDev, ball.pos, head, 2.0);
+                // Маленький треугольник на конце
+                auto perp = ball.vel.Ort().Norm() * 5;
+                qDev.SetColor(0xFFFFFFFF);
+                qDev.DrawTrigon(head, head+ball.vel.Norm() * 20 - perp, head+ball.vel.Norm() * 20 + perp);
+            }
+        }
+    }
+
+    // --- Отладка: тики и статус ---
+    qDev.SetColor(0xFFFFFFFF);
+    /*
+    string debug = "Tick: " + IToS(world.tick)+" ms:"+FToS(ms)+" "+to_string(seed);
+    qap_text::draw(qDev, vec2d(-300, -200), debug, 24);
+    for(int i=0;i<4;i++){
+      string msg="score["+IToS(i)+"] = "+FToS(world.slot2score[i]);
+      qDev.SetColor(player_colors[i]);
+      qap_text::draw(qDev, vec2d(-300, -224-24*i), msg, 24);
+    }*/
+  }
+  void Render(QapDev&qDev){
+    RenderImpl(qDev);
     RenderText(qDev);
   }
   void RenderText(QapDev&qDev){
@@ -435,4 +529,10 @@ public:
     if(runned)w.tick++;
   }
   int seed=0;
+  vector<QapColor> player_colors={
+    0xFFFF8080, // красный
+    0xFF80FF80, // зелёный
+    0xFF8080FF, // синий
+    0xFFFFFF80  // жёлтый
+  };
 };

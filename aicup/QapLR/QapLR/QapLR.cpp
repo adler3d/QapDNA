@@ -4185,7 +4185,6 @@ public:
   public:
     virtual ILevel*Build(TGame*Game){
       auto*Result=new TYPE();
-      *Result={};
       Result->Init(Game);
       return Result;
     }
