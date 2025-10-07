@@ -4861,6 +4861,28 @@ void update_last_char_from_keyboard(QapKeyboard&kb){
     if(key>='0'&&key<='9'){kb.LastChar=key;kb.News=true;return;}
   }
 }
+struct t_arg{
+  #define DEF_PRO_CLASSNAME()t_arg
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(string,key,{})\
+  ADD(string,v,{})\
+  ADD(bool,from_arg,false)\
+  ADD(int,id,31456)\
+  ADD(string,fullname,{})\
+  ADD(string,shortname,{})\
+  ADD(string,def,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+};
+
+#include <iostream>
+void test(){
+  t_arg a;a.key="nope";a.v="true";a.from_arg=true;
+  auto mem=QapSaveToStr(a);
+  std::cout<<"a=["<<mem<<"]"<<endl;
+  file_put_contents("out.t_arg",mem);
+}
 #ifndef _WIN32
 #ifndef QAP_UNIX
 void update_kb(){
@@ -5337,6 +5359,7 @@ public:
 };
 int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow)
 {
+  test();
   //auto s=TGame::wget("185.92.223.117","/logs.json");
   //MACRO_ADD_LOG("App.version : "+IToS(AfterBuildCount)+"/"+IToS(BeforeBuildCount+AfterBuildCount),lml_EVENT);
   GlobalEnv global_env(hInstance,hPrevInstance,lpCmdLine,nCmdShow);
@@ -5352,6 +5375,7 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
 #include <iostream>
 int main(int argc, char* argv[]){
   std::cout<<"QAP_UNIX==true"<<endl;
+  test();
   return 0;
 }
 #endif
