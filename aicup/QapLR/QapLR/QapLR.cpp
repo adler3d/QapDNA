@@ -5708,6 +5708,7 @@ void init_world(t_world&world) {
 
 #include <iostream>
 void test(){
+  return;
   t_world w;
   init_world(w);
   auto mem=QapSaveToStr(w);
