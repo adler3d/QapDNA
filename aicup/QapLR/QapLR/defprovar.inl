@@ -42,6 +42,17 @@ void DoReset()
     DEF_PRO_VARIABLE(F);
     #undef F
   }
+  #ifdef DEF_PRO_COPYABLE
+    void operator=(const DEF_PRO_CLASSNAME()&ref){oper_set(ref);}
+    DEF_PRO_CLASSNAME()(const DEF_PRO_CLASSNAME()&ref){oper_set(ref);}
+    void oper_set(const DEF_PRO_CLASSNAME()&ref)
+    {
+      #define F(TYPE,NAME,VALUE)this->NAME=ref.NAME;
+      DEF_PRO_VARIABLE(F);
+      #undef F
+    }
+    #undef DEF_PRO_COPYABLE
+  #endif //DEF_PRO_COPYABLE
   DEF_PRO_CLASSNAME()(){DoReset();}
   #undef DEF_PRO_CLASSNAME
 #endif //DEF_PRO_CLASSNAME
