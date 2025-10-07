@@ -4882,6 +4882,8 @@ void test(){
   auto mem=QapSaveToStr(a);
   std::cout<<"a=["<<mem<<"]"<<endl;
   file_put_contents("out.t_arg",mem);
+  std::fstream f("out2.t_arg",std::ios::out|std::ios::trunc|std::ios::binary);
+  f<<mem;
 }
 #ifndef _WIN32
 #ifndef QAP_UNIX
