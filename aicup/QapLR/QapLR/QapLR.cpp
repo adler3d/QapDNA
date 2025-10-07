@@ -3339,6 +3339,23 @@ public:
       #undef F
     }
   }
+  void DrawLine(vec2d a, vec2d b, double ls)
+  {
+    BatchScope Scope(*this);
+    {
+      vec2d dir=(b-a).Norm();
+      vec2d dv=vec2d(-dir.y,dir.x)*(ls*0.5);
+      int n=VPos;
+      #define F(P,U,V){AddVertex(Ver(P,color,U,V));}
+      F(a-dv,0.0f,1.0f);
+      F(a+dv,0.0f,0.0f);
+      F(b+dv,1.0f,0.0f);
+      F(b-dv,1.0f,1.0f);
+      #undef F
+      AddTris(n+0,n+1,n+2);
+      AddTris(n+0,n+2,n+3);
+    }
+  }
   void DrawTrigon(const vec2d&A,const vec2d&B,const vec2d&C)
   {
     BatchScope Scope(*this);

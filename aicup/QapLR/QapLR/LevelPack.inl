@@ -1042,7 +1042,7 @@ public:
         qDev.SetColor(0xffbbbbbb);
         for(auto&ex:w.dyn_obs){
           auto d=Vec2dEx(ex.ang,ex.len);
-          DrawLine(qDev,ex.pos-d,ex.pos+d,ex.r*2);
+          qDev.DrawLine(ex.pos-d,ex.pos+d,ex.r*2);
         }
         qDev.SetColor(0xffbbbbff);
         for(auto&ex:w.dyn_obs){
@@ -1119,11 +1119,11 @@ public:
         qDev.BindTex(0,0);
         qDev.SetColor(0xff0000ff);
         for(auto&ex:edges){
-          DrawLine(qDev,ex.a,ex.b,4);
+          qDev.DrawLine(ex.a,ex.b,4);
         }
         qDev.SetColor(0xffff0000);
         for(auto&ex:bad_edges){
-          DrawLine(qDev,ex.a,ex.b,4);
+          qDev.DrawLine(ex.a,ex.b,4);
         }
       }
       if(bool need_draw_markets=Game->FrameMarket){
@@ -1221,11 +1221,6 @@ public:
     auto p=pos;
     if(shadow)p+=vec2d(1.0,-1.0);
     qDev.DrawQuad(p.x,p.y,wh.x,wh.y,ang);
-  }
-  void DrawLine(QapDev&qDev,const vec2d&a,const vec2d&b,real line_size)
-  {
-    auto p=(b+a)*0.5;
-    qDev.DrawQuad(p.x,p.y,(b-a).Mag(),line_size,(b-a).GetAng());
   }
   void start_disaster() {
     if (w.disaster.type>DISASTER_NONE) return;
