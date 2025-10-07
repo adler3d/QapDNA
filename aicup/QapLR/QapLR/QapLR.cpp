@@ -255,7 +255,7 @@ static string join(const vector<string>&arr,const string&glue)
 struct TScreenMode{
   int W,H,BPP,Freq;
 };
-struct TSys{int UPS=128;TScreenMode SM;bool UPS_enabled=true;bool NeedClose=false;void ResetClock(){}}; TSys Sys;
+struct TSys{int UPS=64;TScreenMode SM;bool UPS_enabled=true;bool NeedClose=false;void ResetClock(){}}; TSys Sys;
 static const int Sys_UPD=64;
 inline string IToS(const int&val){return to_string(val);}
 inline string FToS(const double&val){return to_string(val);}
