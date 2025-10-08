@@ -389,7 +389,8 @@ public:
   void RenderImpl(QapDev&qDev){
     vec2d mpos=kb.MousePos;
     qDev.BindTex(0, nullptr);
-
+    
+    QapDev::BatchScope Scope(qDev);
     static bool set_frame=false;if(kb.OnDown('N'))set_frame=!set_frame;
     frame=-1;
     static TScreenMode SM=GetScreenMode();
@@ -476,8 +477,26 @@ public:
       qap_text::draw(qDev, vec2d(-300, -224-24*i), msg, 24);
     }*/
   }
+  vector<int> AdlerCraftMap;
+  MapGenerator AdlerCraft_mapgen;
+  void genmap(){
+    AdlerCraftMap=AdlerCraft_mapgen.generateMap();
+  }
+  void RenderMap(QapDev&qDev){
+    //genmap();
+    if(AdlerCraftMap.empty())return;
+    QapDev::BatchScope Scope(qDev);
+    vec2d mpos=kb.MousePos;
+    qDev.BindTex(0,nullptr);
+    auto cs=10.0;
+    for(int y=0;y<80;y++)for(int x=0;x<80;x++){
+      qDev.color=AdlerCraftMap[x+y*80]?0xFF008000:0xff444444;
+      qDev.DrawQuad(y*cs-cs*40,x*cs-cs*40,cs,cs);
+    }
+  }
   void Render(QapDev&qDev){
-    RenderImpl(qDev);
+    //RenderImpl(qDev);
+    RenderMap(qDev);
     RenderText(qDev);
   }
   void RenderText(QapDev&qDev){
@@ -521,6 +540,8 @@ public:
       TE.BeginScope(-hs.x+ident,+hs.y-ident,&Game->NormFont,&Game->BlurFont);
       TE.EndScope();
     }
+    if(kb.OnDown('Q')){genmap();Sys.UPS_enabled=false;}
+    if(kb.OnDown(VK_ESCAPE)){Sys.NeedClose=true;}
     if(kb.OnDown(VK_F9)){reinit_the_same_level();}
     bool runned=!Win()&&!Fail();
     if(runned){

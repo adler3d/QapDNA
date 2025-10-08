@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Многоугольники + Perlin Noise + Heatmap</title>
+  <style>
+    body { margin: 20px; font-family: sans-serif; }
+    canvas { border: 1px solid #888; background: white; image-rendering: pixelated; }
+    button, label { margin: 5px; display: inline-block; }
+    input { margin-right: 6px; }
+  </style>
+</head>
+<body>
+  <h3>Генерация карты с опциями</h3>
+  <div>
+    <label><input type="checkbox" id="perlinCheck"> Perlin Noise</label>
+    <button onclick="generateMap()">Сгенерировать</button>
+    <button onclick="generateHeatmap(255)">Heatmap (100)</button>
+  </div>
+  <canvas id="c" width="800" height="800"></canvas>
+
+  <script>
+    const SIZE = 80;
+    const HALF = 40;
+    const N = SIZE - 1;
+    const USE_PATHS_PROB = 0.75;
+    const SYMMETRY_MODES = ['mirror', 'rotate'];
+
+    // --- Perlin Noise (упрощённый) ---
+    function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+    function lerp(a, b, t) { return a + t * (b - a); }
+    function grad(hash, x, y) {
+      const h = hash & 7;
+      const u = h < 4 ? x : y;
+      const v = h < 4 ? y : x;
+      return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+    }
+
+    function generatePerlinNoise(width, height, scale = 0.05) {
+      // Генерация градиентов
+      const permutation = [];
+      for (let i = 0; i < 256; i++) permutation[i] = i;
+      // Перемешиваем
+      for (let i = 255; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [permutation[i], permutation[j]] = [permutation[j], permutation[i]];
+      }
+      const perm = [...permutation, ...permutation];
+
+      const noise = new Array(width * height);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const xf = x * scale;
+          const yf = y * scale;
+
+          const xi = Math.floor(xf) & 255;
+          const yi = Math.floor(yf) & 255;
+          const tx = xf - Math.floor(xf);
+          const ty = yf - Math.floor(yf);
+
+          const u = fade(tx);
+          const v = fade(ty);
+
+          const a = perm[xi] + yi;
+          const aa = perm[a];
+          const ab = perm[a + 1];
+          const b = perm[xi + 1] + yi;
+          const ba = perm[b];
+          const bb = perm[b + 1];
+
+          const x1 = lerp(grad(perm[aa], tx, ty), grad(perm[ba], tx - 1, ty), u);
+          const x2 = lerp(grad(perm[ab], tx, ty - 1), grad(perm[bb], tx - 1, ty - 1), u);
+          const val = (lerp(x1, x2, v) + 1) / 2; // [0, 1]
+          noise[y * width + x] = val;
+        }
+      }
+      return noise;
+    }
+
+    // --- Остальное (без изменений, кроме интеграции Perlin) ---
+    function createQuarter() {
+      return Array(HALF).fill().map(() => Array(HALF).fill(0));
+    }
+
+    function setInQuarter(q, x, y, v) {
+      if (x >= 0 && x < HALF && y >= 0 && y < HALF) q[y][x] = v;
+    }
+
+    function pointInPolygon(x, y, poly) {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1];
+        const xj = poly[j][0], yj = poly[j][1];
+        const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function drawPolygonBlob(q, cx, cy, minR = 3, maxR = 10, sides = 6) {
+      const angles = [];
+      for (let i = 0; i < sides; i++) {
+        angles.push((Math.PI * 2 * i) / sides + (Math.random() - 0.5) * 0.8);
+      }
+      angles.sort((a, b) => a - b);
+
+      const poly = [];
+      for (const a of angles) {
+        const r = minR + Math.random() * (maxR - minR);
+        poly.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+      }
+
+      const xs = poly.map(p => p[0]);
+      const ys = poly.map(p => p[1]);
+      const minX = Math.max(0, Math.floor(Math.min(...xs)) - 1);
+      const maxX = Math.min(HALF - 1, Math.ceil(Math.max(...xs)) + 1);
+      const minY = Math.max(0, Math.floor(Math.min(...ys)) - 1);
+      const maxY = Math.min(HALF - 1, Math.ceil(Math.max(...ys)) + 1);
+
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          if (pointInPolygon(x + 0.5, y + 0.5, poly)) {
+            setInQuarter(q, x, y, 1);
+          }
+        }
+      }
+
+      // Рваные края
+      if (Math.random() < 0.5) {
+        for (let y = minY; y <= maxY; y++) {
+          for (let x = minX; x <= maxX; x++) {
+            if (q[y][x] === 1) {
+              let neighbors = 0;
+              for (let dy = -1; dy <= 1; dy++)
+                for (let dx = -1; dx <= 1; dx++)
+                  if (q[y + dy] && q[y + dy][x + dx] === 1) neighbors++;
+              if (neighbors < 5 && Math.random() < 0.2) {
+                setInQuarter(q, x, y, 0);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    function drawOrganicPath(q, startX, startY) {
+      let x = startX, y = startY;
+      const steps = 15 + Math.floor(Math.random() * 15);
+      for (let i = 0; i < steps; i++) {
+        setInQuarter(q, x, y, 0);
+        const dx = (x < HALF - 5 && Math.random() < 0.6) ? 1 : (x > 5 ? -1 : 0);
+        const dy = (y < HALF - 5 && Math.random() < 0.6) ? 1 : (y > 5 ? -1 : 0);
+        const dirs = [[0,1],[1,0],[0,-1],[-1,0]];
+        const [rdx, rdy] = dirs[Math.floor(Math.random() * dirs.length)];
+        x += Math.random() < 0.3 ? rdx : dx;
+        y += Math.random() < 0.3 ? rdy : dy;
+        if (x < 0 || x >= HALF || y < 0 || y >= HALF) break;
+      }
+    }
+
+    function generateQuarter(usePerlin = false) {
+      const q = createQuarter();
+
+      // --- Perlin Noise (если включён) ---
+      if (usePerlin) {
+        for(let i=0;i<2;i++){
+          const perlin = generatePerlinNoise(HALF, HALF, 0.08); // масштаб подобран
+          for (let y = 0; y < HALF; y++) {
+            for (let x = 0; x < HALF; x++) {
+              // Где шум > 0.6 — ставим лес
+              if (perlin[y * HALF + x] > 0.62) {
+                setInQuarter(q, x, y, 1);
+              }
+            }
+          }
+        }
+        //return q;
+      }
+      // --- Многоугольные острова ---
+      const clusters = 8 + Math.floor(Math.random() * 10);
+      for (let i = 0; i < clusters; i++) {
+        const cx = Math.floor(Math.random() * HALF);
+        const cy = Math.floor(Math.random() * HALF);
+        if (Math.abs(cx - cy) < 4 && Math.random() < 0.6) continue;
+        const minR = 2 + Math.floor(Math.random() * 3);
+        const maxR = minR + 3 + Math.floor(Math.random() * 4);
+        const sides = 5 + Math.floor(Math.random() * 5);
+        drawPolygonBlob(q, cx, cy, minR, maxR, sides);
+      }
+
+      // --- Фоновый шум ---
+      for (let y = 0; y < HALF; y++)
+        for (let x = 0; x < HALF; x++)
+          if (Math.random() < 0.025) q[y][x] = 1 - q[y][x];
+
+      // --- Тропинки (75%) ---
+      if (Math.random() < USE_PATHS_PROB) {
+        const cx = 18 + Math.floor(Math.random() * 5);
+        const cy = 18 + Math.floor(Math.random() * 5);
+        const paths = 1 + (Math.random() < 0.3 ? 1 : 0);
+        for (let p = 0; p < paths; p++) {
+          drawOrganicPath(q, cx, cy);
+        }
+      }
+      var tc=0;for(let y = 0; y < HALF; y++)for(let x = 0; x < HALF; x++)if(q[y][x])tc++;
+      if(tc>HALF*HALF*0.5){
+        for(let y = 0; y < HALF; y++)for(let x = 0; x < HALF; x++)q[y][x]=!q[y][x];
+        console.log("inv");
+      }
+      return q;
+    }
+
+    // --- Симметрии ---
+    function applyMirror(q) {
+      const g = new Array(SIZE * SIZE).fill(0);
+      for (let y = 0; y < HALF; y++)
+        for (let x = 0; x < HALF; x++) {
+          const v = q[y][x];
+          g[y * SIZE + x] = v;
+          g[y * SIZE + (N - x)] = v;
+          g[(N - y) * SIZE + x] = v;
+          g[(N - y) * SIZE + (N - x)] = v;
+        }
+      return g;
+    }
+
+    function applyRotation(q) {
+      const g = new Array(SIZE * SIZE).fill(0);
+      for (let y = 0; y < HALF; y++)
+        for (let x = 0; x < HALF; x++) {
+          const v = q[y][x];
+          g[y * SIZE + x] = v;
+          g[(N - x) * SIZE + y] = v;
+          g[(N - y) * SIZE + (N - x)] = v;
+          g[x * SIZE + (N - y)] = v;
+        }
+      return g;
+    }
+
+    // --- Генерация ---
+    function generateMap() {
+      const usePerlin = document.getElementById('perlinCheck').checked;
+      const quarter = generateQuarter(usePerlin);
+      const symmetry = SYMMETRY_MODES[Math.floor(Math.random() * SYMMETRY_MODES.length)];
+      const fullMap = symmetry === 'rotate' ? applyRotation(quarter) : applyMirror(quarter);
+      draw(fullMap, false);
+      console.log(`Симметрия: ${symmetry}, Perlin: ${usePerlin}`);
+    }
+
+    function generateHeatmap(iterations = 100) {
+      console.log("Генерация heatmap...");
+      const sum = new Array(SIZE * SIZE).fill(0);
+      for (let i = 0; i < iterations; i++) {
+        // Для heatmap — без Perlin, без тропинок (фиксированные условия)
+        const q = generateQuarter(true);/*
+        const clusters = 10 + Math.floor(Math.random() * 8);
+        for (let j = 0; j < clusters; j++) {
+          const cx = Math.floor(Math.random() * HALF);
+          const cy = Math.floor(Math.random() * HALF);
+          if (Math.abs(cx - cy) < 4 && Math.random() < 0.6) continue;
+          const minR = 2 + Math.floor(Math.random() * 3);
+          const maxR = minR + 3 + Math.floor(Math.random() * 4);
+          const sides = 5 + Math.floor(Math.random() * 5);
+          drawPolygonBlob(q, cx, cy, minR, maxR, sides);
+        }*/
+        const map = applyMirror(q); // фиксируем зеркало для heatmap
+        for (let j = 0; j < SIZE * SIZE; j++) sum[j] += map[j];
+      }
+      const heatmap = sum.map(v => 255 - Math.round((v / iterations) * 255));
+      draw(heatmap, true);
+      console.log("Heatmap готов!");
+    }
+
+    function draw(grid, isHeatmap = false) {
+      const c = document.getElementById('c');
+      const ctx = c.getContext('2d');
+      const s = 800 / SIZE;
+      for (let y = 0; y < SIZE; y++)
+        for (let x = 0; x < SIZE; x++) {
+          const val = grid[y * SIZE + x];
+          if (isHeatmap) {
+            ctx.fillStyle = `rgb(${val},${val},${val})`;
+          } else {
+            ctx.fillStyle = val ? 'black' : 'white';
+          }
+          ctx.fillRect(x * s, y * s, s, s);
+        }
+    }
+
+    generateMap();
+  </script>
+</body>
+</html>

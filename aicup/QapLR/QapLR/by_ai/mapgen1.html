@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Симметрия: зеркало vs поворот</title>
+  <style>
+    body { margin: 20px; font-family: sans-serif; background: #fcfcfc; }
+    canvas { border: 1px solid #666; background: white; image-rendering: pixelated; }
+    button { margin: 5px; padding: 6px 12px; cursor: pointer; }
+    .controls { margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h2>Генерация карты: зеркало ↔ поворот</h2>
+  <div class="controls">
+    <button onclick="generate('mirror', false, false)">Зеркало</button>
+    <button onclick="generate('mirror', true, false)">Зеркало + тропы</button>
+    <button onclick="generate('rotate', false, false)">Поворот</button>
+    <button onclick="generate('rotate', true, true)">Поворот + тропы + гео-шум</button>
+  </div>
+  <canvas id="mapCanvas" width="800" height="800"></canvas>
+  <p>Чёрный = лес (1), Белый = пусто (0). Консоль → C++ vector.</p>
+
+  <script>
+    const SIZE = 80;
+    const HALF = SIZE / 2; // 40
+    const SAFE = 8; // стартовая зона
+
+    // === Вспомогательные функции для четверти ===
+
+    function createQuarter() {
+      return Array(HALF).fill().map(() => Array(HALF).fill(0));
+    }
+
+    function safeSet(quarter, x, y, val) {
+      // Не трогаем стартовые зоны: 8x8 в углу четверти
+      if (x < SAFE && y < SAFE) return;
+      if (x >= 0 && x < HALF && y >= 0 && y < HALF) {
+        quarter[y][x] = val;
+      }
+    }
+
+    function drawBlob(quarter, cx, cy, radius, val) {
+      const r2 = radius * radius;
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (dx * dx + dy * dy <= r2) {
+            safeSet(quarter, cx + dx, cy + dy, val);
+          }
+        }
+      }
+    }
+
+    function addRandomNoise(quarter, chance = 0.04) {
+      for (let y = 0; y < HALF; y++) {
+        for (let x = 0; x < HALF; x++) {
+          if (x >= SAFE || y >= SAFE) { // пропускаем стартовую зону
+            if (Math.random() < chance) {
+              quarter[y][x] = 1 - quarter[y][x];
+            }
+          }
+        }
+      }
+    }
+
+    function addGeometricNoise(quarter) {
+      const features = 25 + Math.floor(Math.random() * 25);
+      for (let i = 0; i < features; i++) {
+        let x = Math.floor(Math.random() * (HALF - 2));
+        let y = Math.floor(Math.random() * (HALF - 2));
+        // Пропускаем стартовую зону
+        if (x < SAFE && y < SAFE) continue;
+
+        const type = Math.floor(Math.random() * 4);
+        if (type === 0) {
+          for (let dy = 0; dy < 2; dy++)
+            for (let dx = 0; dx < 2; dx++)
+              safeSet(quarter, x + dx, y + dy, 1);
+        } else if (type === 1) {
+          const cross = [[0,1],[1,0],[1,1],[1,2],[2,1]];
+          for (const [dy, dx] of cross)
+            safeSet(quarter, x + dx - 1, y + dy - 1, 1);
+        } else if (type === 2) {
+          for (let dx = 0; dx < 3; dx++) safeSet(quarter, x + dx, y, 1);
+        } else {
+          for (let dy = 0; dy < 3; dy++) safeSet(quarter, x, y + dy, 1);
+        }
+      }
+    }
+
+    function drawLocalPath(quarter, startX, startY, length = 15) {
+      let x = startX, y = startY;
+      for (let i = 0; i < length; i++) {
+        if (x < SAFE && y < SAFE) break; // не заходим в старт
+        const dirs = [[0,1],[1,0],[0,-1],[-1,0]];
+        const [dx, dy] = dirs[Math.floor(Math.random() * dirs.length)];
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx >= SAFE && nx < HALF - 1 && ny >= 0 && ny < HALF - 1) {
+          x = nx; y = ny;
+          quarter[y][x] = 0;
+        }
+      }
+    }
+
+    function generateQuarter(addPaths = false, addGeoNoise = false) {
+      const quarter = createQuarter();
+
+      // Лесные острова
+      const clusters = 8 + Math.floor(Math.random() * 8);
+      for (let i = 0; i < clusters; i++) {
+        const cx = SAFE + 2 + Math.floor(Math.random() * (HALF - 2 * SAFE - 4));
+        const cy = SAFE + 2 + Math.floor(Math.random() * (HALF - 2 * SAFE - 4));
+        const r = 3 + Math.floor(Math.random() * 5);
+        drawBlob(quarter, cx, cy, r, 1);
+      }
+
+      addRandomNoise(quarter, 0.04);
+      if (addGeoNoise) addGeometricNoise(quarter);
+      if (addPaths) {
+        const numPaths = 3 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < numPaths; i++) {
+          const sx = SAFE + 3 + Math.floor(Math.random() * (HALF - 2 * SAFE - 6));
+          const sy = SAFE + 3 + Math.floor(Math.random() * (HALF - 2 * SAFE - 6));
+          drawLocalPath(quarter, sx, sy, 12 + Math.floor(Math.random() * 8));
+        }
+      }
+
+      return quarter;
+    }
+
+    // === Симметрия: зеркало ===
+    function applyMirror(quarter) {
+      const grid = new Array(SIZE * SIZE).fill(0);
+      for (let y = 0; y < HALF; y++) {
+        for (let x = 0; x < HALF; x++) {
+          const val = quarter[y][x];
+          grid[y * SIZE + x] = val;
+          grid[y * SIZE + (SIZE - 1 - x)] = val;
+          grid[(SIZE - 1 - y) * SIZE + x] = val;
+          grid[(SIZE - 1 - y) * SIZE + (SIZE - 1 - x)] = val;
+        }
+      }
+      return grid;
+    }
+
+    // === Симметрия: поворот на 90° ===
+    function applyRotation(q) {
+      const N = SIZE - 1;
+      const g = new Array(SIZE * SIZE).fill(0);
+      for (let y = 0; y < HALF; y++)
+        for (let x = 0; x < HALF; x++) {
+          const v = q[y][x];
+          // 0°
+          g[y * SIZE + x] = v;
+          // 90°: (x,y) → (y, N-x)
+          g[(N - x) * SIZE + y] = v;
+          // 180°: (x,y) → (N-x, N-y)
+          g[(N - y) * SIZE + (N - x)] = v;
+          // 270°: (x,y) → (N-y, x)
+          g[x * SIZE + (N - y)] = v;
+        }
+      return g;
+    }
+
+    // === Визуализация ===
+    function drawGrid(grid) {
+      const canvas = document.getElementById('mapCanvas');
+      const ctx = canvas.getContext('2d');
+      const cell = 800 / SIZE;
+      for (let y = 0; y < SIZE; y++) {
+        for (let x = 0; x < SIZE; x++) {
+          ctx.fillStyle = grid[y * SIZE + x] ? 'black' : 'white';
+          ctx.fillRect(x * cell, y * cell, cell, cell);
+        }
+      }
+    }
+
+    function generate(symmetry = 'mirror', addPaths = false, addGeoNoise = false) {
+      const quarter = generateQuarter(addPaths, addGeoNoise);
+      const fullMap = symmetry === 'rotate' ? applyRotation(quarter) : applyMirror(quarter);
+      drawGrid(fullMap);
+      console.log('// vector<int> map = {');
+      console.log(fullMap.join(', '));
+      console.log('// };');
+    }
+
+    generate('mirror', false, false);
+  </script>
+</body>
+</html>
