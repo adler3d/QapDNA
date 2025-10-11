@@ -4994,12 +4994,43 @@ public:
   };
   void Free(){Game.qDev.Free();}
 };
-int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow)
-{
-  void test();test();
-  //auto s=TGame::wget("185.92.223.117","/logs.json");
-  //MACRO_ADD_LOG("App.version : "+IToS(AfterBuildCount)+"/"+IToS(BeforeBuildCount+AfterBuildCount),lml_EVENT);
-  GlobalEnv global_env(hInstance,hPrevInstance,lpCmdLine,nCmdShow);
+
+#include <shellapi.h>  // CommandLineToArgvW
+#include <locale>
+
+// Альтернатива без codecvt (рекомендуется)
+std::string utf16_to_utf8(const std::wstring& wstr) {
+    if (wstr.empty()) return std::string();
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
+    std::string strTo(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
+    return strTo;
+}
+
+int WINAPI QapLR_WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    int argc = 0;
+    LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (wargv == nullptr) {
+        MessageBoxA(nullptr, "Failed to parse command line", "Error", MB_ICONERROR);
+        return 1;
+    }
+
+    std::vector<std::vector<char>> argv_storage;
+    std::vector<char*> argv;
+
+    for (int i = 0; i < argc; ++i) {
+        std::string utf8 = utf16_to_utf8(wargv[i]);
+        argv_storage.emplace_back(utf8.begin(), utf8.end());
+        argv_storage.back().push_back('\0'); // гарантируем null-терминатор
+        argv.push_back(argv_storage.back().data());
+    }
+    int QapLR_main(int argc,char*argv[]);
+    int result=QapLR_main(argc,argv.data());
+
+    LocalFree(wargv); // освобождаем память, выделенную CommandLineToArgvW
+    return result;
+}
+int QapLR_DoNice(){
   TScreenMode SM=GetScreenMode();
   Sys.SM=SM;
   TWin32Game Game;
@@ -5007,18 +5038,323 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
   Game.Free();
 	return 0;
 }
+int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow)
+{
+  GlobalEnv global_env(hInstance,hPrevInstance,lpCmdLine,nCmdShow);
+  void test();test();
+  return QapLR_WinMain(hInstance,hPrevInstance,lpCmdLine,nCmdShow);
+  QapLR_DoNice();
+}
 #endif
 #ifdef QAP_UNIX
 #include <iostream>
 int main(int argc, char* argv[]){
-  std::cout<<"QAP_UNIX==true"<<endl;
+  //std::cout<<"QAP_UNIX==true"<<endl;
   void test();test();
-  return 0;
+  int QapLR_main(int argc,char*argv[]);
+  return QapLR_main(argc,argv_cstr.data());
 }
 #endif
 
 #include <iostream>
+#include <string>
+#include <vector>
+#include <optional>
+#include <cstdint>
+#include <cstdlib>
+#include <map>
+#include <set>
+struct ProgramArgs {
+    // Режимы
+    enum class Mode {
+        Normal,      // обычная игра
+        ReplayIn,    // воспроизведение
+        ReplayOut    // запись реплея
+    } mode = Mode::Normal;
+
+    // Обязательные для Normal и ReplayOut
+    std::string world_name;
+    int num_players = 0;
+    uint64_t seed_initial = 0;
+    uint64_t seed_strategies = 0;
+
+    // Файлы
+    std::optional<std::string> replay_in_file;   // только для ReplayIn
+    std::optional<std::string> replay_out_file;  // только для ReplayOut
+    std::optional<std::string> state_file;       // опционально: файл начального состояния
+
+    // GUI
+    bool gui_mode = false;
+    std::vector<std::string> player_names;
+
+    // Служебное
+    bool show_help = false;
+    bool show_version = false;
+};
+
+const char* VERSION = "QapLR v0.1.0";
+const char* USAGE = R"(Usage:
+  Normal mode:     %s <world> <players> <seed_init> <seed_strat> [OPTIONS]
+  Replay-in mode:  %s -i <file> [OPTIONS]
+  Replay-out mode: %s -o <file> <world> <players> <seed_init> <seed_strat> [OPTIONS]
+
+Options:
+  -i, --replay-in FILE      Play back a recorded replay
+  -o, --replay-out FILE     Record a replay to FILE after game
+  -s, --state-file FILE     Use custom initial state (use '-' for stdin)
+  -g, --gui                 Enable graphical mode
+  -n, --player-names NAME... Provide player names (requires --gui)
+  -h, --help                Show this help
+  -v, --version             Show version
+)";
+
+void printHelp(const char*prog) {
+    std::cout << "QapLR : Local Runner\n\n";
+    printf(USAGE, prog, prog, prog);
+}
+
+bool parseArgs(int argc,char*argv[],ProgramArgs&args){
+    // Проверка --help / --version ДО всего
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            args.show_help = true;
+            return true;
+        }
+        if (arg == "--version" || arg == "-v") {
+            args.show_version = true;
+            return true;
+        }
+    }
+
+    // Отображение коротких ↔ длинных флагов
+    std::map<std::string, std::string> short_to_long = {
+        {"-i", "--replay-in"},
+        {"-o", "--replay-out"},
+        {"-s", "--state-file"},
+        {"-g", "--gui"},
+        {"-n", "--player-names"},
+        {"-h", "--help"},
+        {"-v", "--version"}
+    };
+
+    // Список всех известных флагов (для проверки)
+    std::set<std::string> known_flags = {
+        "--replay-in", "--replay-out", "--state-file",
+        "--gui", "--player-names", "--help", "--version"
+    };
+
+    // Вектор "токенов": каждый — либо флаг, либо позиционный аргумент
+    struct Token {
+        enum { FLAG, POSITIONAL } type;
+        std::string value;
+        std::vector<std::string> payload; // для --player-names и т.п.
+    };
+    std::vector<Token> tokens;
+
+    // Первый проход: разбор на токены с учётом потребления аргументов флагами
+    for (int i = 1; i < argc; ) {
+        std::string arg = argv[i];
+
+        // Преобразуем короткий флаг в длинный
+        if (arg.size() >= 2 && arg[0] == '-' && arg[1] != '-') {
+            if (short_to_long.count(arg)) {
+                arg = short_to_long[arg];
+            } else {
+                std::cerr << "Unknown option: " << argv[i] << "\n";
+                return false;
+            }
+        }
+
+        if (arg.size() >= 2 && arg.substr(0, 2) == "--") {
+            if (!known_flags.count(arg)) {
+                std::cerr << "Unknown option: " << arg << "\n";
+                return false;
+            }
+
+            Token tok{Token::FLAG, arg};
+
+            if (arg == "--replay-in" || arg == "--replay-out" || arg == "--state-file") {
+                if (i + 1 >= argc) {
+                    std::cerr << arg << " requires an argument\n";
+                    return false;
+                }
+                tok.payload.push_back(argv[++i]);
+            }
+            else if (arg == "--player-names") {
+                int j = i + 1;
+                while (j < argc) {
+                    std::string next = argv[j];
+                    // Если следующий — флаг (начинается с -), останавливаемся
+                    if (next.size() >= 1 && next[0] == '-') {
+                        // Проверим, не короткий ли это флаг
+                        if (next.size() >= 2 && next[1] != '-' && short_to_long.count(next)) {
+                            break;
+                        }
+                        // Или длинный флаг
+                        if (next.substr(0, 2) == "--" && known_flags.count(next)) {
+                            break;
+                        }
+                    }
+                    tok.payload.push_back(next);
+                    ++j;
+                }
+                if (tok.payload.empty()) {
+                    std::cerr << "--player-names requires at least one name\n";
+                    return false;
+                }
+                i = j - 1; // компенсируем ++i ниже
+            }
+            // --gui, --help, --version — без аргументов
+
+            tokens.push_back(tok);
+            ++i;
+        } else {
+            // Позиционный аргумент
+            tokens.push_back({Token::POSITIONAL, arg});
+            ++i;
+        }
+    }
+
+    // Теперь извлекаем данные из токенов
+    std::vector<std::string> positional_args;
+
+    for (const auto& tok : tokens) {
+        if (tok.type == Token::FLAG) {
+            const std::string& flag = tok.value;
+            if (flag == "--replay-in") {
+                args.mode = ProgramArgs::Mode::ReplayIn;
+                args.replay_in_file = tok.payload[0];
+            } else if (flag == "--replay-out") {
+                args.mode = ProgramArgs::Mode::ReplayOut;
+                args.replay_out_file = tok.payload[0];
+            } else if (flag == "--state-file") {
+                args.state_file = tok.payload[0];
+            } else if (flag == "--gui") {
+                args.gui_mode = true;
+            } else if (flag == "--player-names") {
+                args.player_names = tok.payload;
+            }
+            // --help/--version уже обработаны ранее
+        } else {
+            positional_args.push_back(tok.value);
+        }
+    }
+
+    // === Обработка режимов ===
+
+    if (args.mode == ProgramArgs::Mode::ReplayIn) {
+        if (!positional_args.empty()) {
+            std::cerr << "Replay-in mode accepts no positional arguments\n";
+            return false;
+        }
+        // player_names можно проверить позже (по данным из реплея)
+        return true;
+    }
+
+    // Для Normal и ReplayOut: должно быть ровно 4 позиционных аргумента
+    if (positional_args.size() != 4) {
+        std::cerr << "Expected exactly 4 positional arguments: <world> <players> <seed_init> <seed_strat>\n";
+        std::cerr << "Got: ";
+        for (const auto& a : positional_args) std::cerr << "'" << a << "' ";
+        std::cerr << "\n";
+        return false;
+    }
+
+    // Парсим позиционные
+    args.world_name = positional_args[0];
+
+    try {
+        args.num_players = std::stoi(positional_args[1]);
+        if (args.num_players <= 0) throw std::exception{};
+    } catch (...) {
+        std::cerr << "Invalid number of players: " << positional_args[1] << "\n";
+        return false;
+    }
+
+    auto parse_seed = [](const std::string& s) -> uint64_t {
+        if (s.empty()) throw std::exception{};
+        char* end;
+        unsigned long long val = std::strtoull(s.c_str(), &end, 10);
+        if (*end != '\0') throw std::exception{};
+        return static_cast<uint64_t>(val);
+    };
+
+    try {
+        args.seed_initial = parse_seed(positional_args[2]);
+        args.seed_strategies = parse_seed(positional_args[3]);
+    } catch (...) {
+        std::cerr << "Seeds must be non-negative integers\n";
+        return false;
+    }
+
+    // Проверка имён игроков
+    if (!args.player_names.empty()) {
+        if (static_cast<int>(args.player_names.size()) != args.num_players) {
+            std::cerr << "Number of player names (" << args.player_names.size()
+                      << ") does not match num_players (" << args.num_players << ")\n";
+            return false;
+        }
+    }
+
+    return true;
+}
+int QapLR_main(int argc,char*argv[]){
+    /*
+    for(int i=0;i<1000;i++){
+      Sleep(16);
+    }*/
+    ProgramArgs args;
+    if (!parseArgs(argc, argv, args)) {
+        return 1;
+    }
+
+    if (args.show_help) {
+        std::cout << VERSION << "\n";
+        printHelp("./QapLR");
+        return 0;
+    }
+    if (args.show_version) {
+        std::cout << VERSION << "\n";
+        return 0;
+    }
+
+    // Дальнейшая логика в зависимости от режима
+    switch (args.mode) {
+        case ProgramArgs::Mode::ReplayIn:
+            std::cout << "Replaying from: " << *args.replay_in_file << "\n";
+            if (args.gui_mode) std::cout << "GUI enabled\n";
+            break;
+
+        case ProgramArgs::Mode::ReplayOut:
+            std::cout << "Recording replay to: " << *args.replay_out_file << "\n";
+            [[fallthrough]];
+        case ProgramArgs::Mode::Normal:
+            std::cout << "World: " << args.world_name << "\n";
+            std::cout << "Players: " << args.num_players << "\n";
+            std::cout << "Seed (initial): " << args.seed_initial << "\n";
+            std::cout << "Seed (strategies): " << args.seed_strategies << "\n";
+            if (args.state_file) {
+                std::cout << "Custom state file: " << *args.state_file << "\n";
+            }
+            if (args.gui_mode) std::cout << "GUI enabled\n";
+            break;
+    }
+
+    if (!args.player_names.empty()) {
+        std::cout << "Player names: ";
+        for (const auto& n : args.player_names) std::cout << n << " ";
+        std::cout << "\n";
+    }
+    #ifdef _WIN32
+    if(args.gui_mode){
+      return QapLR_DoNice();
+    }
+    #endif
+    return 0;
+}
 void test(){
+  std::optional<int> opt;
   return;
   typedef TGame::Level_SplinterWorld::t_world t_world;
   t_world w;
