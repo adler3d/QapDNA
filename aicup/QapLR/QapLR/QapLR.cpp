@@ -5052,7 +5052,7 @@ int main(int argc, char* argv[]){
   //std::cout<<"QAP_UNIX==true"<<endl;
   void test();test();
   int QapLR_main(int argc,char*argv[]);
-  return QapLR_main(argc,argv_cstr.data());
+  return QapLR_main(argc,argv);
 }
 #endif
 

@@ -19,7 +19,7 @@ public:
     };
 
     MapGenerator();
-    std::vector<int> generateMap(const Options& opts = {});
+    std::vector<int> generateMap(const Options& opts);
 
 public:
     std::mt19937 rng_;

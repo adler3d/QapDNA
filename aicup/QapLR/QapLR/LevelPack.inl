@@ -465,8 +465,7 @@ public:
     QapDev::BatchScope Scope(qDev);
     static bool set_frame=false;if(kb.OnDown('N'))set_frame=!set_frame;
     frame=-1;
-    static TScreenMode SM=GetScreenMode();
-    if(set_frame)frame=mpos.x+SM.W/2;
+    if(set_frame)frame=mpos.x+pviewport->size.x/2;
     if(frame<0||frame>=ws.size())frame=-1;
     auto&world=frame<0?this->world:ws[frame];
 
@@ -552,7 +551,8 @@ public:
   vector<int> AdlerCraftMap;
   MapGenerator AdlerCraft_mapgen;
   void genmap(){
-    AdlerCraftMap=AdlerCraft_mapgen.generateMap();
+    MapGenerator::Options opts;
+    AdlerCraftMap=AdlerCraft_mapgen.generateMap(opts);
   }
   void RenderMap(QapDev&qDev){
     //genmap();
