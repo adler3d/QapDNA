@@ -1768,7 +1768,7 @@ public:
   #include "defprovar.inl"
   //===
 public:
-  vec2d MousePos;
+  vec2d MousePos;int zDelta=0;
 public:
   void KeyUpdate(int Key, bool Value) {
     if (Value) LastKey = Key;
@@ -1779,14 +1779,15 @@ public:
   void Sync() { News = false; Changed.SetToDef(); }
   bool OnDown(int index) const { return Changed[index] && Down[index]; }
   bool OnUp(int index) const { return Changed[index] && !Down[index]; }
-  vec2d get_dir_from_wasd_and_arrows() const {
-    vec2d dp{};
-    auto dir_x = vec2d(1, 0), dir_y = vec2d(0, 1);
-    #define F(dir,k1,k2) if (Down[k1] || Down[k2]) { dp += dir; }
-    F(-dir_x, VK_LEFT, 'A');
-    F(+dir_x, VK_RIGHT, 'D');
-    F(+dir_y, VK_UP, 'W');
-    F(-dir_y, VK_DOWN, 'S');
+  vec2d get_dir_from_wasd_and_arrows(bool wasd=true,bool arrows=true)const{
+    vec2d dp;
+    auto dir_x=vec2d(1,0);
+    auto dir_y=vec2d(0,1);
+    #define F(dir,key_a,key_b)if((arrows&&Down[key_a])||(wasd&&(Down[key_b]))){dp+=dir;}
+    F(-dir_x,VK_LEFT,'A');
+    F(+dir_x,VK_RIGHT,'D');
+    F(+dir_y,VK_UP,'W');
+    F(-dir_y,VK_DOWN,'S');
     #undef F
     return dp;
   }
@@ -2682,6 +2683,7 @@ public:
   //AlphaMode AlphaMode;
   bool Batching=false;
   bool Textured=false;
+  bool use_xf=false;
   b2Transform xf,txf;
   vector<t_quad> stack;
   t_quad viewport;
@@ -2827,7 +2829,7 @@ public:
   {
     Ver&Dest=VBA[VPos];
     Dest=Source;
-    if(1){auto&v=Dest.get_pos();v=xf*v;}
+    if(use_xf){auto&v=Dest.get_pos();v=xf*v;}
     if(Textured){auto&v=Dest.get_tpos();v=txf*v;}
     return VPos++;
   }
@@ -4425,7 +4427,7 @@ public:
   {
     if(user_name_scene)return InputUserNameUpdate();
     QapAssert(Menu.get());
-    if(kb.OnDown(VK_ESCAPE)){if(Menu->InGame()){Menu->Up();}else{Menu->Down();}}
+    //if(kb.OnDown(VK_ESCAPE)){if(Menu->InGame()){Menu->Up();}else{Menu->Down();}}
     //kb.UpdateMouse();
     if(Menu->InGame())
     {

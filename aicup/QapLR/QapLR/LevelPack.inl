@@ -36,7 +36,78 @@ static bool CD_LineVsCircle(const vec2d&pos,const vec2d&a,const vec2d&b,const re
   if(CD_CircleAndWall(pos,v,d,a,b))return true;
   return false;
 }
-class Level_SplinterWorld:public TGame::ILevel{
+
+struct t_offcentric_scope{
+  QapDev&qDev;
+  const vec2d&unit_pos;
+  const vec2d&unit_dir;
+  const real scale;
+  t_offcentric_scope(QapDev&qDev,const vec2d&unit_pos,const vec2d&unit_dir,real scale,bool unit_offcentric):
+    qDev(qDev),unit_pos(unit_pos),unit_dir(unit_dir),scale(scale)
+  {
+    qDev.xf=make_xf(qDev.viewport,unit_pos,unit_dir,scale,unit_offcentric);
+    QapAssert(!qDev.use_xf);
+    qDev.use_xf=true;
+  }
+  static real get_koef(){return 0.25;}
+  static transform2f make_xf(const t_quad&viewport,const vec2d&unit_pos,const vec2d&unit_dir,real scale,bool unit_offcentric)
+  {
+    static const real offcentric_koef=get_koef();
+    vec2d offcentric=vec2d(0,viewport.size.y*offcentric_koef);
+    auto base_offset=unit_pos;//+qDev.viewport.pos;
+    transform2f xf;
+    xf.r.set(unit_dir.GetAng());
+    xf.r.mul(scale);
+    xf.p.set_zero();
+    xf.p=(xf*-base_offset)+vec2f(-(unit_offcentric?offcentric:vec2d{}));
+    return xf;
+  }
+  static vec2d screen_to_world(const t_quad&viewport,const vec2d&s2wpos,const vec2d&cam_pos,const vec2d&cam_dir,real scale,bool offcentric)
+  {
+    auto off_offset=offcentric?vec2d(0,viewport.size.y*t_offcentric_scope::get_koef()):vec2d(0,0);
+    return cam_pos+(s2wpos+off_offset).Rot(cam_dir)*(1.0/scale);
+  };
+ ~t_offcentric_scope()
+  {
+    qDev.use_xf=false;
+    qDev.xf.set_ident();
+  }
+};
+
+class Level_WithOffcentricScope:public TGame::ILevel{
+public:
+  void UpdateOffcentricScope(){
+    vec2d mpos=kb.MousePos;
+    if(kb.OnDown(mbRight)){drag_wp=s2w(mpos);}
+    if(kb.Down(mbRight)){cam_pos+=-s2w(mpos)+drag_wp;}
+
+    if(kb.Down(VK_ADD))scale*=1.01;
+    if(kb.Down(VK_SUBTRACT))scale/=1.01;
+    if(kb.OnDown(VK_DIVIDE))scale=1.0;
+    if(kb.OnDown(VK_MULTIPLY))scale*=0.5;
+    cam_pos+=kb.get_dir_from_wasd_and_arrows(true,false).Rot(cam_dir)*(6.0/scale);
+
+    if(kb.zDelta>0){auto wp=s2w(mpos);scale*=1.5;cam_pos+=(-s2w(mpos)+wp);}
+    if(kb.zDelta<0){auto wp=s2w(mpos);scale/=1.5;cam_pos+=(-s2w(mpos)+wp);}
+  }
+public:
+  vec2d s2w(const vec2d&pos){
+    return t_offcentric_scope::screen_to_world(*pviewport,pos,cam_pos,cam_dir,scale,cam_offcentric);
+  }
+  vec2d w2s(const vec2d&pos){
+    return t_offcentric_scope::make_xf(*pviewport,cam_pos,cam_dir,scale,cam_offcentric)*pos;
+  }
+public:
+  vec2d drag_wp;
+  vec2d cam_pos;
+  real scale=1.0;
+  vec2d cam_dir=vec2d(1,0);
+  bool cam_rot=false;
+  bool cam_offcentric=false;
+  t_quad*pviewport=nullptr;
+};
+
+class Level_SplinterWorld:public Level_WithOffcentricScope{
 public:
   static double Dist2Line(const vec2d&point,const vec2d&a,const vec2d&b){
     auto p=(point-a).Rot(b-a);
@@ -363,6 +434,7 @@ public:
   int init_attempts=1;
   bool inited=false;
   void Init(TGame*Game){
+    this->pviewport=&Game->qDev.viewport;
     this->Game=Game;
     inited=init_attempt();
     if(!inited){Sys.UPS_enabled=false;}
@@ -486,6 +558,7 @@ public:
     //genmap();
     if(AdlerCraftMap.empty())return;
     QapDev::BatchScope Scope(qDev);
+    t_offcentric_scope scope(qDev,cam_pos,cam_dir,scale,cam_offcentric);
     vec2d mpos=kb.MousePos;
     qDev.BindTex(0,nullptr);
     auto cs=10.0;
@@ -548,7 +621,9 @@ public:
 
     }
     if(runned)w.tick++;
+    UpdateOffcentricScope();
   }
+public:
   int seed=0;
   vector<QapColor> player_colors={
     0xFFFF8080, // красный
