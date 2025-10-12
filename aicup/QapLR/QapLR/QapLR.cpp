@@ -1322,7 +1322,7 @@ template<class TYPE>void QapLoad(TDataIO&IO,TYPE*){
 template<class TYPE>void QapSave(TDataIO&IO,TYPE&ref){Sys$$<TYPE>::Save(IO,ref);}
 template<class TYPE>void QapLoad(TDataIO&IO,TYPE&ref){Sys$$<TYPE>::Load(IO,ref);}
 template<class TYPE>string QapSaveToStr(TYPE&ref){TDataIO IO;QapSave(IO,ref);return IO.IO.mem;}
-template<class TYPE>void QapLoadFromStr(TYPE&ref,const string&data){TDataIO IO; IO.IO.mem=data;QapLoad(IO,ref);}
+template<class TYPE>bool QapLoadFromStr(TYPE&ref,const string&data){TDataIO IO; IO.IO.mem=data;QapLoad(IO,ref);return !IO.crashed;}
 
 
 template<class TYPE>string QapSaveToStrWithSizeOfType(TYPE&ref)
@@ -1404,7 +1404,7 @@ struct Sys$$<vector<TYPE>>{
   {
     int size=0;
     IO.load(size);
-    if(size<0){IO.Crash();return;}
+    if(size<0||!IO.TryLoad(size)){IO.Crash();return;}
     ref.resize(size);
     for(int i=0;i<size;i++){
       auto&ex=ref[i];
@@ -5399,15 +5399,6 @@ int QapLR_main(int argc,char*argv[]){
 
           server.start();
         }
-        struct i_world{
-          virtual ~i_world(){};
-          virtual void use(int player,const string&cmd)=0;
-          virtual void step()=0;
-          virtual bool finished()=0;
-          virtual vector<double> get_score()=0;
-          virtual vector<int> is_alive()=0;
-          virtual string get_vpow(int player)=0;
-        };
         //typedef TGame::Level_SplinterWorld::t_world t_world;
         //t_world w;
         using namespace std::chrono_literals;
@@ -5436,12 +5427,12 @@ int QapLR_main(int argc,char*argv[]){
 }
 void test(){
   std::optional<int> opt;
-  return;
+  return;/*
   typedef TGame::Level_SplinterWorld::t_world t_world;
   t_world w;
   TGame::Level_SplinterWorld::init_world(w);
   auto mem=QapSaveToStr(w);
   cerr<<"a=["<<mem<<"]"<<endl;
-  file_put_contents("out.t_world",mem);
+  file_put_contents("out.t_world",mem);*/
 }
 #endif

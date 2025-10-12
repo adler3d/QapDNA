@@ -37,6 +37,18 @@ static bool CD_LineVsCircle(const vec2d&pos,const vec2d&a,const vec2d&b,const re
   return false;
 }
 
+struct i_world{
+  virtual ~i_world(){};
+  virtual void use(int player,const string&cmd,string&outmsg)=0;
+  virtual void step()=0;
+  virtual bool finished()=0;
+  virtual void get_score(vector<double>&out)=0;
+  virtual void is_alive(vector<int>&out)=0;
+  virtual void get_vpow(int player,string&out)=0;
+  virtual void init(unsigned seed)=0;
+  virtual bool init_from_config(const string&cfg,string&outmsg)=0;
+};
+
 struct t_offcentric_scope{
   QapDev&qDev;
   const vec2d&unit_pos;
@@ -177,12 +189,11 @@ public:
       double&s(int id){return (&spring0_new_rest)[id];}
     };
   public:
-    double ARENA_RADIUS = 512.0;
-  public:
     #define DEF_PRO_COPYABLE()
     #define DEF_PRO_CLASSNAME()t_splinter_world
     #define DEF_PRO_VARIABLE(ADD)\
     ADD(int,tick,0)\
+    ADD(double,ARENA_RADIUS,512.0)\
     ADD(vector<t_ball>,balls,{})\
     ADD(vector<t_spring>,springs,{})\
     ADD(vector<t_point>,parr,{})\
@@ -217,7 +228,7 @@ public:
           return sum *(1.0/3);
       }
       bool finished_flag=false;
-      void step(bool with_score_from_points=true) {
+      void step(std::mt19937&gen,bool with_score_from_points=true) {
           tick++;
 
           // —брос сил
@@ -360,19 +371,20 @@ public:
           }
           for(int i=0;i<4;i++){
             if(p2n[i]<32){
-              for(int i=0;i<4;i++)add_ball(*this,i);
+              for(int i=0;i<4;i++)add_ball(*this,i,gen);
             }
           }
       }
-      static bool add_ball(t_splinter_world&w,int&i){
+      static bool add_ball(t_splinter_world&w,int i,std::mt19937&gen){
+        auto r=[&gen](){static std::uniform_real_distribution<double>dist(-1.0,1.0);return vec2d{dist(gen),dist(gen)};};
         auto&b=qap_add_back(w.parr);
-        b.pos=(vec2d(rand()/double(RAND_MAX),rand()/double(RAND_MAX))-vec2d(0.5,0.5))*2*w.ARENA_RADIUS;b.color=i%4;
+        b.pos=r()*w.ARENA_RADIUS;b.color=i%4;
         if(b.pos.Mag()>w.ARENA_RADIUS){i--;w.parr.pop_back();return false;}
         return true;
-      }
+      };
   };
   typedef t_splinter_world t_world;
-  static void init_world(t_world&world) {
+  static void init_world(t_world&world,std::mt19937&gen) {
     // ќчищаем
     world.slot2deaded.assign(4,0);
     world.balls.clear();
@@ -390,13 +402,13 @@ public:
     };
 
     const double REST_LENGTH = 30.0;
-
+    
+    auto r=[&gen](){static std::uniform_real_distribution<double>dist(-1.0,1.0);return vec2d{dist(gen),dist(gen)};};
     world.cmd_for_player.resize(4);
     for (int p = 0; p < 4; p++) {
       int base_idx = world.balls.size();
 
       // “ри шарика в форме треугольника
-      auto rnd=[](){return rand()*1.0/RAND_MAX;};auto r=[&](){return vec2d{rnd(),rnd()}*2-vec2d{1,1};};
       starts[p]=r()*500;
       auto add=[&](vec2d pos){qap_add_back(world.balls).pos=pos;};
       add(starts[p] + r()*15 + 0*vec2d(-10,  0));
@@ -411,23 +423,26 @@ public:
     }
     int n=32*4*2*2;//2;
     for(int i=0;i<n;i++){
-      world.add_ball(world,i);
+      t_world::add_ball(world,i,gen);
     }
   }
 public:
   t_world w;t_world&world=w;
 public:
   TGame*Game=nullptr;
+  std::mt19937 gen;
 public:
   t_world world_at_begin;
   void reinit_the_same_level(){
+    gen=std::mt19937(seed);
     w=world_at_begin;
     Game->ReloadWinFail();
   }
   bool init_attempt(){
-    srand(seed=int(g_clock.MS()));
+    seed=unsigned(g_clock.MS());
+    gen=std::mt19937(seed);
     w={};
-    init_world(w);
+    init_world(w,gen);
     world_at_begin=w;
     return true;
   }
@@ -459,10 +474,10 @@ public:
   }
   int frame=-1;vector<t_world> ws;
   void RenderImpl(QapDev&qDev){
+    QapDev::BatchScope Scope(qDev);
+    t_offcentric_scope scope(qDev,cam_pos,cam_dir,scale,cam_offcentric);
     vec2d mpos=kb.MousePos;
     qDev.BindTex(0, nullptr);
-    
-    QapDev::BatchScope Scope(qDev);
     static bool set_frame=false;if(kb.OnDown('N'))set_frame=!set_frame;
     frame=-1;
     if(set_frame)frame=mpos.x+pviewport->size.x/2;
@@ -563,12 +578,12 @@ public:
     qDev.BindTex(0,nullptr);
     auto cs=10.0;
     for(int y=0;y<80;y++)for(int x=0;x<80;x++){
-      qDev.color=AdlerCraftMap[x+y*80]?0xFF008000:0xff444444;
+      qDev.color=AdlerCraftMap[x+y*80]?0xFF008000:0xffaaaaaa;
       qDev.DrawQuad(y*cs-cs*40,x*cs-cs*40,cs,cs);
     }
   }
   void Render(QapDev&qDev){
-    //RenderImpl(qDev);
+    RenderImpl(qDev);
     RenderMap(qDev);
     RenderText(qDev);
   }
@@ -624,11 +639,48 @@ public:
     UpdateOffcentricScope();
   }
 public:
-  int seed=0;
+  unsigned seed=0;
   vector<QapColor> player_colors={
     0xFFFF8080, // красный
     0xFF80FF80, // зелЄный
     0xFF8080FF, // синий
     0xFFFFFF80  // жЄлтый
   };
+public:
+  struct t_world_impl:i_world{
+    t_world w;
+    std::mt19937 gen;
+    ~t_world_impl(){};
+    void use(int player,const string&cmd,string&outmsg)override{
+      t_world::t_cmd out;
+      bool ok=QapLoadFromStr(out,cmd);
+      if(!ok){outmsg="cmd load failed";return;}else{outmsg.clear();}
+      w.use(player,out);
+    }
+    void step()override{w.step(gen);}
+    bool finished()override{return w.finished_flag;}
+    void get_score(vector<double>&out)override{out=w.slot2score;}
+    void is_alive(vector<int>&out)override{out.resize(w.slot2deaded.size());for(int i=0;i<out.size();i++)out[i]=!w.slot2deaded[i];}
+    void get_vpow(int player,string&out)override{
+      out=QapSaveToStr(w);
+    }
+    void init(unsigned seed)override{
+      gen=mt19937(seed);
+      init_world(w,gen);
+    }
+    bool init_from_config(const string&cfg,string&outmsg)override{
+      outmsg="no impl";
+      return false;
+    }
+  };
+  static unique_ptr<i_world> mk_world(const int version){
+    return make_unique<t_world_impl>();
+  }
 };
+static unique_ptr<i_world> mk_world(const string&world){
+  #define F(LVL)
+  LEVEL_LIST(F)
+  #undef F
+  if(world=="t_world")return Level_SplinterWorld::mk_world(0);
+  return nullptr;
+}
