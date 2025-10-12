@@ -348,11 +348,7 @@ int main(int argc, char* argv[]) {
         child_exited = true;
         close(sock); // разблокирует read(sock)
     });
-
-    std::thread t_stdout([stdout_pipe0 = stdout_pipe[0], sock]() {
-        copy_fd_to_socket(stdout_pipe0, sock);
-    });
-
+    
     std::thread t_stdout([sock, fd = stdout_pipe[0]]() {
         copy_fd_to_socket(fd, sock);
     });
