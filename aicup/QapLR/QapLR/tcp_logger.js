@@ -46,9 +46,9 @@ function main() {
             try {
                 text = data.toString('utf8');
                 // Проверим, нет ли "битых" символов (часто при бинарных данных)
-                if (text.includes('')) {
+                /*if (text.includes('')) {
                     throw new Error('Invalid UTF-8');
-                }
+                }*/
             } catch (e) {
                 // Если не UTF-8 — выводим hex
                 console.log(`[BINARY from ${remote}] ${data.toString('hex')}`);
