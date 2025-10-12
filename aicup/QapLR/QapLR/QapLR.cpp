@@ -1,4 +1,6 @@
-﻿#ifdef _WIN32
+﻿#include "socket_adapter.cpp"
+#if(0)
+#ifdef _WIN32
   #define WIN32_LEAN_AND_MEAN
   #define NOMINMAX
   #undef UNICODE
@@ -5088,6 +5090,7 @@ struct ProgramArgs {
     vector<string> player_names;
     int debug = -1;
     bool remote = false;
+    int ports_from = -1;
 
     // Служебное
     bool show_help = false;
@@ -5108,6 +5111,7 @@ Options:
   -n, --player-names a b c  Provide player names (requires --gui)
   -d, --debug 0             Enable debug(repeat) mode for player 0
   -r, --remote              Enable remote mode
+  -p, --ports_from 31000    Use ports 31000..31003 if players==4
   -h, --help                Show this help
   -v, --version             Show version
 )";
@@ -5140,6 +5144,7 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
         {"-n", "--player-names"},
         {"-d", "--debug"},
         {"-r", "--remote"},
+        {"-p", "--ports_from"},
         {"-h", "--help"},
         {"-v", "--version"}
     };
@@ -5178,7 +5183,7 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
 
             Token tok{Token::FLAG, arg};
 
-            if (arg == "--replay-in" || arg == "--replay-out" || arg == "--state-file"||arg=="--debug") {
+            if(arg=="--replay-in"||arg=="--replay-out"||arg=="--state-file"||arg=="--debug"||arg=="--ports_from"){
                 if (i + 1 >= argc) {
                     std::cerr << arg << " requires an argument\n";
                     return false;
@@ -5242,6 +5247,8 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
                 args.debug = std::stoi(tok.payload[0]);
             } else if (flag == "--remote") {
                 args.remote = true;
+            } else if (flag == "--ports_from") {
+                args.ports_from = std::stoi(tok.payload[0]);
             }
         } else {
             positional_args.push_back(tok.value);
@@ -5375,3 +5382,4 @@ void test(){
   cerr<<"a=["<<mem<<"]"<<endl;
   file_put_contents("out.t_world",mem);
 }
+#endif
