@@ -2,7 +2,8 @@
 // Компиляция:
 //   Linux/macOS: g++ -std=c++17 -O2 socket_adapter.cpp -o socket_adapter
 //   Windows:     cl /EHsc /std:c++17 socket_adapter.cpp /link ws2_32.lib
-
+//   cl counter.cpp /std:c++17 /EHsc /nologo /O2
+//   cl socket_adapter.cpp /std:c++17 /EHsc /nologo /O2
 #include <iostream>
 #include <string>
 #include <vector>
@@ -10,15 +11,19 @@
 #include <set>
 #include <stdexcept>
 #include <atomic>
+#include <chrono>
 
 #ifdef _WIN32
     #define WIN32_LEAN_AND_MEAN
     #include <windows.h>
     #include <winsock2.h>
     #include <ws2tcpip.h>
-    #pragma comment(lib, "ws2_32.lib")
+    #pragma comment(lib,"ws2_32.lib")
+    #pragma comment(lib,"user32.lib")
+    #pragma comment(lib,"Shell32.lib")
     using socket_t = SOCKET;
     using ssize_t = int;
+    //const int SOCKET_ERROR = -1;
 #else
     #include <sys/socket.h>
     #include <netinet/in.h>
@@ -26,6 +31,7 @@
     #include <arpa/inet.h>
     #include <unistd.h>
     #include <sys/wait.h>
+    #include <signal.h>
     #include <errno.h>
     using socket_t = int;
     const int INVALID_SOCKET = -1;
@@ -61,10 +67,12 @@ void print_help(const char* prog) {
               << "  -h, --help         Show this help\n"
               << "\n"
               << "Example:\n"
-              << "  " << prog << " 127.0.0.1:12345 ./QapLR world 4 1 2\n";
+              << "  " << prog << " 127.0.0.1:12345 ./ai some_args\n";
 }
 
 // ================ PLATFORM-SPECIFIC COPY FUNCTIONS ================
+
+// ================ PLATFORM-SPECIFIC COPY ================
 
 #ifdef _WIN32
 
@@ -124,7 +132,7 @@ void copy_socket_to_fd(socket_t sock, int fd) {
 
 #endif
 
-// ================================================================
+// ========================================================
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -162,7 +170,6 @@ int main(int argc, char* argv[]) {
 
     std::string addr_str = argv[arg_start];
     std::vector<std::string> prog_args(argv + arg_start + 1, argv + argc);
-
     auto [host, port] = parse_address(addr_str);
 
 #ifdef _WIN32
@@ -187,7 +194,6 @@ int main(int argc, char* argv[]) {
     struct sockaddr_in server_addr = {};
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
-
     if (inet_pton(AF_INET, host.c_str(), &server_addr.sin_addr) <= 0) {
         throw_system_error("Invalid IP address: " + host);
     }
@@ -196,7 +202,6 @@ int main(int argc, char* argv[]) {
         throw_system_error("connect() failed");
     }
 
-    // Отключаем алгоритм Нейгла
     int nodelay = 1;
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
 #ifdef _WIN32
@@ -209,22 +214,18 @@ int main(int argc, char* argv[]) {
     std::cout << "Connected to " << host << ":" << port << "\n";
 
 #ifdef _WIN32
-    // === Windows: CreateProcess + Pipes ===
+    // === Windows ===
     HANDLE stdin_read = nullptr, stdin_write = nullptr;
     HANDLE stdout_read = nullptr, stdout_write = nullptr;
     HANDLE stderr_read = nullptr, stderr_write = nullptr;
 
     SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
-
     if (!CreatePipe(&stdin_read, &stdin_write, &sa, 0) ||
         !CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
         throw std::runtime_error("CreatePipe failed for stdin/stdout");
     }
-
-    if (forward_stderr) {
-        if (!CreatePipe(&stderr_read, &stderr_write, &sa, 0)) {
-            throw std::runtime_error("CreatePipe failed for stderr");
-        }
+    if (forward_stderr && !CreatePipe(&stderr_read, &stderr_write, &sa, 0)) {
+        throw std::runtime_error("CreatePipe failed for stderr");
     }
 
     STARTUPINFOA si = {};
@@ -235,8 +236,6 @@ int main(int argc, char* argv[]) {
     si.hStdError = forward_stderr ? stderr_write : GetStdHandle(STD_ERROR_HANDLE);
 
     PROCESS_INFORMATION pi = {};
-
-    // Собираем командную строку
     std::string cmd_line;
     for (size_t i = 0; i < prog_args.size(); ++i) {
         if (i > 0) cmd_line += " ";
@@ -253,15 +252,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (!CreateProcessA(
-        prog_args[0].c_str(),
+    if (!CreateProcessA(prog_args[0].c_str(),
         cmd_line.empty() ? nullptr : &cmd_line[0],
-        nullptr, nullptr, TRUE, 0, nullptr, nullptr,
-        &si, &pi)) {
+        nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi)) {
         throw std::runtime_error("CreateProcess failed");
     }
 
-    // Закрываем ненужные хэндлы в родителе
     CloseHandle(stdin_read);
     CloseHandle(stdout_write);
     if (forward_stderr) CloseHandle(stderr_write);
@@ -288,29 +284,32 @@ int main(int argc, char* argv[]) {
         });
     }
 
-    // Основной поток: сокет → stdin
+    // Основной цикл: сокет → stdin
     copy_socket_to_pipe(sock, stdin_write);
 
-    // Ждём завершения всех потоков
+    // Клиент отключился → убиваем процесс
+    DWORD exit_code = 1;
+    if (WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, 3000); // ждём до 3 сек
+    }
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+
     t_stdout.join();
     if (forward_stderr) t_stderr.join();
     monitor_thread.join(); // ← дожидаемся монитора
-    
-    // Очистка
+
     CloseHandle(stdin_write);
     CloseHandle(stdout_read);
     if (forward_stderr) CloseHandle(stderr_read);
     closesocket(sock);
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD exit_code;
-    GetExitCodeProcess(pi.hProcess, &exit_code);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
     WSACleanup();
     return static_cast<int>(exit_code);
 
-#else // Unix-like
-    // === Unix: fork + dup2 ===
+#else
+    // === Unix ===
     int stdin_pipe[2], stdout_pipe[2], stderr_pipe[2];
     if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0) {
         throw std::runtime_error("pipe() failed");
@@ -321,18 +320,12 @@ int main(int argc, char* argv[]) {
 
     pid_t pid = fork();
     if (pid == 0) {
-        close(stdin_pipe[1]);
-        close(stdout_pipe[0]);
+        close(stdin_pipe[1]); close(stdout_pipe[0]);
         if (forward_stderr) close(stderr_pipe[0]);
-
         dup2(stdin_pipe[0], STDIN_FILENO);
         dup2(stdout_pipe[1], STDOUT_FILENO);
-        if (forward_stderr) {
-            dup2(stderr_pipe[1], STDERR_FILENO);
-        }
-
-        close(stdin_pipe[0]);
-        close(stdout_pipe[1]);
+        if (forward_stderr) dup2(stderr_pipe[1], STDERR_FILENO);
+        close(stdin_pipe[0]); close(stdout_pipe[1]);
         if (forward_stderr) close(stderr_pipe[1]);
 
         std::vector<const char*> c_args;
@@ -344,12 +337,10 @@ int main(int argc, char* argv[]) {
         _exit(127);
     }
 
-    // Родитель
-    close(stdin_pipe[0]);
-    close(stdout_pipe[1]);
+    close(stdin_pipe[0]); close(stdout_pipe[1]);
     if (forward_stderr) close(stderr_pipe[1]);
 
-    std::atomic<bool> child_exited{false};
+        std::atomic<bool> child_exited{false};
 
     std::thread monitor_thread([sock, pid, &child_exited]() {
         int status;
@@ -362,25 +353,37 @@ int main(int argc, char* argv[]) {
         copy_fd_to_socket(stdout_pipe0, sock);
     });
 
+    std::thread t_stdout([sock, fd = stdout_pipe[0]]() {
+        copy_fd_to_socket(fd, sock);
+    });
+
     std::thread t_stderr;
     if (forward_stderr) {
-        t_stderr = std::thread([stderr_pipe0 = stderr_pipe[0], sock]() {
-            copy_fd_to_socket(stderr_pipe0, sock);
+        t_stderr = std::thread([sock, fd = stderr_pipe[0]]() {
+            copy_fd_to_socket(fd, sock);
         });
     }
 
     copy_socket_to_fd(sock, stdin_pipe[1]);
 
+    // Клиент отключился → завершаем процесс
+    int status;
+    if (waitpid(pid, &status, WNOHANG) == 0) {
+        kill(pid, SIGTERM);
+        if (waitpid(pid, &status, WNOHANG) == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            kill(pid, SIGKILL);
+            waitpid(pid, &status, 0);
+        }
+    }
+
     t_stdout.join();
     if (forward_stderr) t_stderr.join();
 
-    close(stdin_pipe[1]);
-    close(stdout_pipe[0]);
+    close(stdin_pipe[1]); close(stdout_pipe[0]);
     if (forward_stderr) close(stderr_pipe[0]);
     close(sock);
 
-    int status;
-    waitpid(pid, &status, 0);
     return WEXITSTATUS(status);
 #endif
 }

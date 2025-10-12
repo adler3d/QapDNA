@@ -1,5 +1,6 @@
-﻿#include "socket_adapter.cpp"
-#if(0)
+﻿#if(0)
+#include "socket_adapter.cpp"
+#else
 #ifdef _WIN32
   #define WIN32_LEAN_AND_MEAN
   #define NOMINMAX
@@ -7,6 +8,7 @@
   #include <windows.h>
   #include <intrin.h>
 #endif
+#include "../../src/core/netapi.h"
 #include <stdlib.h>
 #include <malloc.h>
 #include <memory.h>
@@ -5364,6 +5366,66 @@ int QapLR_main(int argc,char*argv[]){
     if (args.remote){
       if (debug) cerr << "debug/repeat ignored?\n";
       cerr << "Remote protocol enabled\n";
+    }
+    if(args.ports_from>=0){
+      cerr << "Ports-from enabled\n";
+      std::thread thread_with_palyers([args]{
+        struct t_player{
+          unique_ptr<t_server_api> server;
+          int client_id=-1;
+          bool broken=false;
+        };
+        vector<t_player> players;
+        players.resize(args.num_players);
+        for(int i=0;i<players.size();i++){
+          auto&p=players[i];
+          p.server=make_unique<t_server_api>(args.ports_from+i);
+          auto&server=*p.server;
+          server.onClientConnected = [&](int client_id, socket_t socket, const std::string& ip) {
+            std::cout << "[" << client_id << "] connected from IP " << ip <<"\" to socket at port "<<server.port<<endl;
+            if(p.client_id>=0)return;
+            p.client_id=client_id;
+          };
+
+          server.onClientDisconnected = [&](int client_id) {
+            std::cout << "[" << client_id << "] disconnected from socket at port "<<server.port<<endl;
+            if(p.client_id==client_id)p.broken=true;
+          };
+
+          server.onClientData = [&](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
+            std::cout << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
+            send("Message received\n");
+          };
+
+          server.start();
+        }
+        struct i_world{
+          virtual ~i_world(){};
+          virtual void use(int player,const string&cmd)=0;
+          virtual void step()=0;
+          virtual bool finished()=0;
+          virtual vector<double> get_score()=0;
+          virtual vector<int> is_alive()=0;
+          virtual string get_vpow(int player)=0;
+        };
+        //typedef TGame::Level_SplinterWorld::t_world t_world;
+        //t_world w;
+        using namespace std::chrono_literals;
+        bool ready=false;
+        for(int tick=0;;tick++){
+          std::this_thread::sleep_for(16ms);
+          int n=0,a=players.size();
+          for(auto&ex:players)if(ex.client_id>=0){n++;if(ex.broken)a--;}
+          bool full=n==players.size();
+          bool on_ready=!ready&&full&&a==players.size();
+          if(on_ready){
+            ready=true;
+            int gg=1;
+          }
+          if(a<=1)break;
+        }
+      });
+      thread_with_palyers.detach();
     }
     #ifdef _WIN32
     if(args.gui_mode){

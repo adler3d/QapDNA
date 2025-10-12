@@ -43,7 +43,7 @@ static unsigned capture_tag(const string&src,string&dst,const string&tag_op,cons
   dst=src.substr(offs+tag_op.size(),offe-offs-tag_op.size());
   return offe+tag_cl.size();
 }
-
+#define Socket DobordSocket
 class Socket//Сокет
 {
 public:
@@ -1294,3 +1294,4 @@ public:
     }
   }
 };
+#undef Socket

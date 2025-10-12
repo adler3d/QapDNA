@@ -2,7 +2,7 @@
 #include "qap_tools.h"
 #define ADD_EVENT(MSG)
 class DownLoader{
-  Socket shost;
+  DobordSocket shost;
   bool active;
   // запрещено копировать
   DownLoader(const DownLoader& rhs):data(webhost){}

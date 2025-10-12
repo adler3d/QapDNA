@@ -87,6 +87,7 @@ function main() {
     // Корректное завершение
     process.on('SIGINT', () => {
         console.log('\n🛑 Shutting down...');
+        process.exit(0);
         server.close(() => {
             console.log('✅ Server closed');
             process.exit(0);
