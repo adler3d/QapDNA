@@ -5049,7 +5049,7 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
 #ifdef QAP_UNIX
 #include <iostream>
 int main(int argc, char* argv[]){
-  //std::cout<<"QAP_UNIX==true"<<endl;
+  //cerr<<"QAP_UNIX==true"<<endl;
   void test();test();
   int QapLR_main(int argc,char*argv[]);
   return QapLR_main(argc,argv);
@@ -5073,19 +5073,21 @@ struct ProgramArgs {
     } mode = Mode::Normal;
 
     // Обязательные для Normal и ReplayOut
-    std::string world_name;
+    string world_name;
     int num_players = 0;
     uint64_t seed_initial = 0;
     uint64_t seed_strategies = 0;
 
     // Файлы
-    std::optional<std::string> replay_in_file;   // только для ReplayIn
-    std::optional<std::string> replay_out_file;  // только для ReplayOut
-    std::optional<std::string> state_file;       // опционально: файл начального состояния
+    optional<string> replay_in_file;   // только для ReplayIn
+    optional<string> replay_out_file;  // только для ReplayOut
+    optional<string> state_file;       // опционально: файл начального состояния
 
     // GUI
     bool gui_mode = false;
-    std::vector<std::string> player_names;
+    vector<string> player_names;
+    int debug = -1;
+    bool remote = false;
 
     // Служебное
     bool show_help = false;
@@ -5094,23 +5096,25 @@ struct ProgramArgs {
 
 const char* VERSION = "QapLR v0.1.0";
 const char* USAGE = R"(Usage:
-  Normal mode:     %s <world> <players> <seed_init> <seed_strat> [OPTIONS]
-  Replay-in mode:  %s -i <file> [OPTIONS]
-  Replay-out mode: %s -o <file> <world> <players> <seed_init> <seed_strat> [OPTIONS]
+  Normal mode:     ./QapLR <world> <players> <seed_init> <seed_strat> [OPTIONS]
+  Replay-in mode:  ./QapLR -i <file> [OPTIONS]
+  Replay-out mode: ./QapLR -o <file> <world> <players> <seed_init> <seed_strat> [OPTIONS]
 
 Options:
   -i, --replay-in FILE      Play back a recorded replay
   -o, --replay-out FILE     Record a replay to FILE after game
   -s, --state-file FILE     Use custom initial state (use '-' for stdin)
   -g, --gui                 Enable graphical mode
-  -n, --player-names NAME... Provide player names (requires --gui)
+  -n, --player-names a b c  Provide player names (requires --gui)
+  -d, --debug 0             Enable debug(repeat) mode for player 0
+  -r, --remote              Enable remote mode
   -h, --help                Show this help
   -v, --version             Show version
 )";
 
 void printHelp(const char*prog) {
-    std::cout << "QapLR : Local Runner\n\n";
-    printf(USAGE, prog, prog, prog);
+    cerr << "QapLR : Local Runner\n\n";
+    cerr << USAGE <<endl;
 }
 
 bool parseArgs(int argc,char*argv[],ProgramArgs&args){
@@ -5134,15 +5138,15 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
         {"-s", "--state-file"},
         {"-g", "--gui"},
         {"-n", "--player-names"},
+        {"-d", "--debug"},
+        {"-r", "--remote"},
         {"-h", "--help"},
         {"-v", "--version"}
     };
 
     // Список всех известных флагов (для проверки)
-    std::set<std::string> known_flags = {
-        "--replay-in", "--replay-out", "--state-file",
-        "--gui", "--player-names", "--help", "--version"
-    };
+    std::set<std::string> known_flags;
+    for(auto&[s,f]:short_to_long)known_flags.insert(f);
 
     // Вектор "токенов": каждый — либо флаг, либо позиционный аргумент
     struct Token {
@@ -5174,7 +5178,7 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
 
             Token tok{Token::FLAG, arg};
 
-            if (arg == "--replay-in" || arg == "--replay-out" || arg == "--state-file") {
+            if (arg == "--replay-in" || arg == "--replay-out" || arg == "--state-file"||arg=="--debug") {
                 if (i + 1 >= argc) {
                     std::cerr << arg << " requires an argument\n";
                     return false;
@@ -5234,8 +5238,11 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
                 args.gui_mode = true;
             } else if (flag == "--player-names") {
                 args.player_names = tok.payload;
+            } else if (flag == "--debug") {
+                args.debug = std::stoi(tok.payload[0]);
+            } else if (flag == "--remote") {
+                args.remote = true;
             }
-            // --help/--version уже обработаны ранее
         } else {
             positional_args.push_back(tok.value);
         }
@@ -5310,41 +5317,46 @@ int QapLR_main(int argc,char*argv[]){
     }
 
     if (args.show_help) {
-        std::cout << VERSION << "\n";
+        cerr << VERSION << "\n";
         printHelp("./QapLR");
         return 0;
     }
     if (args.show_version) {
-        std::cout << VERSION << "\n";
+        cerr << VERSION << "\n";
         return 0;
     }
 
-    // Дальнейшая логика в зависимости от режима
+    bool debug=args.debug>=0&&args.debug<args.num_players;
     switch (args.mode) {
         case ProgramArgs::Mode::ReplayIn:
-            std::cout << "Replaying from: " << *args.replay_in_file << "\n";
-            if (args.gui_mode) std::cout << "GUI enabled\n";
+            cerr << "Replaying from: " << *args.replay_in_file << "\n";
+            if (args.gui_mode) cerr << "GUI enabled\n";
+            if (debug) cerr << "debug/repeat enabled for player "+to_string(args.debug)+"\n";
             break;
 
         case ProgramArgs::Mode::ReplayOut:
-            std::cout << "Recording replay to: " << *args.replay_out_file << "\n";
+            cerr << "Recording replay to: " << *args.replay_out_file << "\n";
             [[fallthrough]];
         case ProgramArgs::Mode::Normal:
-            std::cout << "World: " << args.world_name << "\n";
-            std::cout << "Players: " << args.num_players << "\n";
-            std::cout << "Seed (initial): " << args.seed_initial << "\n";
-            std::cout << "Seed (strategies): " << args.seed_strategies << "\n";
+            cerr << "World: " << args.world_name << "\n";
+            cerr << "Players: " << args.num_players << "\n";
+            cerr << "Seed (initial): " << args.seed_initial << "\n";
+            cerr << "Seed (strategies): " << args.seed_strategies << "\n";
             if (args.state_file) {
-                std::cout << "Custom state file: " << *args.state_file << "\n";
+                cerr << "Custom state file: " << *args.state_file << "\n";
             }
-            if (args.gui_mode) std::cout << "GUI enabled\n";
+            if (args.gui_mode) cerr << "GUI enabled\n";
             break;
     }
 
     if (!args.player_names.empty()) {
-        std::cout << "Player names: ";
-        for (const auto& n : args.player_names) std::cout << n << " ";
-        std::cout << "\n";
+        cerr << "Player names: ";
+        for (const auto& n : args.player_names) cerr << n << " ";
+        cerr << "\n";
+    }
+    if (args.remote){
+      if (debug) cerr << "debug/repeat ignored?\n";
+      cerr << "Remote protocol enabled\n";
     }
     #ifdef _WIN32
     if(args.gui_mode){
@@ -5360,6 +5372,6 @@ void test(){
   t_world w;
   TGame::Level_SplinterWorld::init_world(w);
   auto mem=QapSaveToStr(w);
-  std::cout<<"a=["<<mem<<"]"<<endl;
+  cerr<<"a=["<<mem<<"]"<<endl;
   file_put_contents("out.t_world",mem);
 }
