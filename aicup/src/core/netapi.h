@@ -76,8 +76,6 @@ typedef std::string string;
   #include <unistd.h>
   #include <cstring>
   typedef int socket_t;
-  #define INVALID_SOCKET -1
-  #define SOCKET_ERROR -1
   #define CLOSESOCKET close
 #endif
 
@@ -166,7 +164,7 @@ class SocketWithDecoder {
 
     if (::connect(s, res->ai_addr, static_cast<socklen_t>(res->ai_addrlen)) != 0) {
       freeaddrinfo(res);
-      closesocket(s);
+      ::closesocket(s);
       return false;
     }
 
@@ -189,7 +187,7 @@ class SocketWithDecoder {
 
       // Завершаем работу
       if (sock != INVALID_SOCKET) {
-        closesocket(sock);
+        ::closesocket(sock);
         sock = INVALID_SOCKET;
       }
     });
@@ -225,7 +223,7 @@ public:
     stopping = true;
     if (sock != INVALID_SOCKET) {
       shutdown(sock, SD_BOTH);
-      closesocket(sock);
+      ::closesocket(sock);
       sock = INVALID_SOCKET;
     }
     stop_reader();
