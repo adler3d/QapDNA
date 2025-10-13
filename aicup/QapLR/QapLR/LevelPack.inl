@@ -37,22 +37,6 @@ static bool CD_LineVsCircle(const vec2d&pos,const vec2d&a,const vec2d&b,const re
   return false;
 }
 
-struct i_world{
-  virtual ~i_world(){};
-  virtual void use(int player,const string&cmd,string&outmsg)=0;
-  virtual void step()=0;
-  virtual bool finished()=0;
-  virtual void get_score(vector<double>&out)=0;
-  virtual void is_alive(vector<int>&out)=0;
-  virtual void get_vpow(int player,string&out)=0;
-  virtual void init(unsigned seed)=0;
-  virtual bool init_from_config(const string&cfg,string&outmsg)=0;
-  virtual unique_ptr<i_world> clone()=0;
-  virtual void renderV0(QapDev&qDev){}
-  virtual int get_render_api_version(){return 0;}
-  virtual int get_tick()=0;
-};
-
 struct t_offcentric_scope{
   QapDev&qDev;
   const vec2d&unit_pos;
@@ -531,23 +515,15 @@ static unique_ptr<i_world> mk_world(const string&world){
 
 class Level_LocalRunner:public TGame::ILevel,public WithOffcentricScope{
 public:
-  unique_ptr<i_world> w;
-public:
   TGame*Game=nullptr;
 public:
-  unique_ptr<i_world> world_at_begin;
   void reinit_the_same_level(){
-    w=world_at_begin->clone();
     Game->ReloadWinFail();
   }
   bool inited=false;
   void Init(TGame*Game){
     this->pviewport=&Game->qDev.viewport;
     this->Game=Game;
-    seed=unsigned(g_clock.MS());
-    w=mk_world(g_args.world_name);
-    w->init(seed);
-    world_at_begin=w->clone();
   }
   bool Win(){return false;;}
   bool Fail(){return false;}
@@ -556,7 +532,7 @@ public:
     string BEG="^7";
     string SEP=" ^2: ^8";
     #define GOO(TEXT,VALUE)TE.AddText(string(BEG)+string(TEXT)+string(SEP)+string(VALUE));
-    GOO("curr_t",FToS(w->get_tick()*1.0/Sys.UPS));
+    GOO("curr_t",FToS(session.world->get_tick()*1.0/Sys.UPS));
     GOO("seed",IToS(seed));
     TE.AddText("^7---");
     int bx=TE.bx;
@@ -575,7 +551,7 @@ public:
     frame=-1;
     if(set_frame)frame=mpos.x+pviewport->size.x/2;
     if(frame<0||frame>=ws.size())frame=-1;
-    auto&world=frame<0?*this->w:*ws[frame];
+    auto&world=frame<0?*session.world:*ws[frame];
     auto api=world.get_render_api_version();
     if(api==0){
       world.renderV0(qDev);
@@ -647,7 +623,15 @@ public:
     if(kb.OnDown(VK_F9)){reinit_the_same_level();}
     bool runned=!Win()&&!Fail();
     if(runned){
-
+      while(session.try_step()){
+        ws.push_back(session.world->clone());
+        // ћожно обновить UI, проверить завершение и т.д.
+      }
+      if(session.is_finished()){
+        string report=session.generate_report();
+        cerr<<report;
+        //Sys.NeedClose = true;
+      }
     }
     UpdateOffcentricScope(kb);
   }

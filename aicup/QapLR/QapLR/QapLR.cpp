@@ -3810,6 +3810,134 @@ QapTexMem*LoadTexture(string fn,FUNC&&func){
   return nullptr;
 }
 #endif
+struct i_world{
+  virtual ~i_world(){};
+  virtual void use(int player,const string&cmd,string&outmsg)=0;
+  virtual void step()=0;
+  virtual bool finished()=0;
+  virtual void get_score(vector<double>&out)=0;
+  virtual void is_alive(vector<int>&out)=0;
+  virtual void get_vpow(int player,string&out)=0;
+  virtual void init(unsigned seed)=0;
+  virtual bool init_from_config(const string&cfg,string&outmsg)=0;
+  virtual unique_ptr<i_world> clone()=0;
+  virtual void renderV0(QapDev&qDev){}
+  virtual int get_render_api_version(){return 0;}
+  virtual int get_tick()=0;
+};
+struct GameSession {
+    unique_ptr<i_world> world;
+    //unsigned seed = 0;
+
+    // Состояние на тик
+    struct TickState {
+        int tick = 0;
+        vector<bool> received;          // получена ли команда от игрока i
+        vector<string> commands;        // команды от игроков
+        vector<string> error_msgs;      // outmsg от use() — для лога
+        vector<bool> alive;             // кто жив на начало тика
+    };
+    TickState current_tick;
+
+    // История всех тиков (для отчёта)
+    vector<TickState> history;
+
+    // Синхронизация
+    mutable mutex mtx;
+
+    // Потокобезопасный метод для приёма команды
+    void submit_command(int player_id, const string& cmd) {
+        lock_guard<mutex> lock(mtx);
+        if (player_id < 0 || player_id >= (int)current_tick.received.size()) return;
+        if(!current_tick.alive[player_id])return;
+        if(current_tick.received[player_id]){
+          // Дубликат — игнорируем или логируем как ошибку
+          return;
+        }
+        current_tick.commands[player_id] = cmd;
+        current_tick.received[player_id] = true;
+    }
+
+    // Запуск нового тика
+    void start_new_tick() {
+        lock_guard<mutex> lock(mtx);
+        if (!history.empty()) {
+            current_tick.tick = history.back().tick + 1;
+        } else {
+            current_tick.tick = 0;
+        }
+
+        // Обновляем alive через world
+        vector<int> alive_int;
+        world->is_alive(alive_int);
+        current_tick.alive.assign(alive_int.begin(), alive_int.end());
+
+        int n = (int)alive_int.size();
+        current_tick.received.assign(n, false);
+        current_tick.commands.assign(n, "");
+        current_tick.error_msgs.assign(n, "");
+    }
+
+    // Попытка выполнить шаг (вызывается из главного потока)
+    bool try_step() {
+        lock_guard<mutex> lock(mtx);
+
+        // Проверяем: все ли живые игроки прислали команды?
+        bool all_received = true;
+        for (int i = 0; i < (int)current_tick.alive.size(); ++i) {
+            if (current_tick.alive[i] && !current_tick.received[i]) {
+                all_received = false;
+                break;
+            }
+        }
+
+        if (!all_received) return false;
+
+        // Выполняем use() для всех игроков
+        for (int i = 0; i < (int)current_tick.commands.size(); ++i) {
+            if (!current_tick.alive[i]) continue;
+            world->use(i,current_tick.commands[i],current_tick.error_msgs[i]);
+        }
+
+        // Сохраняем тик в историю
+        history.push_back(current_tick);
+
+        // Выполняем шаг мира
+        world->step();
+
+        // Готовим следующий тик
+        start_new_tick();
+        return true;
+    }
+
+    // Проверка завершения
+    bool is_finished() const {
+        lock_guard<mutex> lock(mtx);
+        if (!world) return true;
+        vector<int> alive;
+        world->is_alive(alive);
+        int active = count(alive.begin(), alive.end(), 1);
+        return world->finished() || active < 2;
+    }
+
+    // Генерация отчёта (вызывается после завершения)
+    string generate_report() const {
+        lock_guard<mutex> lock(mtx);
+        ostringstream oss;
+        oss << "Game finished at tick " << (history.empty() ? 0 : history.back().tick) << "\n";
+        oss << "SeedInit:  " << g_args.seed_initial << "\n";
+        oss << "SeedStrat: " << g_args.seed_strategies << "\n";
+        oss << "=== Error log ===\n";
+        for (const auto& tick : history) {
+            for (int i = 0; i < (int)tick.error_msgs.size(); ++i) {
+                if (!tick.error_msgs[i].empty()) {
+                    oss << "[Tick " << tick.tick << "][Player " << i << "] " << tick.error_msgs[i] << "\n";
+                }
+            }
+        }
+        return oss.str();
+    }
+} session;
 #ifdef _WIN32
 #include "inetdownloader.hpp"
 #endif
@@ -5362,6 +5490,9 @@ int QapLR_main(int argc,char*argv[]){
       if (debug) cerr << "debug/repeat ignored?\n";
       cerr << "Remote protocol enabled\n";
     }
+    session.world=TGame::mk_world(args.world_name);
+    session.world->init(args.seed_initial);
+    session.start_new_tick();
     if(args.ports_from>=0){
       cerr << "Ports-from enabled\n";
       std::thread thread_with_palyers([args]{
@@ -5389,7 +5520,8 @@ int QapLR_main(int argc,char*argv[]){
 
           server.onClientData = [&](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
             std::cout << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
-            send("Message received\n");
+            //send("Message received\n");
+            session.submit_command(i,data);
           };
 
           server.start();
