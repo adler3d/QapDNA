@@ -5623,8 +5623,13 @@ int QapLR_main(int argc,char*argv[]){
     if(args.gui_mode){cerr<<"gui_mode ignored"<<endl;}args.gui_mode=false;
     #endif
     if(!args.gui_mode)for(;;){
-      session.try_step();
-      if(session.is_finished()){
+      bool done=false;
+      while(session.try_step()){
+        done=session.is_finished();
+        if(done)break;
+        session.send_vpow_to_all();
+      }
+      if(done){
         string report=session.generate_report();
         cerr<<report;
         break;
