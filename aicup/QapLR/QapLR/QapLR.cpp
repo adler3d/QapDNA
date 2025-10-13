@@ -3848,7 +3848,10 @@ struct GameSession {
 
     vector<bool> connected;
     struct i_connection{
+      enum t_net_state{nsDef=0,nsOff=1,nsErr=-1};
+      int network_state=nsDef;
       virtual void send(const string&msg)=0;
+      virtual void off()=0;
     };
     vector<i_connection*> carr;
     void set_connected(int player_id, bool state) {
@@ -3907,14 +3910,15 @@ struct GameSession {
         if(bool inside_lock=true)
         {
           lock_guard<mutex> lock(mtx);
-          bool all_received = true;
+          bool all_received = true;bool all_failed=true;
           for (int i = 0; i < (int)current_tick.alive.size(); ++i) {
+              if(carr[i]&&carr[i]->network_state==carr[i]->nsDef)all_failed=false;
               if((current_tick.alive[i]&&connected[i]&&!current_tick.received[i])||!carr[i]){
                   all_received = false;
                   break;
               }
           }
-          if (!all_received) return false;
+          if (!all_received||all_failed) return false;
           for (int i = 0; i < (int)current_tick.commands.size(); ++i) {
               if(!current_tick.alive[i]||!connected[i])continue;
               world->use(i,current_tick.commands[i],current_tick.error_msgs[i]);
@@ -3940,6 +3944,20 @@ struct GameSession {
         return active < 2;
     }
 
+    void send_vpow_to_all(){
+      vector<int> is_alive;world->is_alive(is_alive);
+      string vpow;
+      for(int i=0;i<g_args.num_players;i++){
+        if(is_alive[i]&&session.connected[i]){
+          vpow.clear();
+          world->get_vpow(i,vpow);
+          session.carr[i]->send(vpow);
+        }
+        if(!is_alive[i]){
+          session.carr[i]->off();
+        }
+      }
+    }
     // Генерация отчёта (вызывается после завершения)
     string generate_report() const {
         lock_guard<mutex> lock(mtx);
@@ -5511,20 +5529,26 @@ int QapLR_main(int argc,char*argv[]){
       cerr << "Remote protocol enabled\n";
     }
     session.init();
+    struct t_player{
+      unique_ptr<t_server_api> server;
+      int client_id=-1;
+      bool broken=false;
+      string recv_buffer;
+      struct t_conn:GameSession::i_connection{
+        t_player*p=nullptr;
+        void send(const string&msg)override{if(p)p->server->send_to_client(p->client_id,msg);};
+        void off()override{
+          if(!p)return;
+          if(network_state==nsDef)network_state=nsOff;
+          p->server->disconnect_client(p->client_id);
+        };
+      } conn;
+    };
+    vector<t_player> players;
+    players.resize(args.num_players);
     if(args.ports_from>=0){
       cerr << "Ports-from enabled\n";
-      std::thread thread_with_palyers([args]{
-        struct t_player{
-          unique_ptr<t_server_api> server;
-          int client_id=-1;
-          bool broken=false;
-          struct t_conn:GameSession::i_connection{
-            t_player*p=nullptr;
-            void send(const string&msg)override{if(p)p->server->send_to_client(p->client_id,msg);};
-          } conn;
-        };
-        vector<t_player> players;
-        players.resize(args.num_players);
+      std::thread thread_with_palyers([args,&players]{
         for(int i=0;i<players.size();i++){
           auto&p=players[i];
           p.server=make_unique<t_server_api>(args.ports_from+i);
@@ -5533,25 +5557,40 @@ int QapLR_main(int argc,char*argv[]){
             std::cout << "[" << client_id << "] connected from IP " << ip <<"\" to socket at port "<<server.port<<endl;
             if(p.client_id>=0)return;
             p.client_id=client_id;
-            session.set_connected(i,true);
             p.conn.p=&p;
             session.carr[i]=&p.conn;
+            session.set_connected(i,true);
           };
 
           server.onClientDisconnected = [&,i](int client_id) {
             std::cout << "[" << client_id << "] disconnected from socket at port "<<server.port<<endl;
             if(p.client_id==client_id){
               p.broken=true;
-              session.set_connected(i,false);
+              if(p.conn.network_state==p.conn.nsDef)p.conn.network_state=p.conn.nsErr;
               p.conn.p=nullptr;
+              session.set_connected(i,false);
             }
           };
 
-          server.onClientData = [&](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
+          server.onClientData = [&,i](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
             std::cout << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
-            //send("Message received\n");
-            if(p.client_id!=client_id)return;
-            session.submit_command(i,data);
+            if (p.broken || p.client_id != client_id) return;
+            p.recv_buffer.append(data);
+            while(true){
+              if(p.recv_buffer.size()<sizeof(uint32_t))break;
+              uint32_t len=*reinterpret_cast<const uint32_t*>(p.recv_buffer.data());
+              // Защита от атак (слишком большой len)
+              if (len > 1024 * 1024) { // 1 МБ максимум
+                cerr << "Player " << i << " sent too large packet (" << len << ")\n";
+                p.broken = true;
+                break;
+              }
+              size_t packet_size=sizeof(uint32_t)+len;
+              if (p.recv_buffer.size()<packet_size)break;
+              string cmd(p.recv_buffer.data() + sizeof(uint32_t), len);
+              session.submit_command(i,cmd);
+              p.recv_buffer.erase(0,packet_size);
+            }
           };
 
           server.start();
@@ -5568,6 +5607,7 @@ int QapLR_main(int argc,char*argv[]){
           bool on_ready=!ready&&full&&a==players.size();
           if(on_ready){
             ready=true;
+            session.send_vpow_to_all();
             int gg=1;
           }
           if(a<=1)break;

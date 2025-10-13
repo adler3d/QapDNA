@@ -539,6 +539,7 @@ public:
     for(int i=0;i<g_args.num_players;i++){
       string color="^7waiting";
       if(session.carr[i])color=session.connected[i]?(is_alive[i]?"^3online":"^2deaded"):"^4offline";
+      if(session.carr[i]&&session.carr[i]->network_state==session.carr[i]->nsErr)color="^1error";
       GOO("player_status["+IToS(i)+"]",color);
     }
     TE.AddText("^7---");
@@ -635,14 +636,7 @@ public:
         ws.push_back(session.world->clone());
         done=session.is_finished();
         if(done)break;
-        auto&w=*session.world;
-        vector<int> is_alive;w.is_alive(is_alive);
-        string vpow;
-        for(int i=0;i<g_args.num_players;i++)if(is_alive[i]&&session.connected[i]){
-          vpow.clear();
-          w.get_vpow(i,vpow);
-          session.carr[i]->send(vpow);
-        }
+        session.send_vpow_to_all();
       }
       if(done){
         string report=session.generate_report();
