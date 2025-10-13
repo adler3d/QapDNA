@@ -1,4 +1,4 @@
-#define LEVEL_LIST(F)F(Level_SplinterWorld);
+#define LEVEL_LIST(F)F(Level_LocalRunner);
 #define FRAMESCOPE(F)\
   F(MenuItem,"MenuItem",0)\
   //---
@@ -47,6 +47,10 @@ struct i_world{
   virtual void get_vpow(int player,string&out)=0;
   virtual void init(unsigned seed)=0;
   virtual bool init_from_config(const string&cfg,string&outmsg)=0;
+  virtual unique_ptr<i_world> clone()=0;
+  virtual void renderV0(QapDev&qDev){}
+  virtual int get_render_api_version(){return 0;}
+  virtual int get_tick()=0;
 };
 
 struct t_offcentric_scope{
@@ -86,9 +90,9 @@ struct t_offcentric_scope{
   }
 };
 
-class Level_WithOffcentricScope:public TGame::ILevel{
+class WithOffcentricScope{
 public:
-  void UpdateOffcentricScope(){
+  void UpdateOffcentricScope(const QapKeyboard&kb){
     vec2d mpos=kb.MousePos;
     if(kb.OnDown(mbRight)){drag_wp=s2w(mpos);}
     if(kb.Down(mbRight)){cam_pos+=-s2w(mpos)+drag_wp;}
@@ -119,14 +123,13 @@ public:
   t_quad*pviewport=nullptr;
 };
 
-class Level_SplinterWorld:public Level_WithOffcentricScope{
-public:
+struct t_splinter{
   static double Dist2Line(const vec2d&point,const vec2d&a,const vec2d&b){
     auto p=(point-a).Rot(b-a);
     if(p.x<0||p.x>(b-a).Mag())return 1e9;
     return fabs(p.y);
   }
-  struct t_splinter_world{
+  struct t_world{
     struct t_ball {
       #define DEF_PRO_COPYABLE()
       #define DEF_PRO_CLASSNAME()t_ball
@@ -190,7 +193,7 @@ public:
     };
   public:
     #define DEF_PRO_COPYABLE()
-    #define DEF_PRO_CLASSNAME()t_splinter_world
+    #define DEF_PRO_CLASSNAME()t_world
     #define DEF_PRO_VARIABLE(ADD)\
     ADD(int,tick,0)\
     ADD(double,ARENA_RADIUS,512.0)\
@@ -375,7 +378,7 @@ public:
             }
           }
       }
-      static bool add_ball(t_splinter_world&w,int i,std::mt19937&gen){
+      static bool add_ball(t_world&w,int i,std::mt19937&gen){
         auto r=[&gen](){static std::uniform_real_distribution<double>dist(-1.0,1.0);return vec2d{dist(gen),dist(gen)};};
         auto&b=qap_add_back(w.parr);
         b.pos=r()*w.ARENA_RADIUS;b.color=i%4;
@@ -383,7 +386,6 @@ public:
         return true;
       };
   };
-  typedef t_splinter_world t_world;
   static void init_world(t_world&world,std::mt19937&gen) {
     // Очищаем
     world.slot2deaded.assign(4,0);
@@ -426,34 +428,126 @@ public:
       t_world::add_ball(world,i,gen);
     }
   }
+  struct t_world_impl:i_world{
+    t_world w;
+    std::mt19937 gen;
+    ~t_world_impl(){};
+    void use(int player,const string&cmd,string&outmsg)override{
+      t_world::t_cmd out;
+      bool ok=QapLoadFromStr(out,cmd);
+      if(!ok){outmsg="cmd load failed";return;}else{outmsg.clear();}
+      w.use(player,out);
+    }
+    void step()override{w.step(gen);}
+    bool finished()override{return w.finished_flag;}
+    void get_score(vector<double>&out)override{out=w.slot2score;}
+    void is_alive(vector<int>&out)override{out.resize(w.slot2deaded.size());for(int i=0;i<out.size();i++)out[i]=!w.slot2deaded[i];}
+    void get_vpow(int player,string&out)override{
+      out=QapSaveToStr(w);
+    }
+    void init(unsigned seed)override{
+      gen=mt19937(seed);
+      init_world(w,gen);
+    }
+    bool init_from_config(const string&cfg,string&outmsg)override{
+      outmsg="no impl";
+      return false;
+    }
+    unique_ptr<i_world> clone()override{return make_unique<t_world_impl>(*this);}
+    void renderV0(QapDev&qDev)override{
+      static vector<QapColor> player_colors={
+        0xFFFF8080, // красный
+        0xFF80FF80, // зелёный
+        0xFF8080FF, // синий
+        0xFFFFFF80  // жёлтый
+      };
+      auto&world=w;
+      // --- Рисуем арену ---
+      qDev.SetColor(0x40000000);
+      qDev.DrawCircle(vec2d{}, world.ARENA_RADIUS,0,2, 64);
+
+      // --- Рисуем цель ---
+      qDev.SetColor(0x8000FF00); // полупрозрачный зелёный
+      qDev.DrawCircle(vec2d{}, 5,0,2, 32);
+
+      // --- Рисуем пружины ---
+      for (const auto& spring : world.springs) {
+          const auto& a = world.balls[spring.a].pos;
+          const auto& b = world.balls[spring.b].pos;
+          int player_id = spring.a / 3; // определяем игрока по индексу шарика
+          qDev.SetColor(player_colors[player_id] & 0x80FFFFFF); // полупрозрачные
+          qDev.DrawLine(a, b, 3.0);
+          qDev.SetColor(0xff000000);
+          qDev.DrawLine(a, b, 1.0);
+      }
+      if(0)
+      for(int i=0;i<1;i++){
+        vec2d c,v;
+        for(int j=0;j<3;j++){
+          int id=i*3+j;
+          auto&ex=world.balls[id];v+=ex.vel;c+=ex.pos;
+        }
+        c*=(1/3.0);v*=(1/3.0);
+        auto t=c+(v.Norm()*0.5+v.Ort().Norm())*200;
+        qDev.SetColor(0xFFFFFFFF);
+        qDev.DrawCircleEx(t, 0, 8.0, 16, 0);
+        qDev.SetColor(0xFFFF0000);
+        qDev.DrawCircleEx(c+v.SetMag(200), 0, 8.0, 16, 0);
+      }
+      
+      for(int i=0;i<world.parr.size();i++){
+        auto&ex=world.parr[i];
+        qDev.SetColor(player_colors[ex.color]);
+        qDev.DrawCircleEx(ex.pos, 0, 8.0, 10, 0);
+      }
+
+      // --- Рисуем шарики ---
+      for (int p = 0; p < 4; p++) {
+          for (int i = 0; i < 3; i++) {
+              int idx = p * 3 + i;
+              const auto& ball = world.balls[idx];
+              qDev.SetColor(world.slot2deaded[p]?0x40000000:player_colors[p]&0xAAFFFFFF);
+              qDev.DrawCircleEx(ball.pos, 0, 8.0+(world.cmd_for_player[p].f(i)*4), 32, 0);
+              qDev.SetColor(0xff000000);
+              qDev.DrawCircleEx(ball.pos, 8.0, 9.0, 32, 0);
+          }
+      }
+      qDev.SetColor(0xFFFFFFFF);
+    }
+    int get_tick()override{return w.tick;}
+  };
+  static unique_ptr<i_world> mk_world(const int version){
+    return make_unique<t_world_impl>();
+  }
+};
+
+static unique_ptr<i_world> mk_world(const string&world){
+  #define F(LVL)
+  LEVEL_LIST(F)
+  #undef F
+  if(world=="t_splinter")return t_splinter::mk_world(0);
+  return nullptr;
+}
+
+class Level_LocalRunner:public TGame::ILevel,public WithOffcentricScope{
 public:
-  t_world w;t_world&world=w;
+  unique_ptr<i_world> w;
 public:
   TGame*Game=nullptr;
-  std::mt19937 gen;
 public:
-  t_world world_at_begin;
+  unique_ptr<i_world> world_at_begin;
   void reinit_the_same_level(){
-    gen=std::mt19937(seed);
-    w=world_at_begin;
+    w=world_at_begin->clone();
     Game->ReloadWinFail();
   }
-  bool init_attempt(){
-    seed=unsigned(g_clock.MS());
-    gen=std::mt19937(seed);
-    w={};
-    init_world(w,gen);
-    world_at_begin=w;
-    return true;
-  }
-  int init_attempts=1;
   bool inited=false;
   void Init(TGame*Game){
     this->pviewport=&Game->qDev.viewport;
     this->Game=Game;
-    inited=init_attempt();
-    if(!inited){Sys.UPS_enabled=false;}
-    //reinit_top20();
+    seed=unsigned(g_clock.MS());
+    w=mk_world(g_args.world_name);
+    w->init(seed);
+    world_at_begin=w->clone();
   }
   bool Win(){return false;;}
   bool Fail(){return false;}
@@ -462,9 +556,8 @@ public:
     string BEG="^7";
     string SEP=" ^2: ^8";
     #define GOO(TEXT,VALUE)TE.AddText(string(BEG)+string(TEXT)+string(SEP)+string(VALUE));
-    GOO("curr_t",FToS(w.tick*1.0/Sys.UPS));
+    GOO("curr_t",FToS(w->get_tick()*1.0/Sys.UPS));
     GOO("seed",IToS(seed));
-    GOO("init_attempts",IToS(init_attempts));
     TE.AddText("^7---");
     int bx=TE.bx;
     int cy=TE.y;
@@ -472,7 +565,7 @@ public:
     TE.y=cy;
     #undef GOO
   }
-  int frame=-1;vector<t_world> ws;
+  int frame=-1;vector<unique_ptr<i_world>> ws;
   void RenderImpl(QapDev&qDev){
     QapDev::BatchScope Scope(qDev);
     t_offcentric_scope scope(qDev,cam_pos,cam_dir,scale,cam_offcentric);
@@ -482,86 +575,11 @@ public:
     frame=-1;
     if(set_frame)frame=mpos.x+pviewport->size.x/2;
     if(frame<0||frame>=ws.size())frame=-1;
-    auto&world=frame<0?this->world:ws[frame];
-
-    // --- Рисуем арену ---
-    qDev.SetColor(0x40000000);
-    qDev.DrawCircle(vec2d(0, 0), world.ARENA_RADIUS,0,2, 64);
-
-    // --- Рисуем цель ---
-    qDev.SetColor(0x8000FF00); // полупрозрачный зелёный
-    qDev.DrawCircle(vec2d(0, 0), 5,0,2, 32);
-
-    auto center=world.get_center_of_mass(0);auto&w=world;auto p=0;
-    struct t_beste{double v;bool ok=false;int e;void use(t_beste c){if(!ok||c.v>v)*this=c;}};
-    t_beste be;
-    for(int e=0;e<4;e++)if(e!=p&&!w.slot2deaded[e])for(int i=0;i<3;i++){
-      auto&ex=w.balls[i+e*3];
-      be.use({-ex.pos.dist_to(center),true,e});
+    auto&world=frame<0?*this->w:*ws[frame];
+    auto api=world.get_render_api_version();
+    if(api==0){
+      world.renderV0(qDev);
     }
-    // --- Рисуем пружины ---
-    for (const auto& spring : world.springs) {
-        const auto& a = world.balls[spring.a].pos;
-        const auto& b = world.balls[spring.b].pos;
-        int player_id = spring.a / 3; // определяем игрока по индексу шарика
-        qDev.SetColor(player_colors[player_id] & 0x80FFFFFF); // полупрозрачные
-        qDev.DrawLine(a, b, 3.0);
-        qDev.SetColor(0xff000000);
-        qDev.DrawLine(a, b, 1.0);
-    }
-    if(0)
-    for(int i=0;i<1;i++){
-      vec2d c,v;
-      for(int j=0;j<3;j++){
-        int id=i*3+j;
-        auto&ex=world.balls[id];v+=ex.vel;c+=ex.pos;
-      }
-      c*=(1/3.0);v*=(1/3.0);
-      auto t=c+(v.Norm()*0.5+v.Ort().Norm())*200;
-      qDev.SetColor(0xFFFFFFFF);
-      qDev.DrawCircleEx(t, 0, 8.0, 16, 0);
-      qDev.SetColor(0xFFFF0000);
-      qDev.DrawCircleEx(c+v.SetMag(200), 0, 8.0, 16, 0);
-    }
-      
-    for(int i=0;i<world.parr.size();i++){
-      auto&ex=world.parr[i];
-      qDev.SetColor(player_colors[ex.color]);
-      qDev.DrawCircleEx(ex.pos, 0, 8.0, 10, 0);
-    }
-
-    // --- Рисуем шарики ---
-    for (int p = 0; p < 4; p++) {
-        for (int i = 0; i < 3; i++) {
-            int idx = p * 3 + i;
-            const auto& ball = world.balls[idx];
-            qDev.SetColor(world.slot2deaded[p]?0x40000000:player_colors[p]&0xAAFFFFFF);
-            qDev.DrawCircleEx(ball.pos, 0, 8.0+(world.cmd_for_player[p].f(i)*4), 32, 0);
-            qDev.SetColor(0xff000000);
-            qDev.DrawCircleEx(ball.pos, 8.0, 9.0, 32, 0);
-            // Стрелка скорости
-            if(0)if (ball.vel.Mag() > 0.1) {
-                vec2d head = ball.pos + ball.vel.Norm() * 20;
-                qDev.SetColor(0xFFFFFFFF);
-                //DrawLine(qDev, ball.pos, head, 2.0);
-                // Маленький треугольник на конце
-                auto perp = ball.vel.Ort().Norm() * 5;
-                qDev.SetColor(0xFFFFFFFF);
-                qDev.DrawTrigon(head, head+ball.vel.Norm() * 20 - perp, head+ball.vel.Norm() * 20 + perp);
-            }
-        }
-    }
-
-    // --- Отладка: тики и статус ---
-    qDev.SetColor(0xFFFFFFFF);
-    /*
-    string debug = "Tick: " + IToS(world.tick)+" ms:"+FToS(ms)+" "+to_string(seed);
-    qap_text::draw(qDev, vec2d(-300, -200), debug, 24);
-    for(int i=0;i<4;i++){
-      string msg="score["+IToS(i)+"] = "+FToS(world.slot2score[i]);
-      qDev.SetColor(player_colors[i]);
-      qap_text::draw(qDev, vec2d(-300, -224-24*i), msg, 24);
-    }*/
   }
   vector<int> AdlerCraftMap;
   MapGenerator AdlerCraft_mapgen;
@@ -613,11 +631,7 @@ public:
     qDev.DrawQuad(p.x,p.y,wh.x,wh.y,ang);
   }
   void Update(TGame*Game){
-    if(!inited){
-      bool ok=init_attempt();
-      init_attempts++;
-      if(ok){inited=true;Sys.UPS_enabled=true;Sys.ResetClock();}else{return;}
-    }
+    if(bool neeed_empty_te=true)
     {
       QapDev*pQapDev=nullptr;
       TextRender TE(pQapDev);TE.dummy=true;
@@ -635,52 +649,8 @@ public:
     if(runned){
 
     }
-    if(runned)w.tick++;
-    UpdateOffcentricScope();
+    UpdateOffcentricScope(kb);
   }
 public:
   unsigned seed=0;
-  vector<QapColor> player_colors={
-    0xFFFF8080, // красный
-    0xFF80FF80, // зелёный
-    0xFF8080FF, // синий
-    0xFFFFFF80  // жёлтый
-  };
-public:
-  struct t_world_impl:i_world{
-    t_world w;
-    std::mt19937 gen;
-    ~t_world_impl(){};
-    void use(int player,const string&cmd,string&outmsg)override{
-      t_world::t_cmd out;
-      bool ok=QapLoadFromStr(out,cmd);
-      if(!ok){outmsg="cmd load failed";return;}else{outmsg.clear();}
-      w.use(player,out);
-    }
-    void step()override{w.step(gen);}
-    bool finished()override{return w.finished_flag;}
-    void get_score(vector<double>&out)override{out=w.slot2score;}
-    void is_alive(vector<int>&out)override{out.resize(w.slot2deaded.size());for(int i=0;i<out.size();i++)out[i]=!w.slot2deaded[i];}
-    void get_vpow(int player,string&out)override{
-      out=QapSaveToStr(w);
-    }
-    void init(unsigned seed)override{
-      gen=mt19937(seed);
-      init_world(w,gen);
-    }
-    bool init_from_config(const string&cfg,string&outmsg)override{
-      outmsg="no impl";
-      return false;
-    }
-  };
-  static unique_ptr<i_world> mk_world(const int version){
-    return make_unique<t_world_impl>();
-  }
 };
-static unique_ptr<i_world> mk_world(const string&world){
-  #define F(LVL)
-  LEVEL_LIST(F)
-  #undef F
-  if(world=="t_world")return Level_SplinterWorld::mk_world(0);
-  return nullptr;
-}

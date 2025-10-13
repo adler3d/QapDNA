@@ -414,6 +414,40 @@ public:
     }
   }
 };
+#include <iostream>
+#include <string>
+#include <vector>
+#include <optional>
+#include <cstdint>
+#include <cstdlib>
+#include <map>
+#include <set>
+struct ProgramArgs {
+  enum class Mode {
+    Normal,
+    ReplayIn,
+    ReplayOut
+  } mode = Mode::Normal;
+  // Обязательные для Normal и ReplayOut
+  string world_name;
+  int num_players = 0;
+  uint64_t seed_initial = 0;
+  uint64_t seed_strategies = 0;
+  // Файлы
+  optional<string> replay_in_file;   // только для ReplayIn
+  optional<string> replay_out_file;  // только для ReplayOut
+  optional<string> state_file;       // опционально: файл начального состояния
+  // GUI
+  bool gui_mode = false;
+  vector<string> player_names;
+  int debug = -1;
+  bool remote = false;
+  int ports_from = -1;
+  // Служебное
+  bool show_help = false;
+  bool show_version = false;
+};
+ProgramArgs g_args;
 typedef double real;
 template<typename TYPE>inline TYPE Lerp(const TYPE&A,const TYPE&B,const real&v){return A+(B-A)*v;}
 template<class TYPE>inline TYPE Clamp(const TYPE&v,const TYPE&a,const TYPE&b){return max(a,min(v, b));}
@@ -5060,45 +5094,6 @@ int main(int argc, char* argv[]){
 }
 #endif
 
-#include <iostream>
-#include <string>
-#include <vector>
-#include <optional>
-#include <cstdint>
-#include <cstdlib>
-#include <map>
-#include <set>
-struct ProgramArgs {
-    // Режимы
-    enum class Mode {
-        Normal,      // обычная игра
-        ReplayIn,    // воспроизведение
-        ReplayOut    // запись реплея
-    } mode = Mode::Normal;
-
-    // Обязательные для Normal и ReplayOut
-    string world_name;
-    int num_players = 0;
-    uint64_t seed_initial = 0;
-    uint64_t seed_strategies = 0;
-
-    // Файлы
-    optional<string> replay_in_file;   // только для ReplayIn
-    optional<string> replay_out_file;  // только для ReplayOut
-    optional<string> state_file;       // опционально: файл начального состояния
-
-    // GUI
-    bool gui_mode = false;
-    vector<string> player_names;
-    int debug = -1;
-    bool remote = false;
-    int ports_from = -1;
-
-    // Служебное
-    bool show_help = false;
-    bool show_version = false;
-};
-
 const char* VERSION = "QapLR v0.1.0";
 const char* USAGE = R"(Usage:
   Normal mode:     ./QapLR <world> <players> <seed_init> <seed_strat> [OPTIONS]
@@ -5320,7 +5315,7 @@ int QapLR_main(int argc,char*argv[]){
     for(int i=0;i<1000;i++){
       Sleep(16);
     }*/
-    ProgramArgs args;
+    ProgramArgs&args=g_args;
     if (!parseArgs(argc, argv, args)) {
         return 1;
     }
