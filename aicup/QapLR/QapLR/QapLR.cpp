@@ -3825,6 +3825,7 @@ struct i_world{
   virtual int get_render_api_version(){return 0;}
   virtual int get_tick()=0;
 };
+unique_ptr<i_world> TGame_mk_world(const string&world);
 struct GameSession {
     unique_ptr<i_world> world;
     //unsigned seed = 0;
@@ -3845,6 +3846,30 @@ struct GameSession {
     // Синхронизация
     mutable mutex mtx;
 
+    vector<bool> connected;
+    struct i_connection{
+      virtual void send(const string&msg)=0;
+    };
+    vector<i_connection*> carr;
+    void set_connected(int player_id, bool state) {
+        lock_guard<mutex> lock(mtx);
+        if (player_id >= 0 && player_id < (int)connected.size()) {
+            connected[player_id] = state;
+            /*
+            // При отключении — сбрасываем ожидание команды на текущем тике
+            if (!state && player_id < (int)current_tick.received.size()) {
+                current_tick.received[player_id] = true; // "получено" пусто
+                current_tick.commands[player_id] = "";
+            }*/
+        }
+    }
+    void init(){
+      carr.resize(g_args.num_players,nullptr);
+      connected.assign(g_args.num_players,false);
+      world=TGame_mk_world(g_args.world_name);
+      world->init(g_args.seed_initial);
+      start_new_tick();
+    }
     // Потокобезопасный метод для приёма команды
     void submit_command(int player_id, const string& cmd) {
         lock_guard<mutex> lock(mtx);
@@ -3858,7 +3883,6 @@ struct GameSession {
         current_tick.received[player_id] = true;
     }
 
-    // Запуск нового тика
     void start_new_tick() {
         lock_guard<mutex> lock(mtx);
         if (!history.empty()) {
@@ -3867,7 +3891,6 @@ struct GameSession {
             current_tick.tick = 0;
         }
 
-        // Обновляем alive через world
         vector<int> alive_int;
         world->is_alive(alive_int);
         current_tick.alive.assign(alive_int.begin(), alive_int.end());
@@ -3876,48 +3899,45 @@ struct GameSession {
         current_tick.received.assign(n, false);
         current_tick.commands.assign(n, "");
         current_tick.error_msgs.assign(n, "");
+
+        //for(int i=0;i<n;++i)current_tick.received[i]=!connected[i]||!alive_int[i];
     }
 
-    // Попытка выполнить шаг (вызывается из главного потока)
     bool try_step() {
-        lock_guard<mutex> lock(mtx);
-
-        // Проверяем: все ли живые игроки прислали команды?
-        bool all_received = true;
-        for (int i = 0; i < (int)current_tick.alive.size(); ++i) {
-            if (current_tick.alive[i] && !current_tick.received[i]) {
-                all_received = false;
-                break;
-            }
+        if(bool inside_lock=true)
+        {
+          lock_guard<mutex> lock(mtx);
+          bool all_received = true;
+          for (int i = 0; i < (int)current_tick.alive.size(); ++i) {
+              if((current_tick.alive[i]&&connected[i]&&!current_tick.received[i])||!carr[i]){
+                  all_received = false;
+                  break;
+              }
+          }
+          if (!all_received) return false;
+          for (int i = 0; i < (int)current_tick.commands.size(); ++i) {
+              if(!current_tick.alive[i]||!connected[i])continue;
+              world->use(i,current_tick.commands[i],current_tick.error_msgs[i]);
+          }
+          history.push_back(current_tick);
+          world->step();
         }
-
-        if (!all_received) return false;
-
-        // Выполняем use() для всех игроков
-        for (int i = 0; i < (int)current_tick.commands.size(); ++i) {
-            if (!current_tick.alive[i]) continue;
-            world->use(i,current_tick.commands[i],current_tick.error_msgs[i]);
-        }
-
-        // Сохраняем тик в историю
-        history.push_back(current_tick);
-
-        // Выполняем шаг мира
-        world->step();
-
-        // Готовим следующий тик
         start_new_tick();
         return true;
     }
 
-    // Проверка завершения
     bool is_finished() const {
         lock_guard<mutex> lock(mtx);
-        if (!world) return true;
-        vector<int> alive;
-        world->is_alive(alive);
-        int active = count(alive.begin(), alive.end(), 1);
-        return world->finished() || active < 2;
+        if (world->finished()) return true;
+        vector<int> world_alive;
+        world->is_alive(world_alive);
+        int active = 0;
+        for (int i = 0; i < (int)connected.size(); ++i) {
+            if (connected[i] && i < (int)world_alive.size() && world_alive[i]) {
+                active++;
+            }
+        }
+        return active < 2;
     }
 
     // Генерация отчёта (вызывается после завершения)
@@ -5490,9 +5510,7 @@ int QapLR_main(int argc,char*argv[]){
       if (debug) cerr << "debug/repeat ignored?\n";
       cerr << "Remote protocol enabled\n";
     }
-    session.world=TGame::mk_world(args.world_name);
-    session.world->init(args.seed_initial);
-    session.start_new_tick();
+    session.init();
     if(args.ports_from>=0){
       cerr << "Ports-from enabled\n";
       std::thread thread_with_palyers([args]{
@@ -5500,6 +5518,10 @@ int QapLR_main(int argc,char*argv[]){
           unique_ptr<t_server_api> server;
           int client_id=-1;
           bool broken=false;
+          struct t_conn:GameSession::i_connection{
+            t_player*p=nullptr;
+            void send(const string&msg)override{if(p)p->server->send_to_client(p->client_id,msg);};
+          } conn;
         };
         vector<t_player> players;
         players.resize(args.num_players);
@@ -5507,20 +5529,28 @@ int QapLR_main(int argc,char*argv[]){
           auto&p=players[i];
           p.server=make_unique<t_server_api>(args.ports_from+i);
           auto&server=*p.server;
-          server.onClientConnected = [&](int client_id, socket_t socket, const std::string& ip) {
+          server.onClientConnected = [&,i](int client_id, socket_t socket, const std::string& ip) {
             std::cout << "[" << client_id << "] connected from IP " << ip <<"\" to socket at port "<<server.port<<endl;
             if(p.client_id>=0)return;
             p.client_id=client_id;
+            session.set_connected(i,true);
+            p.conn.p=&p;
+            session.carr[i]=&p.conn;
           };
 
-          server.onClientDisconnected = [&](int client_id) {
+          server.onClientDisconnected = [&,i](int client_id) {
             std::cout << "[" << client_id << "] disconnected from socket at port "<<server.port<<endl;
-            if(p.client_id==client_id)p.broken=true;
+            if(p.client_id==client_id){
+              p.broken=true;
+              session.set_connected(i,false);
+              p.conn.p=nullptr;
+            }
           };
 
           server.onClientData = [&](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
             std::cout << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
             //send("Message received\n");
+            if(p.client_id!=client_id)return;
             session.submit_command(i,data);
           };
 
@@ -5549,7 +5579,17 @@ int QapLR_main(int argc,char*argv[]){
     if(args.gui_mode){
       return QapLR_DoNice();
     }
+    #else
+    if(args.gui_mode){cerr<<"gui_mode ignored"<<endl;}args.gui_mode=false;
     #endif
+    if(!args.gui_mode)for(;;){
+      session.try_step();
+      if(session.is_finished()){
+        string report=session.generate_report();
+        cerr<<report;
+        break;
+      }
+    }
     return 0;
 }
 void test(){
@@ -5561,5 +5601,8 @@ void test(){
   auto mem=QapSaveToStr(w);
   cerr<<"a=["<<mem<<"]"<<endl;
   file_put_contents("out.t_world",mem);*/
+}
+unique_ptr<i_world> TGame_mk_world(const string&world){
+  return TGame::mk_world(world);
 }
 #endif

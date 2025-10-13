@@ -535,6 +535,13 @@ public:
     GOO("curr_t",FToS(session.world->get_tick()*1.0/Sys.UPS));
     GOO("seed",IToS(seed));
     TE.AddText("^7---");
+    vector<int> is_alive;session.world->is_alive(is_alive);
+    for(int i=0;i<g_args.num_players;i++){
+      string color="^7waiting";
+      if(session.carr[i])color=session.connected[i]?(is_alive[i]?"^3online":"^2deaded"):"^4offline";
+      GOO("player_status["+IToS(i)+"]",color);
+    }
+    TE.AddText("^7---");
     int bx=TE.bx;
     int cy=TE.y;
     TE.bx=bx;
@@ -623,11 +630,21 @@ public:
     if(kb.OnDown(VK_F9)){reinit_the_same_level();}
     bool runned=!Win()&&!Fail();
     if(runned){
+      bool done=false;
       while(session.try_step()){
         ws.push_back(session.world->clone());
-        // ћожно обновить UI, проверить завершение и т.д.
+        done=session.is_finished();
+        if(done)break;
+        auto&w=*session.world;
+        vector<int> is_alive;w.is_alive(is_alive);
+        string vpow;
+        for(int i=0;i<g_args.num_players;i++)if(is_alive[i]&&session.connected[i]){
+          vpow.clear();
+          w.get_vpow(i,vpow);
+          session.carr[i]->send(vpow);
+        }
       }
-      if(session.is_finished()){
+      if(done){
         string report=session.generate_report();
         cerr<<report;
         //Sys.NeedClose = true;
