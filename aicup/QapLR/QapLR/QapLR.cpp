@@ -2893,7 +2893,7 @@ struct GameSession {
         cerr<<"time:"<<clock.MS()<<endl;
         save();
       }else{
-        session.send_vpow_to_all();
+        send_vpow_to_all();
       }
     }
 
@@ -2963,8 +2963,8 @@ struct GameSession {
       string seed(sizeof(uint32_t),0);
       *(uint32_t*)seed.data()=g_args.seed_strategies;
       for(int i=0;i<g_args.num_players;i++){
-        if(is_alive[i]&&session.connected[i]){
-          session.carr[i]->send(seed);
+        if(is_alive[i]&&connected[i]){
+          carr[i]->send(seed);
         }
       }
     }
@@ -2973,11 +2973,11 @@ struct GameSession {
       vector<int> is_alive;world->is_alive(is_alive);
       string vpow;
       for(int i=0;i<g_args.num_players;i++){
-        if(is_alive[i]&&session.connected[i]){
+        if(is_alive[i]&&connected[i]){
           vpow.clear();
           world->get_vpow(i,vpow);
           string svpow=QapSaveToStr(vpow);
-          session.carr[i]->send(svpow);
+          carr[i]->send(svpow);
         }
         if(!is_alive[i]){
           session.carr[i]->off();
