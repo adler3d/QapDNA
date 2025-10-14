@@ -2980,7 +2980,7 @@ struct GameSession {
           carr[i]->send(svpow);
         }
         if(!is_alive[i]){
-          session.carr[i]->off();
+          carr[i]->off();
         }
       }
     }
