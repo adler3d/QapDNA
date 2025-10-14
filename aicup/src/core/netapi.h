@@ -333,7 +333,7 @@ public:
 
         workerThread = std::thread([this]() { this->accept_loop(); });
 
-        std::cout << "Server listening on port " << port << std::endl;
+        std::cerr << "Server listening on port " << port << std::endl;
     }
 
     void stop() {
@@ -351,11 +351,17 @@ public:
             clientIps.clear();
             ipToClientIds.clear();
         }
-
+        
+        std::cerr << "t_server_api::stop::CLOSESOCKET(serverSocket);"<< std::endl;
         CLOSESOCKET(serverSocket);
+        std::cerr << "t_server_api::stop::CLOSESOCKET(serverSocket)::aft"<< std::endl;
 
         if (workerThread.joinable())
-            workerThread.join();
+        {
+          std::cerr << "t_server_api::stop::workerThread.join();"<< std::endl;
+          workerThread.join();
+          std::cerr << "t_server_api::stop::workerThread.join()::aft"<< std::endl;
+        }
 
 #ifdef _WIN32
         WSACleanup();
@@ -372,7 +378,7 @@ public:
         for (int client_id : it->second) {
             auto sock_it = clientSockets.find(client_id);
             if (sock_it != clientSockets.end()) {
-                std::cout << "Disconnecting client #" << client_id << " with IP " << ip << std::endl;
+                std::cerr << "Disconnecting client #" << client_id << " with IP " << ip << std::endl;
                 CLOSESOCKET(sock_it->second);
                 // Сокет будет очищен при disconnect
             }
@@ -394,8 +400,12 @@ public:
                 if (isRunning) {
                     std::cerr << "Accept failed\n";
                 }
+                
+                std::cerr << "t_server_api::accept_loop::break"<< std::endl;
                 break;
             }
+            
+            std::cerr << "t_server_api::accept_loop::new"<< std::endl;
             int client_id = ++client_count;
 
             // Получаем IP клиента
