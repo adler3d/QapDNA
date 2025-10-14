@@ -2857,6 +2857,13 @@ struct GameSession {
             connected[player_id] = state;
         }
     }
+    void save(){
+      if(!g_args.replay_out_file||!g_args.replay_out_file->size())return;
+      vector<vector<string>> tick2slot2cmd;
+      for(auto&ex:history)tick2slot2cmd.push_back(ex.commands);
+      auto s=QapSaveToStr(tick2slot2cmd);
+      file_put_contents(*g_args.replay_out_file,s);
+    }
     void init(){
       carr.resize(g_args.num_players,nullptr);
       connected.assign(g_args.num_players,false);
@@ -2877,13 +2884,14 @@ struct GameSession {
         current_tick.received[player_id] = true;
     }
     void update(){
-      if(!session.try_step())return;
-      if(g_args.gui_mode)session.ws.push_back(session.world->clone());
-      if(bool done=session.is_finished()){
-        string report=session.generate_report();
+      if(!try_step())return;
+      if(g_args.gui_mode)ws.push_back(world->clone());
+      if(bool done=is_finished()){
+        for(auto&ex:carr)if(ex)ex->off();
+        string report=generate_report();
         cerr<<report;
-        cerr<<"time:"<<session.clock.MS()<<endl;
-        for(auto&ex:session.carr)if(ex)ex->off();
+        cerr<<"time:"<<clock.MS()<<endl;
+        save();
       }else{
         session.send_vpow_to_all();
       }

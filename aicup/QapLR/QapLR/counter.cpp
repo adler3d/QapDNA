@@ -172,7 +172,7 @@ static t_world::t_cmd dna/*gpt5*/(const t_world& w, int player_id)
 }
 
 std::mt19937 gen;
-#include "adler20250907.inl"
+//#include "adler20250907.inl"
 
 bool read_exactly_or_eof(std::istream& is, char* buffer, std::size_t n) {
   std::size_t total_read = 0;
@@ -217,7 +217,8 @@ int main(int argc,char*argv[]){
     }
     QapLoadFromStr(w,recv_buffer);
     t_splinter::t_world::t_cmd cmd;
-    cmd=dna_adler20250907(w,w.your_id);
+    //cmd=dna_adler20250907(w,w.your_id);
+    cmd=dna(w,w.your_id);
     string scmd=QapSaveToStr(cmd);
     string sscmd=QapSaveToStr(scmd);
     cout.write(sscmd.data(),sscmd.size());
@@ -230,7 +231,6 @@ int main(int argc,char*argv[]){
 #include <shellapi.h>  // CommandLineToArgvW
 #include <locale>
 
-// Альтернатива без codecvt (рекомендуется)
 std::string utf16_to_utf8(const std::wstring& wstr) {
     if (wstr.empty()) return std::string();
     int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
@@ -253,12 +253,12 @@ int WINAPI QapLR_WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpC
     for (int i = 0; i < argc; ++i) {
         std::string utf8 = utf16_to_utf8(wargv[i]);
         argv_storage.emplace_back(utf8.begin(), utf8.end());
-        argv_storage.back().push_back('\0'); // гарантируем null-терминатор
+        argv_storage.back().push_back('\0');
         argv.push_back(argv_storage.back().data());
     }
     int result=main(argc,argv.data());
 
-    LocalFree(wargv); // освобождаем память, выделенную CommandLineToArgvW
+    LocalFree(wargv);
     return result;
 }
 int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow)
