@@ -362,15 +362,11 @@ public:
             ipToClientIds.clear();
         }
         
-        std::cerr << "t_server_api::stop::CLOSESOCKET(serverSocket);"<< std::endl;
         CLOSESOCKET(serverSocket);
-        std::cerr << "t_server_api::stop::CLOSESOCKET(serverSocket)::aft"<< std::endl;
 
         if (workerThread.joinable())
         {
-          std::cerr << "t_server_api::stop::workerThread.join();"<< std::endl;
           workerThread.join();
-          std::cerr << "t_server_api::stop::workerThread.join()::aft"<< std::endl;
         }
 
 #ifdef _WIN32
@@ -408,15 +404,8 @@ public:
             socket_t client_socket = accept(serverSocket, (sockaddr*)&client_addr, &client_len);
             if(!isRunning)break;
             if (client_socket == INVALID_SOCKET) {
-                if (isRunning) {
-                    std::cerr << "Accept failed\n";
-                }
-                
-                std::cerr << "t_server_api::accept_loop::break"<< std::endl;
                 break;
             }
-            
-            std::cerr << "t_server_api::accept_loop::new"<< std::endl;
             int client_id = ++client_count;
 
             // Получаем IP клиента
