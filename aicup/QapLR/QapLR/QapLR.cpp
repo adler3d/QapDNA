@@ -5548,77 +5548,56 @@ int QapLR_main(int argc,char*argv[]){
     players.resize(args.num_players);
     if(args.ports_from>=0){
       cerr << "Ports-from enabled\n";
-      std::thread thread_with_palyers([args,&players]{
-        for(int i=0;i<players.size();i++){
-          auto&p=players[i];
-          p.server=make_unique<t_server_api>(args.ports_from+i);
-          auto&server=*p.server;
-          server.onClientConnected = [&,i](int client_id, socket_t socket, const std::string& ip) {
-            std::cout << "[" << client_id << "] connected from IP " << ip <<"\" to socket at port "<<server.port<<endl;
-            if(p.client_id>=0)return;
-            p.client_id=client_id;
-            p.conn.p=&p;
-            session.carr[i]=&p.conn;
-            session.set_connected(i,true);
-            //---
-            int n=0,a=players.size();
-            for(auto&ex:players)if(ex.client_id>=0){n++;if(ex.broken)a--;}
-            bool full=n==players.size();
-            if(full)session.send_vpow_to_all();
-          };
-
-          server.onClientDisconnected = [&,i](int client_id) {
-            std::cout << "[" << client_id << "] disconnected from socket at port "<<server.port<<endl;
-            if(p.client_id==client_id){
-              p.broken=true;
-              if(p.conn.network_state==p.conn.nsDef)p.conn.network_state=p.conn.nsErr;
-              p.conn.p=nullptr;
-              session.set_connected(i,false);
-            }
-          };
-
-          server.onClientData = [&,i](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
-            std::cout << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
-            if (p.broken || p.client_id != client_id) return;
-            p.recv_buffer.append(data);
-            while(true){
-              if(p.recv_buffer.size()<sizeof(uint32_t))break;
-              uint32_t len=*reinterpret_cast<const uint32_t*>(p.recv_buffer.data());
-              // Защита от атак (слишком большой len)
-              if (len > 1024 * 1024) { // 1 МБ максимум
-                cerr << "Player " << i << " sent too large packet (" << len << ")\n";
-                p.broken = true;
-                break;
-              }
-              size_t packet_size=sizeof(uint32_t)+len;
-              if (p.recv_buffer.size()<packet_size)break;
-              string cmd(p.recv_buffer.data() + sizeof(uint32_t), len);
-              session.submit_command(i,cmd);
-              p.recv_buffer.erase(0,packet_size);
-            }
-          };
-
-          server.start();
-        }
-        //typedef TGame::Level_SplinterWorld::t_world t_world;
-        //t_world w;
-        using namespace std::chrono_literals;
-        bool ready=false;
-        for(int tick=0;;tick++){
-          std::this_thread::sleep_for(16ms);
+      for(int i=0;i<players.size();i++){
+        auto&p=players[i];
+        p.server=make_unique<t_server_api>(args.ports_from+i);
+        auto&server=*p.server;
+        server.onClientConnected = [&,i](int client_id, socket_t socket, const std::string& ip) {
+          std::cout << "[" << client_id << "] connected from IP " << ip <<"\" to socket at port "<<server.port<<endl;
+          if(p.client_id>=0)return;
+          p.client_id=client_id;
+          p.conn.p=&p;
+          session.carr[i]=&p.conn;
+          session.set_connected(i,true);
+          //---
           int n=0,a=players.size();
           for(auto&ex:players)if(ex.client_id>=0){n++;if(ex.broken)a--;}
           bool full=n==players.size();
-          bool on_ready=!ready&&full&&a==players.size();
-          if(on_ready){
-            ready=true;
-            //session.send_vpow_to_all();
-            int gg=1;
+          if(full)session.send_vpow_to_all();
+        };
+
+        server.onClientDisconnected = [&,i](int client_id) {
+          std::cout << "[" << client_id << "] disconnected from socket at port "<<server.port<<endl;
+          if(p.client_id==client_id){
+            p.broken=true;
+            if(p.conn.network_state==p.conn.nsDef)p.conn.network_state=p.conn.nsErr;
+            p.conn.p=nullptr;
+            session.set_connected(i,false);
           }
-          if(a<=1)break;
-        }
-      });
-      thread_with_palyers.detach();
+        };
+
+        server.onClientData = [&,i](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
+          std::cout << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
+          if (p.broken || p.client_id != client_id) return;
+          p.recv_buffer.append(data);
+          while(true){
+            if(p.recv_buffer.size()<sizeof(uint32_t))break;
+            uint32_t len=*reinterpret_cast<const uint32_t*>(p.recv_buffer.data());
+            // Защита от атак (слишком большой len)
+            if (len > 1024 * 1024) { // 1 МБ максимум
+              cerr << "Player " << i << " sent too large packet (" << len << ")\n";
+              p.broken = true;
+              break;
+            }
+            size_t packet_size=sizeof(uint32_t)+len;
+            if (p.recv_buffer.size()<packet_size)break;
+            string cmd(p.recv_buffer.data() + sizeof(uint32_t), len);
+            session.submit_command(i,cmd);
+            p.recv_buffer.erase(0,packet_size);
+          }
+        };
+        server.start();
+      }
     }
     #ifdef _WIN32
     if(args.gui_mode){
