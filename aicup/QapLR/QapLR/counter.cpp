@@ -20,6 +20,7 @@
 #include <sstream>
 #include <iomanip>
 #include <random>
+#include <array>
 using namespace std;
 
 #include "qap_assert.inl"
@@ -170,6 +171,9 @@ static t_world::t_cmd dna/*gpt5*/(const t_world& w, int player_id)
     return out;
 }
 
+std::mt19937 gen;
+#include "adler20250907.inl"
+
 bool read_exactly_or_eof(std::istream& is, char* buffer, std::size_t n) {
   std::size_t total_read = 0;
   while (total_read < n) {
@@ -192,6 +196,12 @@ int main(int argc,char*argv[]){
   for(int i=0;i<100;i++){
     std::this_thread::sleep_for(1000ms);
   }*/
+  uint32_t seed=0;
+  if(!read_exactly_or_eof(cin,(char*)&seed,sizeof(seed))){
+    int fail=1;
+    return -1;
+  }
+  gen=std::mt19937(seed);
   t_splinter::t_world w;
   string recv_buffer;
   for(int iter=0;;iter++){
@@ -207,7 +217,7 @@ int main(int argc,char*argv[]){
     }
     QapLoadFromStr(w,recv_buffer);
     t_splinter::t_world::t_cmd cmd;
-    cmd=dna(w,w.your_id);
+    cmd=dna_adler20250907(w,w.your_id);
     string scmd=QapSaveToStr(cmd);
     string sscmd=QapSaveToStr(scmd);
     cout.write(sscmd.data(),sscmd.size());

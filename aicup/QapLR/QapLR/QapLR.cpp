@@ -2942,7 +2942,6 @@ struct GameSession {
         }
         return active < 2;
     }
-
     bool is_inited()const{
       lock_guard<mutex> lock(mtx);
       if(world->finished())return true;
@@ -2950,8 +2949,19 @@ struct GameSession {
       for(auto&ex:carr)if(ex)n++;
       return n==g_args.num_players;
     }
-
+    void send_seed_to_all(){
+      lock_guard<mutex> lock(mtx);
+      vector<int> is_alive;world->is_alive(is_alive);
+      string seed(sizeof(uint32_t),0);
+      *(uint32_t*)seed.data()=g_args.seed_strategies;
+      for(int i=0;i<g_args.num_players;i++){
+        if(is_alive[i]&&session.connected[i]){
+          session.carr[i]->send(seed);
+        }
+      }
+    }
     void send_vpow_to_all(){
+      lock_guard<mutex> lock(mtx);
       vector<int> is_alive;world->is_alive(is_alive);
       string vpow;
       for(int i=0;i<g_args.num_players;i++){
@@ -4572,6 +4582,7 @@ int QapLR_main(int argc,char*argv[]){
           for(auto&ex:players)if(ex.client_id>=0){n++;if(ex.broken)a--;}
           bool full=n==players.size();
           if(full){
+            session.send_seed_to_all();
             session.send_vpow_to_all();
             session.clock.Start();
           }

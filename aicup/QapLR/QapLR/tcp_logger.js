@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-
+//прост тестил как работает сокет адаптер, вроде работает, больше этот файл не нужен.
 const net = require('net');
 
 function printHelp() {
