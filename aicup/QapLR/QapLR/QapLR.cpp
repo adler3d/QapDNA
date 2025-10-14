@@ -4586,7 +4586,11 @@ int QapLR_main(int argc,char*argv[]){
       //    int wtf=1;
       //  }
       //}
+      #ifdef _WIN32
       return QapLR_DoNice();
+      #else
+      return 0;
+      #endif
     }
 
     if (!args.player_names.empty()) {
