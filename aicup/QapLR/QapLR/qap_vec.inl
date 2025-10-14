@@ -1,6 +1,6 @@
 typedef double real;
-template<typename TYPE>inline TYPE Lerp(const TYPE&A,const TYPE&B,const real&v){return A+(B-A)*v;}
-template<class TYPE>inline TYPE Clamp(const TYPE&v,const TYPE&a,const TYPE&b){return max(a,min(v, b));}
+template<typename TYPE>inline TYPE Lerp(TYPE A,TYPE B,real v){return A+(B-A)*v;}
+template<class TYPE>inline TYPE Clamp(TYPE v,TYPE a,TYPE b){return max(a,min(v, b));}
 const real Pi=3.14159265;
 const real Pi2=Pi*2;
 const real PiD2=Pi/2;

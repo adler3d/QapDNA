@@ -2832,6 +2832,7 @@ unique_ptr<i_world> TGame_mk_world(const string&world);
 struct GameSession {
     unique_ptr<i_world> world;
     vector<unique_ptr<i_world>> ws;
+    vector<unique_ptr<i_world>> ws2;
     struct TickState {
         int tick = 0;
         vector<bool> received;          // получена ли команда от игрока i
@@ -2841,6 +2842,7 @@ struct GameSession {
     };
     TickState current_tick;
     vector<TickState> history;
+    vector<vector<string>> replay;
     QapClock clock;
     mutable mutex mtx;
     vector<bool> connected;
@@ -2870,7 +2872,7 @@ struct GameSession {
       world=TGame_mk_world(g_args.world_name);
       world->init(g_args.seed_initial);
       start_new_tick();
-      if(g_args.gui_mode)ws.push_back(world->clone());
+      if(g_args.gui_mode||g_args.replay_in_file)ws.push_back(world->clone());
     }
     void submit_command(int player_id, const string& cmd) {
         lock_guard<mutex> lock(mtx);
@@ -4446,15 +4448,6 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
 
     // === Обработка режимов ===
 
-    if (args.mode == ProgramArgs::Mode::ReplayIn) {
-        if (!positional_args.empty()) {
-            std::cerr << "Replay-in mode accepts no positional arguments\n";
-            return false;
-        }
-        // player_names можно проверить позже (по данным из реплея)
-        return true;
-    }
-
     // Для Normal и ReplayOut: должно быть ровно 4 позиционных аргумента
     if (positional_args.size() != 4) {
         std::cerr << "Expected exactly 4 positional arguments: <world> <players> <seed_init> <seed_strat>\n";
@@ -4500,6 +4493,15 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
         }
     }
 
+    if (args.mode == ProgramArgs::Mode::ReplayIn) {
+        //if (!positional_args.empty()) {
+        //    std::cerr << "Replay-in mode accepts no positional arguments\n";
+        //    return false;
+        //}
+        // player_names можно проверить позже (по данным из реплея)
+        return true;
+    }
+
     return true;
 }
 int QapLR_main(int argc,char*argv[]){
@@ -4543,6 +4545,48 @@ int QapLR_main(int argc,char*argv[]){
             }
             if (args.gui_mode) cerr << "GUI enabled\n";
             break;
+    }
+
+    if(args.replay_in_file){
+      auto s=file_get_contents(*args.replay_in_file);
+      QapLoadFromStr(session.replay,s);
+      g_args.gui_mode=true;
+      session.init();//auto w=session.world->clone();int i=-1;session.ws2.push_back(w->clone());
+      for(auto&ex:session.replay){
+        //i++;if(i>30)break;
+        for(int i=0;i<g_args.num_players;i++){
+          string outerr;
+          session.world->use(i,ex[i],outerr);
+        }
+        session.world->step();
+        session.ws.push_back(session.world->clone());
+      }
+      //auto replay2=session.replay;replay2={};
+      //auto mem=file_get_contents("replay14.cmds");
+      //QapLoadFromStr(replay2,mem);int j=-1;
+      //for(auto&ex:replay2){
+      //  j++;auto&ey=session.replay[j];
+      //  for(int i=0;i<g_args.num_players;i++){
+      //    if(ey[i]!=ex[i]||1){
+      //      int what=1;
+      //      TGame::t_splinter::t_world::t_cmd a,b;
+      //      QapLoadFromStr(a,ey[i]);
+      //      QapLoadFromStr(b,ex[i]);
+      //      int gg=1;
+      //    }
+      //    string outerr;
+      //    w->use(i,ex[i],outerr);
+      //  }
+      //  w->step();
+      //  session.ws2.push_back(w->clone());
+      //  string vpow2,vpow1;
+      //  session.ws[j+1]->get_vpow(0,vpow1);
+      //  w->get_vpow(0,vpow2);
+      //  if(vpow2!=vpow1){
+      //    int wtf=1;
+      //  }
+      //}
+      return QapLR_DoNice();
     }
 
     if (!args.player_names.empty()) {

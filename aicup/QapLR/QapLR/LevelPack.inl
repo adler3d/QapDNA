@@ -161,7 +161,8 @@ public:
     vec2d mpos=kb.MousePos;
     qDev.BindTex(0, nullptr);
     frame=-1;
-    if(set_frame)frame=mpos.x+pviewport->size.x/2;
+    auto n=session.ws.size();auto W=pviewport->size.x;
+    if(set_frame)frame=Lerp<real>(0,n+1,(mpos.x+W*0.5)/W);
     auto&ws=session.ws;
     if(frame<0||frame>=ws.size())frame=-1;
     lock_guard<mutex> lock(session.mtx);
@@ -170,6 +171,11 @@ public:
     if(api==0){
       world.renderV0(qDev);
     }
+    //auto&w2=frame<0||frame>=session.ws2.size()?*session.world:*session.ws2[frame];
+    //auto api2=w2.get_render_api_version();
+    //if(api2==0){
+    //  w2.renderV0(qDev);
+    //}
   }
   vector<int> AdlerCraftMap;
   MapGenerator AdlerCraft_mapgen;
