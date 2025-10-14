@@ -340,7 +340,17 @@ public:
         if (!isRunning) return;
 
         isRunning = false;
-
+        {
+            socket_t dummy = socket(AF_INET, SOCK_STREAM, 0);
+            if (dummy != INVALID_SOCKET) {
+                sockaddr_in addr{};
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(port);
+                addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                connect(dummy, (sockaddr*)&addr, sizeof(addr));
+                CLOSESOCKET(dummy);
+            }
+        }
         // Закрываем все клиентские сокеты
         {
             std::lock_guard<std::mutex> lock(clientsMutex);
@@ -396,6 +406,7 @@ public:
             socklen_t client_len = sizeof(client_addr);
 #endif
             socket_t client_socket = accept(serverSocket, (sockaddr*)&client_addr, &client_len);
+            if(!isRunning)break;
             if (client_socket == INVALID_SOCKET) {
                 if (isRunning) {
                     std::cerr << "Accept failed\n";
