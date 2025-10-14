@@ -1,5 +1,6 @@
 ﻿#if(0)
-#include "socket_adapter.cpp"
+//#include "socket_adapter.cpp"
+#include "counter.cpp"
 #else
 #ifdef _WIN32
   #define WIN32_LEAN_AND_MEAN
@@ -39,7 +40,6 @@ typedef std::chrono::duration<double, std::milli> dms;
 double dmsc(dms diff){return diff.count();}
 using namespace std;
 #include "thirdparty/sweepline/sweepline.hpp"
-template<typename TYPE>TYPE Sign(TYPE value){if(value>0){return TYPE(+1);}else{return TYPE(value<0?-1:0);}};
 #define QAP_DEBUG
 #ifdef _WIN32
 class QapClock{
@@ -261,103 +261,7 @@ struct TScreenMode{
 };
 struct TSys{int UPS=64;TScreenMode SM;bool UPS_enabled=true;bool NeedClose=false;void ResetClock(){}}; TSys Sys;
 static const int Sys_UPD=64;
-inline string IToS(const int&val){return to_string(val);}
-inline string FToS(const double&val){return to_string(val);}
-inline string FToS2(const float&val){std::stringstream ss;ss<<std::fixed<<std::setprecision(2)<<val;return ss.str();}
-#ifdef __EMSCRIPTEN__
-#define __debugbreak()EM_ASM({throw new Error("__debugbreak");});
-#endif
-#ifdef QAP_UNIX
-#include <iostream>
-#include <signal.h>
-#define __debugbreak()raise(SIGTRAP);
-#endif
-inline bool SysQapAssert(const string&exp,bool&ignore,const string&filename,const int line,const string&funcname);
-inline bool SysQapDebugMsg(const string&msg,bool&ignore,const string&filename,const int line,const string&funcname);
-#if(defined(_DEBUG)||defined(QAP_DEBUG))
-#define QapAssert(_Expression)if(!bool(_Expression)){static bool ignore=false;if(SysQapAssert((#_Expression),ignore,__FILE__,__LINE__,__FUNCTION__))__debugbreak();}
-#else
-#define QapAssert(_Expression)if(bool(_Expression)){};
-#endif
-#if(defined(_DEBUG)||defined(QAP_DEBUG))
-#define QapDebugMsg(_Message){static bool ignore=false;if(SysQapDebugMsg((_Message),ignore,__FILE__,__LINE__,__FUNCTION__))__debugbreak();}
-#else
-#define QapDebugMsg(_Message)
-#endif
-#if(defined(_DEBUG)||defined(QAP_DEBUG))
-#define QapNoWay(){QapDebugMsg("no way!");}
-#else
-#define QapNoWay()
-#endif
-enum QapMsgBoxRetval{qmbrSkip,qmbrBreak,qmbrIgnore};
-inline int WinMessageBox(const string&caption,const string&text)
-{
-  #ifdef _WIN32
-  string full_text=text+"\n\n    [Skip]            [Break]            [Ignore]";
-  const int nCode=MessageBoxA(NULL,full_text.c_str(),caption.c_str(),MB_CANCELTRYCONTINUE|MB_ICONHAND|MB_SETFOREGROUND|MB_TASKMODAL);
-  QapMsgBoxRetval retval=qmbrSkip;
-  if(IDCONTINUE==nCode)retval=qmbrIgnore;
-  if(IDTRYAGAIN==nCode)retval=qmbrBreak;
-  return retval;
-  #else
-  #ifdef __EMSCRIPTEN__
-  EM_ASM({alert(UTF8ToString($0)+"\n"+UTF8ToString($1));},int(caption.c_str()),int(text.c_str()));
-  return qmbrBreak;
-  #endif
-  #endif
-  #ifdef QAP_UNIX
-  std::cerr<<"WinMessageBox:"+caption+"\n"+text<<std::endl;
-  return qmbrBreak;
-  #endif
-}
-typedef int(*TQapMessageBox)(const string&caption,const string&text);
-struct TMessageBoxCaller
-{
-  static int Call(const string&caption,const string&text)
-  {
-    return Get()(caption,text);
-  }
-  static TQapMessageBox&Get()
-  {
-    static TQapMessageBox func=WinMessageBox;
-    return func;
-  }
-  struct t_hack
-  {
-    TQapMessageBox old;
-    t_hack(TQapMessageBox func)
-    {
-      old=Get();
-      Get()=func;
-    }
-    ~t_hack()
-    {
-      Get()=old;
-    }
-  };
-};
-inline bool SysQapAssert(const string&exp,bool&ignore,const string&filename,const int line,const string&funcname)
-{
-  if(ignore)return false;
-  std::string text="Source file :\n"+filename
-      +"\n\nLine : "+std::to_string(line)
-      +"\n\nFunction :\n"+funcname
-      +"\n\nAssertion failed :\n"+exp;
-  auto retval=(QapMsgBoxRetval)TMessageBoxCaller::Call("Assertion failed",text);
-  if(qmbrIgnore==retval)ignore=true;
-  return qmbrBreak==retval;
-}
-inline bool SysQapDebugMsg(const string&msg,bool&ignore,const string&filename,const int line,const string&funcname)
-{
-  if(ignore)return false;
-  std::string text="Source file :\n"+filename
-      +"\n\nLine : "+std::to_string(line)
-      +"\n\nFunction :\n"+funcname
-      +"\n\nDebug message :\n"+msg;
-  auto retval=(QapMsgBoxRetval)TMessageBoxCaller::Call("Debug message",text);
-  if(qmbrIgnore==retval)ignore=true;
-  return qmbrBreak==retval;
-}
+#include "qap_assert.inl"
 template<typename TYPE>
 class QapPool{
 public:
@@ -448,415 +352,7 @@ struct ProgramArgs {
   bool show_version = false;
 };
 ProgramArgs g_args;
-typedef double real;
-template<typename TYPE>inline TYPE Lerp(const TYPE&A,const TYPE&B,const real&v){return A+(B-A)*v;}
-template<class TYPE>inline TYPE Clamp(const TYPE&v,const TYPE&a,const TYPE&b){return max(a,min(v, b));}
-const real Pi=3.14159265;
-const real Pi2=Pi*2;
-const real PiD2=Pi/2;
-const real PiD4=Pi/4;
-//template<typename TYPE>TYPE Sign(const TYPE&value){if(value>0){return TYPE(+1);}else{return TYPE(value<0?-1:0);};};
-//template<typename TYPE>bool InDip(const TYPE&&min,const TYPE&&val,const TYPE&&max){return (val>=min)&&(val<=max);};
-//template<typename TYPE,typename TYPEB,typename TYPEC>bool InDip(const TYPE&&min,const TYPEB&&val,const TYPEC&&maxC){return (val>=min)&&(val<=max);};
-template<typename TYPE,typename TYPEB,typename TYPEC>bool InDip(const TYPE min,const TYPEB val,const TYPEC max){return (val>=min)&&(val<=max);};
-template<class TYPE>static TYPE&vec_add_back(vector<TYPE>&arr){arr.resize(arr.size()+1);return arr.back();}
-template<class TYPE>static TYPE&qap_add_back(vector<TYPE>&arr){arr.resize(arr.size()+1);return arr.back();}
-struct vec2d{
-public:
-  real x,y;
-  vec2d():x(0),y(0){}
-  vec2d(real x,real y):x(x),y(y){}
-  vec2d(const vec2d&v):x(v.x),y(v.y){}
-  vec2d&operator=(const vec2d&v){x=v.x;y=v.y;return *this;}
-  vec2d operator+()const{return *this;}
-  vec2d operator-()const{return vec2d(-x,-y);}
-  vec2d&operator+=(const vec2d&v){x+=v.x;y +=v.y;return *this;}
-  vec2d&operator-=(const vec2d&v){x-=v.x; y-=v.y;return *this;}
-  vec2d&operator*=(const real&f){x*=f;y*=f;return *this;}
-  vec2d&operator/=(const real&f){x/=f;y/=f;return *this;}
-public:
-  vec2d Rot(const vec2d&OX)const{real M=OX.Mag();return vec2d(((x*+OX.x)+(y*OX.y))/M,((x*-OX.y)+(y*OX.x))/M);}
-  vec2d UnRot(const vec2d&OX)const{real M=OX.Mag();if(M==0.0f){return vec2d(0,0);};return vec2d(((x*OX.x)+(y*-OX.y))/M,((x*OX.y)+(y*+OX.x))/M);}
-  vec2d Ort()const{return vec2d(-y,x);}
-  vec2d Norm()const{if((x==0)&&(y==0)){return vec2d(0,0);}return vec2d(x/this->Mag(),y/this->Mag());}
-  vec2d SetMag(const real&val)const{return this->Norm()*val;}
-  vec2d Mul(const vec2d&v)const{return vec2d(x*v.x,y*v.y);}
-  vec2d Div(const vec2d&v)const{return vec2d(v.x!=0?x/v.x:x,v.y!=0?y/v.y:y);}
-  real GetAng()const{return atan2(y,x);}
-  real Mag()const{return sqrt(x*x+y*y);}
-  real SqrMag()const{return x*x+y*y;}
-public:
-  friend vec2d operator+(const vec2d&u,const vec2d&v){return vec2d(u.x+v.x,u.y+v.y);}
-  friend vec2d operator-(const vec2d&u,const vec2d&v){return vec2d(u.x-v.x,u.y-v.y);}
-  friend vec2d operator*(const vec2d&u,const real&v){return vec2d(u.x*v,u.y*v);}
-  friend vec2d operator*(const real&u,const vec2d&v){return vec2d(u*v.x,u*v.y);}
-  friend bool operator==(const vec2d&u,const vec2d&v){return (u.x==v.x)||(u.y==v.y);}
-  friend bool operator!=(const vec2d&u,const vec2d&v){return (u.x!=v.x)||(u.y!=v.y);}
-public:
-  //friend inline static vec2d Vec2dEx(const real&ang,const real&mag){return vec2d(cos(ang)*mag,sin(ang)*mag);}
-public:
-  #ifdef BOX2D_H
-    operator b2Vec2()const{return b2Vec2(x,y);}
-    vec2d(const b2Vec2& v):x(v.x),y(v.y){}
-  #endif
-public:
-  real dist_to(const vec2d&p)const{return (p-*this).Mag();}
-  real sqr_dist_to(const vec2d&p)const{return (p-*this).SqrMag();}
-  bool dist_to_point_less_that_r(const vec2d&p,real r)const{return (p-*this).SqrMag()<r*r;}
-public:
-  bool dist_to_point_more_that_r(const vec2d&p,real r)const{return (p-*this).SqrMag()>r*r;}
-  bool sqrdist_to_point_more_that_rr(const vec2d&p,real rr)const{return (p-*this).SqrMag()>rr;}
-  bool sqrdist_to_point_less_that_rr(const vec2d&p,real rr)const{return (p-*this).SqrMag()<rr;}
-public:
-  static vec2d min(const vec2d&a,const vec2d&b){
-    return vec2d(std::min(a.x,b.x),std::min(a.y,b.y));
-  }
-  static vec2d max(const vec2d&a,const vec2d&b){
-    return vec2d(std::max(a.x,b.x),std::max(a.y,b.y));
-  }
-  static void comin(vec2d&a,const vec2d&b){a=min(a,b);}
-  static void comax(vec2d&a,const vec2d&b){a=max(a,b);}
-  static vec2d sign(const vec2d&p){return vec2d(Sign(p.x),Sign(p.y));}
-};
-inline vec2d Vec2dEx(const real&ang,const real&mag){return vec2d(cos(ang)*mag,sin(ang)*mag);}
-inline int round(const real&val){return int(val>=0?val+0.5:val-0.5);}//{return int(val);}
-inline static real dot(const vec2d&a,const vec2d&b){return a.x*b.x+a.y*b.y;}
-inline static real cross(const vec2d&a,const vec2d&b){return a.x*b.y-a.y*b.x;}
-typedef unsigned char uchar;
-class QapColor{
-public:
-  typedef QapColor SelfClass;
-  uchar b,g,r,a;
-  QapColor():b(255),g(255),r(255),a(255){}
-  QapColor(uchar A,uchar R,uchar G,uchar B):a(A),r(R),g(G),b(B){}
-  QapColor(uchar R,uchar G,uchar B):a(255),r(R),g(G),b(B){}
-  QapColor(const QapColor& v):a(v.a),r(v.r),g(v.g),b(v.b){}
-  QapColor(const unsigned int&v){*this=(QapColor&)v;}
-  bool operator==(const QapColor&v)const{return (a==v.a)&&(r==v.r)&&(g==v.g)&&(b==v.b);}
-  QapColor&operator=(const QapColor&v){a=v.a; r=v.r; g=v.g; b=v.b; return *this;}
-  QapColor operator+()const{return *this;}
-  QapColor&operator*=(const QapColor&v){
-    a=Clamp(int(a)*int(v.a)/255,0,255);
-    r=Clamp(int(r)*int(v.r)/255,0,255);
-    g=Clamp(int(g)*int(v.g)/255,0,255);
-    b=Clamp(int(b)*int(v.b)/255,0,255);
-    return *this;
-  }
-  QapColor&operator+=(const QapColor&v){
-    a=Clamp(int(a)+int(v.a),0,255);
-    r=Clamp(int(r)+int(v.r),0,255);
-    g=Clamp(int(g)+int(v.g),0,255);
-    b=Clamp(int(b)+int(v.b),0,255);
-    return *this;
-  }
-  QapColor&operator-=(const QapColor&v){
-    a=Clamp(int(a)-int(v.a),0,255);
-    r=Clamp(int(r)-int(v.r),0,255);
-    g=Clamp(int(g)-int(v.g),0,255);
-    b=Clamp(int(b)-int(v.b),0,255);
-    return *this;
-  }
-  QapColor operator*(const QapColor&v)const{
-    return QapColor(int(a)*int(v.a)/255,int(r)*int(v.r)/255,int(g)*int(v.g)/255,int(b)*int(v.b)/255);
-  }
-  QapColor operator+(const QapColor&v)const{
-    return QapColor(Clamp(int(a)+int(v.a),0,255),Clamp(int(r)+int(v.r),0,255),Clamp(int(g)+int(v.g),0,255),Clamp(int(b)+int(v.b),0,255));
-  }
-  QapColor operator-(const QapColor&v)const{
-    return QapColor(Clamp(int(a)-int(v.a),0,255),Clamp(int(r)-int(v.r),0,255),Clamp(int(g)-int(v.g),0,255),Clamp(int(b)-int(v.b),0,255));
-  }
-  QapColor&operator*=(real f){
-    b=uchar(Clamp(real(b)*f,0.0,255.0));
-    g=uchar(Clamp(real(g)*f,0.0,255.0));
-    r=uchar(Clamp(real(r)*f,0.0,255.0));
-    return *this;
-  }
-  QapColor&operator/=(real r){
-    real f=1.0/r;
-    b=uchar(Clamp(real(b)*f,0.0,255.0));
-    g=uchar(Clamp(real(g)*f,0.0,255.0));
-    r=uchar(Clamp(real(r)*f,0.0,255.0));
-    return *this;
-  }
-  operator unsigned int&()const{return *(unsigned int*)this;}
-  uchar GetLuminance()const{return (int(r)+int(g)+int(b))/3;}
-  QapColor toGray()const{auto l=GetLuminance(); return QapColor(a,l,l,l);}
-  inline static QapColor Mix(const QapColor&A,const QapColor&B,const real&t){
-    real ct=Clamp(t,0.0,1.0), tA=1.0-ct, tB=ct;
-    QapColor O;
-    O.b=uchar(Clamp(real(A.b)*tA+real(B.b)*tB,0.0,255.0));
-    O.g=uchar(Clamp(real(A.g)*tA+real(B.g)*tB,0.0,255.0));
-    O.r=uchar(Clamp(real(A.r)*tA+real(B.r)*tB,0.0,255.0));
-    O.a=uchar(Clamp(real(A.a)*tA+real(B.a)*tB,0.0,255.0));
-    return O;
-  }
-  inline static QapColor HalfMix(const QapColor&A,const QapColor&B){
-    QapColor O;
-    O.b=(int(A.b)+int(B.b))>>1;
-    O.g=(int(A.g)+int(B.g))>>1;
-    O.r=(int(A.r)+int(B.r))>>1;
-    O.a=(int(A.a)+int(B.a))>>1;
-    return O;
-  }
-  inline QapColor inv_rgb()const{return QapColor(a,0xff-r,0xff-g,0xff-b);}
-  inline QapColor swap_rg()const{return QapColor(a,b,g,r);}
-};
-class vec2f{
-public:
-  typedef vec2f SelfClass;
-  float x,y;
-  vec2f():x(0),y(0){}
-  vec2f(const vec2d&v):x(v.x),y(v.y){}
-  vec2f(float x,float y):x(x),y(y){}
-  void set_zero(){x=0.0f;y=0.0f;}
-  friend vec2f operator*(const vec2f&u,const float&v){return vec2f(u.x*v,u.y*v);}
-  friend vec2f operator*(const float&u,const vec2f&v){return vec2f(u*v.x,u*v.y);}
-  friend vec2f operator+(const vec2f&u,const vec2f&v){return vec2f(u.x+v.x,u.y+v.y);}
-  friend vec2f operator-(const vec2f&u,const vec2f&v){return vec2f(u.x-v.x,u.y-v.y);}
-  friend void operator*=(vec2f&ref,float r){ref.x*=r;ref.y*=r;}
-  void operator+=(const vec2d&v){x+=v.x;y+=v.y;}
-  void operator-=(const vec2d&v){x-=v.x;y-=v.y;}
-  friend vec2f operator*(float u,const vec2f&v){return vec2f(u*v.x,u*v.y);}
-  operator vec2d()const{return vec2d(x,y);}
-  friend bool operator==(const vec2f&u,const vec2f&v){return (u.x==v.x)&&(u.y==v.y);}
-  friend bool operator!=(const vec2f&u,const vec2f&v){return (u.x!=v.x)||(u.y!=v.y);}
-  vec2f operator-()const{return vec2f(-x,-y);}
-};
-inline static real dot(const vec2f&a,const vec2f&b){return a.x*b.x+a.y*b.y;}
-inline static real cross(const vec2f&a,const vec2f&b){return a.x*b.y-a.y*b.x;}
-class QapMat22{
-public:
-  vec2f col1,col2;
-  QapMat22():col1(1,0),col2(0,1){}
-  QapMat22(const vec2f&c1,const vec2f&c2):col1(c1),col2(c2){}
-  QapMat22(float a11,float a12,float a21,float a22){col1.x=a11;col1.y=a21;col2.x=a12;col2.y=a22;}
-  explicit QapMat22(float ang){
-    float c=cosf(ang),s=sinf(ang);
-    col1.x=c; col2.x=-s; col1.y=s; col2.y=+c;
-  }
-  void set(const vec2f&c1,const vec2f&c2){col1=c1;col2=c2;}
-  void set(float ang){
-    float c=cosf(ang),s=sinf(ang);
-    col1.x=c; col2.x=-s; col1.y=s; col2.y=+c;
-  }
-  void set_ident(){col1.x=1.0f;col2.x=0.0f;col1.y=0.0f;col2.y=1.0f;}
-  void set_zero(){col1.x=0.0f;col2.x=0.0f;col1.y=0.0f;col2.y=0.0f;}
-  float GetAngle()const{return atan2(col1.y,col1.x);}
-  void mul(real r){col1*=r;col2*=r;}
-};
-
-class transform2f{
-public:
-  vec2f p; QapMat22 r;
-  transform2f(){}
-  transform2f(const vec2f&p,const QapMat22&r):p(p),r(r){}
-  explicit transform2f(const vec2f&p):p(p){}
-  void set_ident(){p.set_zero();r.set_ident();}
-  void set(const vec2d&p,float ang){this->p=p;this->r.set(ang);}
-  float getAng()const{return atan2(r.col1.y,r.col1.x);}
-  friend vec2f operator*(const transform2f&T,const vec2f&v){
-    float x=(+T.r.col1.x*v.x+T.r.col2.x*v.y)+T.p.x;
-    float y=(+T.r.col1.y*v.x+T.r.col2.y*v.y)+T.p.y;
-    return vec2f(x,y);
-  }
-};
-typedef transform2f b2Transform;
-  
-inline transform2f MakeZoomTransform(const vec2d&zoom)
-{
-  transform2f tmp(vec2f(0,0),QapMat22(vec2f(zoom.x,0.f),vec2f(0.f,zoom.y)));
-  return tmp;
-}
-class vec3f{
-public:
-  float x,y,z;
-  //vec3f(const D3DVECTOR&v):D3DVECTOR(v){}
-  vec3f(){x=0;y=0;z=0;}
-  vec3f(float x,float y,float z)
-  {
-    #define F(a)this->a=a;
-    F(x);F(y);F(z);
-    #undef F
-  }
-public:
-  bool dist_to_point_less_that_r(const vec3f&p,real r)const{return (p-*this).SqrMag()<r*r;}
-  bool dist_to_point_less_that_r(const vec3f&p,float r)const{return (p-*this).SqrMag()<r*r;}
-  friend vec3f operator*(const float&u,const vec3f&v)
-  {
-    return vec3f(v.x*u,v.y*u,v.z*u);
-  }
-  friend vec3f operator*(const vec3f&v,const float&u)
-  {
-    return vec3f(v.x*u,v.y*u,v.z*u);
-  }
-  friend vec3f operator+(const vec3f&v,const vec3f&u)
-  {
-    return vec3f(v.x+u.x,v.y+u.y,v.z+u.z);
-  }
-  friend vec3f operator-(const vec3f&v,const vec3f&u)
-  {
-    return vec3f(v.x-u.x,v.y-u.y,v.z-u.z);
-  }
-  void operator*=(const float&k)
-  {
-    x*=k;
-    y*=k;
-    z*=k;
-  }
-  bool operator==(const vec3f&v)const
-  {
-    auto&a=*this;
-    bool xok=a.x==v.x;
-    bool yok=a.y==v.y;
-    bool zok=a.z==v.z;
-    return xok&&yok&&zok;
-  }
-  bool operator!=(const vec3f&v)const
-  {
-    return !operator==(v);
-  }
-  void operator+=(const vec3f&v)
-  {
-    x+=v.x;
-    y+=v.y;
-    z+=v.z;
-  }
-  void operator-=(const vec3f&v)
-  {
-    x-=v.x;
-    y-=v.y;
-    z-=v.z;
-  }
-  vec3f operator+()const{return *this;}
-  vec3f operator-()const{return *this*-1;}
-  vec3f RawMul(const vec3f&b)const
-  {
-    auto&a=*this;
-    return vec3f(a.x*b.x,a.y*b.y,a.z*b.z);
-  }
-  vec3f RawMul(float x,float y,float z)const
-  {
-    auto&a=*this;
-    return vec3f(a.x*x,a.y*y,a.z*z);
-  }
-  vec3f Mul(const vec3f&b)const
-  {
-    auto&a=*this;
-    return vec3f(a.x*b.x,a.y*b.y,a.z*b.z);
-  }
-  vec3f Mul(float x,float y,float z)const
-  {
-    auto&a=*this;
-    return vec3f(a.x*x,a.y*y,a.z*z);
-  }
-  float Mag()const
-  {
-    return sqrt(x*x+y*y+z*z);
-  }
-  float SqrMag()const
-  {
-    return x*x+y*y+z*z;
-  }
-  vec3f Norm()const
-  {
-    if((x==0)&&(y==0)&&(z==0))
-    {
-      return vec3f(0,0,0);
-    }
-    auto k=1.0f/Mag();
-    return vec3f(x*k,y*k,z*k);
-  }
-  vec3f cross(const vec3f&b)const
-  {
-    auto&a=*this;
-    return vec3f(
-      +(a.y*b.z-a.z*b.y),
-      -(a.x*b.z-a.z*b.x),
-      +(a.x*b.y-a.y*b.x)
-    );
-  }
-  float dot(const vec3f&b)const
-  {
-    auto&a=*this;
-    return (
-      a.x*b.x+
-      a.y*b.y+
-      a.z*b.z
-    );
-  }
-};
-inline float dot(const vec3f&a,const vec3f&b){return a.dot(b);}
-//inline float dot(const vec3d&a,const vec3d&b){return a.dot(b);}
-inline vec3f cross(const vec3f&a,const vec3f&b){return a.cross(b);}
-//inline vec3d cross(const vec3d&a,const vec3d&b){return a.cross(b);}
-class vec2i{
-public:
-  typedef vec2i SelfClass;
-  int x, y;
-  vec2i():x(0),y(0){}
-  vec2i(int x,int y):x(x),y(y){}
-  friend vec2i operator*(int u,const vec2i&v){return vec2i(u*v.x,u*v.y);}
-  friend vec2i operator*(const vec2i&v,int u){return vec2i(u*v.x,u*v.y);}
-  friend vec2i operator/(const vec2i&v,int d){return vec2i(v.x/d,v.y/d);}
-  friend vec2i operator+(const vec2i&u,const vec2i&v){return vec2i(u.x+v.x,u.y+v.y);}
-  friend vec2i operator-(const vec2i&u,const vec2i&v){return vec2i(u.x-v.x,u.y-v.y);}
-  void operator+=(const vec2i&v){x+=v.x;y+=v.y;}
-  void operator-=(const vec2i&v){x-=v.x;y-=v.y;}
-  int SqrMag()const{return x*x+y*y;}
-  float Mag()const{return sqrt(float(x*x+y*y));}
-  operator vec2d()const{return vec2d(x,y);}
-  operator vec2f()const{return vec2f(x,y);}
-  vec2i operator+()const{return vec2i(+x,+y);}
-  vec2i operator-()const{return vec2i(-x,-y);}
-  friend bool operator==(const vec2i&u,const vec2i&v){return (u.x==v.x)&&(u.y==v.y);}
-  friend bool operator!=(const vec2i&u,const vec2i&v){return (u.x!=v.x)||(u.y!=v.y);}
-  static vec2i fromVec2d(const vec2d&v){return vec2i(v.x,v.y);}
-};
-struct Dip2i{
-  int a,b;
-  Dip2i(int a,int b):a(a),b(b){}
-  void Take(int x){a=min(a,x);b=max(b,x);}
-  Dip2i Norm()const{return Dip2i(min(a,b),max(a,b));}
-  int Mag()const{return b-a;}
-  struct Transform{
-    float x,s;
-    Transform(float x,float s):x(x),s(s){}
-    Transform(const Dip2i&from,const Dip2i&to){
-      s=float(to.Norm().Mag())/float(from.Norm().Mag());
-      x=to.a-from.a;
-    }
-    float operator*(int v){return x+v*s;}
-  };
-};
-struct vec4f{
-public:
-  float b,g,r,a;
-  //struct{float x,y,z,w;};
-  vec4f(){}
-  vec4f(float b,float g,float r,float a):b(b),g(g),r(r),a(a){}
-  vec4f(const QapColor&ref):b(ref.b/255.f),g(ref.g/255.f),r(ref.r/255.f),a(ref.a/255.f){}
-  vec4f&operator+=(const vec4f&v){b+=v.b;g+=v.g;r+=v.r;a+=v.a;return *this;}
-  vec4f&operator*=(const float&k){b*=k;g*=k;r*=k;a*=k;return *this;}
-  friend vec4f operator*(const float&u,const vec4f&v){return vec4f(u*v.b,u*v.g,u*v.r,u*v.a);}
-  friend vec4f operator+(const vec4f&u,const vec4f&v){return vec4f(u.b+v.b,u.g+v.g,u.r+v.r,u.a+v.a);}
-  #define F(r)Clamp(int(r*255),int(0),int(255))
-  QapColor GetColor(){return QapColor(F(a),F(r),F(g),F(b));}
-  #undef F
-};
-union vec4i{
-public:
-  struct{int x,y,z,w;};
-  struct{int b,g,r,a;};
-  vec4i(int b,int g,int r,int a):b(b),g(g),r(r),a(a){}
-  vec4i(const QapColor&ref):b(ref.b),g(ref.g),r(ref.r),a(ref.a){}
-  vec4i&operator+=(const vec4i&v){b+=v.b;g+=v.g;r+=v.r;a+=v.a;return *this;}
-  vec4i operator*(const int&v){return vec4i(x*v,y*v,z*v,w*v);}
-  vec4i operator/(const int&v){return vec4i(x/v,y/v,z/v,w/v);}
-  vec4i operator+(const vec4i&v){return vec4i(x+v.x,y+v.y,z+v.z,w+v.w);}
-  #define F(r)Clamp(int(r),int(0),int(255))
-  QapColor GetColor(){return QapColor(F(a),F(r),F(g),F(b));}
-  #undef F
-};
+#include "qap_vec.inl"
 inline bool CD_Rect2Point(vec2d A,vec2d B,vec2d P)
 {
   vec2d &p=P;vec2d a(min(A.x,B.x),min(A.y,B.y)),b(max(A.x,B.x),max(A.y,B.y));
@@ -912,25 +408,6 @@ string systime_to_str(const SYSTEMTIME&st){
 string filetime_to_localstr(const FILETIME&ft){return systime_to_str(filetime_to_localtime(ft));}
 string local_cur_date_str_v4(){auto lt=get_percise_localtime();return systime_to_str(lt);}
 #endif
-template<class VECTOR_TYPE>
-void qap_clean_if_deaded(VECTOR_TYPE&arr)
-{
-  size_t last=0;auto arr_size=arr.size();
-  for(size_t i=0;i<arr_size;i++)
-  {
-    auto&ex=arr[i];
-    if(ex.deaded)continue;
-    if(last!=i)
-    {
-      auto&ax=arr[last];
-      ax=std::move(ex);
-    }
-    last++;
-  }
-  if(last==arr.size())return;
-  arr.resize(last);
-}
-template<class TYPE>static bool qap_check_id(const vector<TYPE>&arr,int id){return id>=0&&id<arr.size();}
 template<class TYPE>
 inline static TYPE max(const TYPE&a,const TYPE&b){
   return a>b?a:b;
@@ -994,481 +471,7 @@ public:
   void setAtCenterScreen(){setAtCenter(getFullScreen());}
 };
 #endif
-using std::string;
-using std::vector;
-using std::map;
-using std::fstream;
-using std::iostream;
-using std::stringstream;
-using std::array;
-typedef double real;
-typedef long long int int64;
-typedef long long unsigned int uint64;
-typedef unsigned int uint;
-typedef unsigned char uchar;
-class CrutchIO{
-public:
-  static bool FileExist(const string&FN)
-  {
-    std::fstream f;
-    f.open(FN.c_str(),std::ios::in|std::ios::binary);
-    return f.is_open();
-  }
-private:
-  static int FileLength(iostream&f)
-  {
-    using namespace std;
-    f.seekg(0,ios::end);
-    auto L=f.tellg();
-    f.seekg(0,ios::beg);
-    return int(L);
-  };
-public:
-  int pos;
-  string mem;
-  CrutchIO():mem(""),pos(0){};
-  bool LoadFile(const string&FN)
-  {
-    using namespace std;
-    fstream f;
-    f.open(FN.c_str(),ios::in|ios::binary);
-    if(!f)return false;
-    int L=FileLength(f);
-    mem.resize(L);
-    if(L)f.read(&mem[0],L);
-    //printf("f->size=%i\n",L);
-    //printf("f->Chcount=%i\n",f._Chcount);
-    f.close(); pos=0;
-    return true;
-  };
-  bool SaveFile(const string&FN)
-  {
-    using namespace std;
-    fstream f;
-    f.open(FN.c_str(),ios::out|ios::binary);
-    if(!f)return false;
-    if(!mem.empty())f.write(&mem[0],mem.size());
-    f.close(); pos=0; int L=mem.size();
-    return true;
-  };
-  void read(char*c,int count)
-  {
-    for(int i=0;i<count;i++)c[i]=mem[pos++];//FIXME: тут можно юзать memcpy
-  };
-  void write(char*c,int count)
-  {
-    //mem.reserve(max(mem.capacity(),mem.size()+count));
-    int n=mem.size();
-    mem.resize(n+count);//Hint: resize гарантировано копирует содержимое.
-    for(int i=0;i<count;i++)mem[n+i]=c[i];//FIXME: тут можно юзать memcpy
-    pos+=count;
-  };
-};
-//-------------------------------------------//
-class QapIO{
-public:
-  QapIO(){}
-public:
-  virtual void SavePOD(void*p,int count)=0;
-  virtual void LoadPOD(void*p,int count)=0;
-  virtual bool TryLoad(int count)=0;
-  virtual void Crash()=0;
-  virtual bool IsCrashed()=0;
-  virtual bool IsSizeIO()=0;
-  virtual int GetSize()=0;
-  virtual void WriteTo(QapIO&ref)=0;
-public:
-  #define LIST(F)F(int)F(unsigned int)F(char)F(unsigned char)F(bool)F(int64)F(uint64)F(float)F(real)F(short)F(unsigned short)F(vec2i)F(vec2d)F(vec2f)
-  #define F(TYPE)void load(TYPE&ref){if(!TryLoad(sizeof(ref))){Crash();return;}LoadPOD(&ref,sizeof(ref));}
-  LIST(F)
-  #undef F
-  #define F(TYPE)void save(TYPE&ref){SavePOD(&ref,sizeof(ref));}
-  LIST(F)
-  #undef F
-  #undef LIST
-  void load(std::string&ref)
-  {
-    int size=0;
-    load(size);
-    if(size<0){Crash();return;}
-    if(!size){ref.clear();return;}
-    if(!TryLoad(size)){Crash();return;}
-    ref.resize(size);
-    LoadPOD(&ref[0],size);
-  }
-  void save(std::string&ref)
-  {
-    int size=ref.size();
-    save(size);
-    if(!size)return;
-    SavePOD(&ref[0],size);
-  }
-  template<class TYPE>
-  void load(std::vector<TYPE>&ref)
-  {
-    int size=0;
-    load(size);
-    if(size<0){Crash();return;}
-    ref.resize(size);
-    for(int i=0;i<size;i++){
-      load(ref[i]);
-    }
-  }
-  template<class TYPE>
-  void load_as_pod(std::vector<TYPE>&ref)
-  {
-    int size=0;
-    load(size);
-    if(size<0){Crash();return;}
-    ref.resize(size);
-    for(int i=0;i<size;i++){
-      LoadPOD(&ref[i],sizeof(TYPE));
-    }
-  }
-  template<class TYPE>
-  void save(std::vector<TYPE>&ref)
-  {
-    int size=ref.size();
-    save(size);
-    if(!size)return;
-    for(int i=0;i<size;i++){
-      save(ref[i]);
-    }
-  }
-  template<class TYPE>
-  void save_as_pod(std::vector<TYPE>&ref)
-  {
-    int size=ref.size();
-    save(size);
-    if(!size)return;
-    for(int i=0;i<size;i++){
-      SavePOD(&ref[i],sizeof(TYPE));
-    }
-  }
-  void write_raw_string(string&s){if(s.empty())return;SavePOD((void*)&s[0],s.size());}
-};
-//-------------------------------------------//
-class TDataIO:public QapIO{
-public:
-  CrutchIO IO;
-  bool crashed;
-  TDataIO():crashed(false),QapIO(){}
-  //TDataIO(const TDataIO&)=delete;
-  //TDataIO(TDataIO&)=delete;
-  //TDataIO(TDataIO&&)=delete;
-  //void operator=(const TDataIO&)=delete;
-  //void operator=(TDataIO&)=delete;
-  //void operator=(TDataIO&&)=delete;
-public:
-  void SavePOD(void*p,int count)
-  {
-    this->IO.write((char*)p,count);
-  }
-  void LoadPOD(void*p,int count)
-  {
-    int max_count=int(this->IO.mem.size())-int(this->IO.pos);
-    if(count>max_count)
-    {
-      QapAssert(count<=max_count);
-      return;
-    }
-    this->IO.read((char*)p,count);
-  }
-  bool TryLoad(int count)
-  {
-    auto max_size=int(IO.mem.size())-int(IO.pos);
-    return (count>=0)&&(max_size>=count);
-  }
-  void Crash()
-  {
-    IO.pos=IO.mem.size();
-    crashed=true;
-  }
-  bool IsCrashed()
-  {
-    return crashed;
-  }
-  bool IsSizeIO()
-  {
-    return false;
-  }
-  int GetSize()
-  {
-    return IO.mem.size();
-  }
-  void SaveTo(QapIO&Stream)
-  {
-    int size=IO.mem.size();
-    Stream.SavePOD(&size,sizeof(size));
-    if(!size)return;
-    Stream.SavePOD(&IO.mem.front(),size);
-  }
-  void LoadFrom(QapIO&Stream)
-  {
-    int size;
-    Stream.LoadPOD(&size,sizeof(size));
-    if(!size)return;
-    IO.mem.resize(size);
-    Stream.LoadPOD(&IO.mem.front(),size);
-  }
-  void WriteTo(QapIO&ref)
-  {
-    ref.write_raw_string(IO.mem);
-  }
-};
-//-------------------------------------------//
-class TSizeIO:public QapIO{
-public:
-  int size;
-  bool crashed;
-public:
-  TSizeIO():size(0),crashed(false),QapIO(){}
-  void SavePOD(void*p,int count){size+=count;}
-  void LoadPOD(void*p,int count){QapNoWay();Crash();}
-  bool TryLoad(int count){QapNoWay();Crash();return false;}
-  void Crash(){crashed=true;}
-  bool IsCrashed(){return crashed;}
-  bool IsSizeIO(){return true;}
-  int GetSize()
-  {
-    return size;
-  }
-  void WriteTo(QapIO&ref)
-  {
-    if(!ref.IsSizeIO()){QapNoWay();Crash();return;}
-    ref.SavePOD(nullptr,size);
-  }
-};
-namespace detail
-{
-  struct yes_type
-  {
-    char padding[1];
-  };
-  struct no_type
-  {
-    char padding[8];
-  };
-  template<bool condition,typename true_t,typename false_t>struct select;
-  template<typename true_t,typename false_t>struct select<true,true_t,false_t>
-  {
-    typedef true_t type;
-  };
-  template<typename true_t,typename false_t>struct select<false,true_t,false_t>
-  {
-    typedef false_t type;
-  };
-  template<class U,U x>struct test;
-  template<class TYPE>
-  static void TryDoReset(void*) {}
-  template<class TYPE>
-  static void TryDoReset(TYPE*Self,void(TYPE::ParentClass::*pDoReset)()=&TYPE::ParentClass::DoReset)
-  {
-    (Self->*pDoReset)();
-  }
-  template<class TYPE>
-  static void FieldTryDoReset(TYPE&p,...) {}
-  template<class TYPE,size_t SIZE>static void FieldTryDoReset(array<TYPE,SIZE>&arr)
-  {
-    for (int i=0;i<SIZE;i++)FieldTryDoReset(arr[i]);
-  }
-  static void FieldTryDoReset(unsigned short&ref)
-  {
-    ref=0;
-  };
-  static void FieldTryDoReset(short&ref)
-  {
-    ref=0;
-  };
-  static void FieldTryDoReset(bool&ref)
-  {
-    ref=0;
-  };
-  static void FieldTryDoReset(int&ref)
-  {
-    ref=0;
-  };
-  static void FieldTryDoReset(size_t&ref)
-  {
-    ref=0;
-  };
-  static void FieldTryDoReset(float&ref)
-  {
-    ref=0;
-  };
-  static void FieldTryDoReset(double&ref)
-  {
-    ref=0;
-  };
-  static void FieldTryDoReset(char&ref)
-  {
-    ref=0;
-  };
-  static void FieldTryDoReset(uchar&ref)
-  {
-    ref=0;
-  };
-};
-namespace detail{
-  template<typename T>
-  struct has_ProxySys$$
-  {
-    template<class U>
-    static no_type check(...);
-    template<class U>
-    static yes_type check(
-      U*,
-      typename U::ProxySys$$(*)=nullptr
-    );
-    static const bool value=sizeof(check<T>(nullptr))==sizeof(yes_type);
-  };
-};
-
-template<typename TYPE,bool is_proxy>
-struct ProxySys$$;
-template<class TYPE>
-struct Sys$${
-  static void Save(TDataIO&IO,TYPE&ref)
-  {
-    ProxySys$$<TYPE,detail::has_ProxySys$$<TYPE>::value>::Save(IO,ref);
-  }
-  static void Load(TDataIO&IO,TYPE&ref)
-  {
-    ProxySys$$<TYPE,detail::has_ProxySys$$<TYPE>::value>::Load(IO,ref);
-  }
-};
-
-template<class TYPE>void QapSave(TDataIO&IO,TYPE*){
-  #ifdef _WIN32
-  static_assert(false,"fail");
-  #else
-  QapNoWay();
-  #endif
-}
-template<class TYPE>void QapLoad(TDataIO&IO,TYPE*){
-  #ifdef _WIN32
-  static_assert(false,"fail");
-  #else
-  QapNoWay();
-  #endif
-}
-
-template<class TYPE>void QapSave(TDataIO&IO,TYPE&ref){Sys$$<TYPE>::Save(IO,ref);}
-template<class TYPE>void QapLoad(TDataIO&IO,TYPE&ref){Sys$$<TYPE>::Load(IO,ref);}
-template<class TYPE>string QapSaveToStr(TYPE&ref){TDataIO IO;QapSave(IO,ref);return IO.IO.mem;}
-template<class TYPE>bool QapLoadFromStr(TYPE&ref,const string&data){TDataIO IO; IO.IO.mem=data;QapLoad(IO,ref);return !IO.crashed;}
-
-
-template<class TYPE>string QapSaveToStrWithSizeOfType(TYPE&ref)
-{
-  int size_of_type=sizeof(TYPE);
-  TDataIO IO;QapSave(IO,size_of_type);QapSave(IO,ref);return IO.IO.mem;
-}
-template<class TYPE>void QapLoadFromStrWithSizeOfType(TYPE&ref,const string&data){
-  int size_of_type=-1;
-  TDataIO IO;IO.IO.mem=data;QapLoad(IO,size_of_type);if(size_of_type!=sizeof(TYPE))return;QapLoad(IO,ref);
-}
-
-template<typename TYPE>
-struct ProxySys$$<TYPE,true>
-{
-  static void Save(TDataIO&IO,TYPE&ref){
-    TYPE::ProxySys$$::Save(IO,ref);
-  }
-  static void Load(TDataIO&IO,TYPE&ref){
-    TYPE::ProxySys$$::Load(IO,ref);
-  }
-};
-
-//class QapKeyboard;
-/*template<>
-struct Sys$$<QapKeyboard::TKeyState>{
-  static void Save(TDataIO&IO,QapKeyboard::TKeyState&ref)
-  {
-    static_assert(QapKeyboard::TKeyState::MAX_KEY==263,"hm...");
-    std::bitset<256+8> bs;
-    for(int i=0;i<ref.MAX_KEY;i++){auto&ex=ref.data[i];QapAssert(1>=*(uchar*)(void*)&ex);bs[i]=ex;}
-    IO.SavePOD(&bs,sizeof(bs));
-  }
-  static void Load(TDataIO&IO,QapKeyboard::TKeyState&ref)
-  {
-    static_assert(QapKeyboard::TKeyState::MAX_KEY==263,"hm...");
-    std::bitset<256+8> bs;
-    IO.LoadPOD(&bs,sizeof(bs));
-    for(int i=0;i<ref.MAX_KEY;i++){auto&ex=ref.data[i];ex=bs[i];}
-  }
-};*/
-
-//template<class TYPE>struct Sys$${};
-
-//-->
-#define SYS_RAW_POD_TYPE(QapKeyboard)\
-  template<>\
-  struct Sys$$<QapKeyboard>{\
-    static void Save(TDataIO&IO,QapKeyboard&ref)\
-    {\
-      IO.SavePOD(&ref,sizeof(ref));\
-    }\
-    static void Load(TDataIO&IO,QapKeyboard&ref)\
-    {\
-      IO.LoadPOD(&ref,sizeof(ref));\
-    }\
-  };
-//---
-#define LIST(F)F(QapColor)F(vec2i)F(vec2f)F(vec2d)
-LIST(SYS_RAW_POD_TYPE)
-#undef LIST
-//---
-#undef SYS_RAW_POD_TYPE
-//<--
-
-template<class TYPE>
-struct Sys$$<vector<TYPE>>{
-  static void Save(TDataIO&IO,vector<TYPE>&ref)
-  {
-    int size=ref.size();
-    IO.save(size);
-    if(!size)return;
-    for(int i=0;i<size;i++){
-      auto&ex=ref[i];
-      Sys$$<TYPE>::Save(IO,ex);
-    }
-  }
-  static void Load(TDataIO&IO,vector<TYPE>&ref)
-  {
-    int size=0;
-    IO.load(size);
-    if(size<0||!IO.TryLoad(size)){IO.Crash();return;}
-    ref.resize(size);
-    for(int i=0;i<size;i++){
-      auto&ex=ref[i];
-      Sys$$<TYPE>::Load(IO,ex);
-    }
-  }
-};
-
-//-->
-#define SYS_SIMPLE_TYPE(string)\
-  template<>\
-  struct Sys$$<string>{\
-    static void Save(TDataIO&IO,string&ref)\
-    {\
-      IO.save(ref);\
-    }\
-    static void Load(TDataIO&IO,string&ref)\
-    {\
-      IO.load(ref);\
-    }\
-  };
-//---
-#define LIST(F)F(int)F(unsigned int)F(char)F(unsigned char)F(bool)F(int64)F(uint64)F(float)F(real)F(short)F(unsigned short)F(string)
-#define F(TYPE)SYS_SIMPLE_TYPE(TYPE)
-LIST(F)
-#undef F
-#undef LIST
-//---
-#undef SYS_SIMPLE_TYPE
-//<--
+#include "qap_io.inl"
 #ifdef _WIN32
 struct QapMat4:public D3DMATRIX{
   QapMat4(){}
@@ -3828,9 +2831,7 @@ struct i_world{
 unique_ptr<i_world> TGame_mk_world(const string&world);
 struct GameSession {
     unique_ptr<i_world> world;
-    //unsigned seed = 0;
-
-    // Состояние на тик
+    vector<unique_ptr<i_world>> ws;
     struct TickState {
         int tick = 0;
         vector<bool> received;          // получена ли команда от игрока i
@@ -3839,13 +2840,9 @@ struct GameSession {
         vector<bool> alive;             // кто жив на начало тика
     };
     TickState current_tick;
-
-    // История всех тиков (для отчёта)
     vector<TickState> history;
-
-    // Синхронизация
+    QapClock clock;
     mutable mutex mtx;
-
     vector<bool> connected;
     struct i_connection{
       enum t_net_state{nsDef=0,nsOff=1,nsErr=-1};
@@ -3858,12 +2855,6 @@ struct GameSession {
         lock_guard<mutex> lock(mtx);
         if (player_id >= 0 && player_id < (int)connected.size()) {
             connected[player_id] = state;
-            /*
-            // При отключении — сбрасываем ожидание команды на текущем тике
-            if (!state && player_id < (int)current_tick.received.size()) {
-                current_tick.received[player_id] = true; // "получено" пусто
-                current_tick.commands[player_id] = "";
-            }*/
         }
     }
     void init(){
@@ -3872,18 +2863,30 @@ struct GameSession {
       world=TGame_mk_world(g_args.world_name);
       world->init(g_args.seed_initial);
       start_new_tick();
+      if(g_args.gui_mode)ws.push_back(world->clone());
     }
-    // Потокобезопасный метод для приёма команды
     void submit_command(int player_id, const string& cmd) {
         lock_guard<mutex> lock(mtx);
-        if (player_id < 0 || player_id >= (int)current_tick.received.size()) return;
+        if(!qap_check_id(current_tick.received,player_id))return;
         if(!current_tick.alive[player_id])return;
         if(current_tick.received[player_id]){
-          // Дубликат — игнорируем или логируем как ошибку
+          current_tick.error_msgs[player_id]+="\nWarning: another cmd at the same turn!\n";
           return;
         }
         current_tick.commands[player_id] = cmd;
         current_tick.received[player_id] = true;
+    }
+    void update(){
+      if(!session.try_step())return;
+      if(g_args.gui_mode)session.ws.push_back(session.world->clone());
+      if(bool done=session.is_finished()){
+        string report=session.generate_report();
+        cerr<<report;
+        cerr<<"time:"<<session.clock.MS()<<endl;
+        for(auto&ex:session.carr)if(ex)ex->off();
+      }else{
+        session.send_vpow_to_all();
+      }
     }
 
     void start_new_tick() {
@@ -3893,17 +2896,13 @@ struct GameSession {
         } else {
             current_tick.tick = 0;
         }
-
         vector<int> alive_int;
         world->is_alive(alive_int);
         current_tick.alive.assign(alive_int.begin(), alive_int.end());
-
         int n = (int)alive_int.size();
         current_tick.received.assign(n, false);
         current_tick.commands.assign(n, "");
         current_tick.error_msgs.assign(n, "");
-
-        //for(int i=0;i<n;++i)current_tick.received[i]=!connected[i]||!alive_int[i];
     }
 
     bool try_step() {
@@ -3944,6 +2943,14 @@ struct GameSession {
         return active < 2;
     }
 
+    bool is_inited()const{
+      lock_guard<mutex> lock(mtx);
+      if(world->finished())return true;
+      int n=0;
+      for(auto&ex:carr)if(ex)n++;
+      return n==g_args.num_players;
+    }
+
     void send_vpow_to_all(){
       vector<int> is_alive;world->is_alive(is_alive);
       string vpow;
@@ -3951,7 +2958,8 @@ struct GameSession {
         if(is_alive[i]&&session.connected[i]){
           vpow.clear();
           world->get_vpow(i,vpow);
-          session.carr[i]->send(vpow);
+          string svpow=QapSaveToStr(vpow);
+          session.carr[i]->send(svpow);
         }
         if(!is_alive[i]){
           session.carr[i]->off();
@@ -5563,28 +4571,34 @@ int QapLR_main(int argc,char*argv[]){
           int n=0,a=players.size();
           for(auto&ex:players)if(ex.client_id>=0){n++;if(ex.broken)a--;}
           bool full=n==players.size();
-          if(full)session.send_vpow_to_all();
+          if(full){
+            session.send_vpow_to_all();
+            session.clock.Start();
+          }
+          if(bool debug=false){
+            p.conn.send("hi");
+            int gg=1;
+          }
         };
 
         server.onClientDisconnected = [&,i](int client_id) {
           std::cout << "[" << client_id << "] disconnected from socket at port "<<server.port<<endl;
-          if(p.client_id==client_id){
-            p.broken=true;
-            if(p.conn.network_state==p.conn.nsDef)p.conn.network_state=p.conn.nsErr;
-            p.conn.p=nullptr;
-            session.set_connected(i,false);
-          }
+          if(p.client_id!=client_id)return;
+          p.broken=true;
+          if(p.conn.network_state==p.conn.nsDef)p.conn.network_state=p.conn.nsErr;
+          p.conn.p=nullptr;
+          session.set_connected(i,false);
+          session.update();
         };
 
         server.onClientData = [&,i](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
-          std::cout << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
+          //std::cout << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
           if (p.broken || p.client_id != client_id) return;
           p.recv_buffer.append(data);
           while(true){
             if(p.recv_buffer.size()<sizeof(uint32_t))break;
             uint32_t len=*reinterpret_cast<const uint32_t*>(p.recv_buffer.data());
-            // Защита от атак (слишком большой len)
-            if (len > 1024 * 1024) { // 1 МБ максимум
+            if (len > 1024 * 1024) {
               cerr << "Player " << i << " sent too large packet (" << len << ")\n";
               p.broken = true;
               break;
@@ -5593,6 +4607,7 @@ int QapLR_main(int argc,char*argv[]){
             if (p.recv_buffer.size()<packet_size)break;
             string cmd(p.recv_buffer.data() + sizeof(uint32_t), len);
             session.submit_command(i,cmd);
+            session.update();
             p.recv_buffer.erase(0,packet_size);
           }
         };
@@ -5606,17 +4621,14 @@ int QapLR_main(int argc,char*argv[]){
     #else
     if(args.gui_mode){cerr<<"gui_mode ignored"<<endl;}args.gui_mode=false;
     #endif
-    if(!args.gui_mode)for(;;){
-      bool done=false;
-      while(session.try_step()){
-        done=session.is_finished();
-        if(done)break;
-        session.send_vpow_to_all();
+    if(!args.gui_mode){
+      for(;!session.is_inited();){
+        this_thread::sleep_for(16ms);
       }
-      if(done){
-        string report=session.generate_report();
-        cerr<<report;
-        break;
+      for(;;){
+        bool done=session.is_finished();
+        if(done)break;
+        this_thread::sleep_for(16ms);
       }
     }
     return 0;

@@ -258,9 +258,9 @@ int main(int argc, char* argv[]) {
         throw std::runtime_error("CreateProcess failed");
     }
 
-    CloseHandle(stdin_read);
-    CloseHandle(stdout_write);
-    if (forward_stderr) CloseHandle(stderr_write);
+    //CloseHandle(stdin_read);
+    //CloseHandle(stdout_write);
+    //if (forward_stderr) CloseHandle(stderr_write);
 
     std::atomic<bool> child_exited{false};
 
@@ -268,8 +268,8 @@ int main(int argc, char* argv[]) {
     std::thread monitor_thread([sock, pi, &child_exited]() {
         WaitForSingleObject(pi.hProcess, INFINITE);
         child_exited = true;
-        // Принудительно закрываем сокет, чтобы разблокировать recv
         closesocket(sock);
+        exit(0);
     });
 
     // Запускаем потоки
@@ -337,8 +337,8 @@ int main(int argc, char* argv[]) {
         _exit(127);
     }
 
-    close(stdin_pipe[0]); close(stdout_pipe[1]);
-    if (forward_stderr) close(stderr_pipe[1]);
+    //close(stdin_pipe[0]); close(stdout_pipe[1]);
+    //if (forward_stderr) close(stderr_pipe[1]);
 
         std::atomic<bool> child_exited{false};
 
@@ -347,6 +347,7 @@ int main(int argc, char* argv[]) {
         waitpid(pid, &status, 0);
         child_exited = true;
         close(sock); // разблокирует read(sock)
+        exit(0);
     });
     
     std::thread t_stdout([sock, fd = stdout_pipe[0]]() {
