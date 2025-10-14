@@ -28,9 +28,10 @@ using namespace std;
 #include "qap_io.inl"
 
 #include "t_splinter.inl"
-
+#ifdef _WIN32
 #include <io.h>
 #include <fcntl.h>
+#endif
 typedef t_splinter::t_world t_world;
 static t_world::t_cmd dna/*gpt5*/(const t_world& w, int player_id)
 {
@@ -189,9 +190,12 @@ bool read_exactly_or_eof(std::istream& is, char* buffer, std::size_t n) {
 
 int main(int argc,char*argv[]){
   using namespace std::chrono_literals;
+  
+  #ifdef _WIN32
   _setmode(_fileno(stdout),_O_BINARY);
   _setmode(_fileno(stderr),_O_BINARY);
   _setmode(_fileno(stdin),_O_BINARY);
+  #endif
   /*
   for(int i=0;i<100;i++){
     std::this_thread::sleep_for(1000ms);
