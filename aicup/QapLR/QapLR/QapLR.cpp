@@ -4698,6 +4698,7 @@ int QapLR_main(int argc,char*argv[]){
         this_thread::sleep_for(16ms);
       }
     }
+    for(auto&ex:players)ex.server=nullptr;
     cerr << "=== QapLR: shutting down ===" << endl;
     return 0;
 }
