@@ -2943,8 +2943,8 @@ struct GameSession {
         vector<int> world_alive;
         world->is_alive(world_alive);
         int active = 0;
-        for (int i = 0; i < (int)connected.size(); ++i) {
-            if (connected[i] && i < (int)world_alive.size() && world_alive[i]) {
+        for (int i = 0; i < g_args.num_players; ++i) {
+            if (connected[i] && world_alive[i]&&(carr[i]?carr[i]->network_state==carr[i]->nsDef:true)) {
                 active++;
             }
         }
