@@ -164,6 +164,7 @@ public:
     if(set_frame)frame=mpos.x+pviewport->size.x/2;
     auto&ws=session.ws;
     if(frame<0||frame>=ws.size())frame=-1;
+    lock_guard<mutex> lock(session.mtx);
     auto&world=frame<0?*session.world:*ws[frame];
     auto api=world.get_render_api_version();
     if(api==0){
