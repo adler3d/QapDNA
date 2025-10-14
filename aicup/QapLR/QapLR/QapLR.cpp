@@ -5560,6 +5560,11 @@ int QapLR_main(int argc,char*argv[]){
             p.conn.p=&p;
             session.carr[i]=&p.conn;
             session.set_connected(i,true);
+            //---
+            int n=0,a=players.size();
+            for(auto&ex:players)if(ex.client_id>=0){n++;if(ex.broken)a--;}
+            bool full=n==players.size();
+            if(full)session.send_vpow_to_all();
           };
 
           server.onClientDisconnected = [&,i](int client_id) {
@@ -5607,7 +5612,7 @@ int QapLR_main(int argc,char*argv[]){
           bool on_ready=!ready&&full&&a==players.size();
           if(on_ready){
             ready=true;
-            session.send_vpow_to_all();
+            //session.send_vpow_to_all();
             int gg=1;
           }
           if(a<=1)break;
