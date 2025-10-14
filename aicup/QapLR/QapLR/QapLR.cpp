@@ -4694,6 +4694,7 @@ int QapLR_main(int argc,char*argv[]){
         this_thread::sleep_for(16ms);
       }
     }
+    cerr << "=== QapLR: shutting down ===" << endl;
     return 0;
 }
 void test(){
