@@ -107,7 +107,7 @@ struct t_splinter{
           return sum *(1.0/3);
       }
       bool finished_flag=false;
-      void step(std::mt19937&gen,bool with_score_from_points=true) {
+      void step(std::mt19937&gen,bool with_score_from_points=true,bool with_pointsgen=true) {
           tick++;
 
           // —брос сил
@@ -126,7 +126,7 @@ struct t_splinter{
               forces[s.a] += dir * force;
               forces[s.b] -= dir * force; // противоположна€ сила
           }
-          for(int i=0;i<4;i++)if(slot2deaded[i])cmd_for_player[i]={};
+          for(int i=0;i<slot2score.size();i++)if(slot2deaded[i])cmd_for_player[i]={};
           // ќбновление скорости и позиции (простой интегратор)
           for (int i = 0; i < balls.size(); i++) {
               auto& b = balls[i];
@@ -239,51 +239,53 @@ struct t_splinter{
             if(!ex)n++;
           }
           finished_flag=n<=1;
-          vector<int> p2n(4);
+          vector<int> p2n(slot2score.size());
           for(auto&ex:parr){
             p2n[ex.color]++;
           }
-          for(int i=0;i<4;i++){
+          for(int i=0;i<slot2score.size();i++){
             if(!p2n[i]){
               finished_flag=true;
             }
           }
-          for(int i=0;i<4;i++){
-            if(p2n[i]<32){
-              for(int i=0;i<4;i++)add_ball(*this,i,gen);
+          if(with_pointsgen){
+            for(int i=0;i<slot2score.size();i++){
+              if(p2n[i]<32){
+                for(int i=0;i<slot2score.size();i++)add_point(*this,i,gen);
+              }
             }
           }
       }
-      static bool add_ball(t_world&w,int i,std::mt19937&gen){
+      static bool add_point(t_world&w,int i,std::mt19937&gen){
         auto r=[&gen](){static std::uniform_real_distribution<double>dist(-1.0,1.0);return vec2d{dist(gen),dist(gen)};};
         auto&b=qap_add_back(w.parr);
-        b.pos=r()*w.ARENA_RADIUS;b.color=i%4;
+        b.pos=r()*w.ARENA_RADIUS;b.color=i%w.slot2score.size();
         if(b.pos.Mag()>w.ARENA_RADIUS){i--;w.parr.pop_back();return false;}
         return true;
       };
   };
-  static void init_world(t_world&world,std::mt19937&gen) {
+  static void init_world(t_world&world,std::mt19937&gen,uint32_t num_players) {
     // ќчищаем
-    world.slot2deaded.assign(4,0);
+    world.slot2deaded.assign(num_players,0);
     world.balls.clear();
     world.springs.clear();
-    //world.slot2reached.assign(4, false);
-    world.slot2score.assign(4, 0);
+    world.slot2score.assign(num_players, 0);
     world.tick = 0;
 
-    // ”глы дл€ 4 игроков
+    // ”глы дл€ num_players игроков
     vector<vec2d> starts = {
       vec2d(-70, -70),  // лево-низ
       vec2d(+70, -70),  // право-низ
       vec2d(+70, +70),  // право-верх
       vec2d(-70, +70)   // лево-верх
     };
+    starts.resize(num_players);
 
     const double REST_LENGTH = 30.0;
     
     auto r=[&gen](){static std::uniform_real_distribution<double>dist(-1.0,1.0);return vec2d{dist(gen),dist(gen)};};
-    world.cmd_for_player.resize(4);
-    for (int p = 0; p < 4; p++) {
+    world.cmd_for_player.resize(num_players);
+    for (int p = 0; p < num_players; p++) {
       int base_idx = world.balls.size();
 
       // “ри шарика в форме треугольника
@@ -299,9 +301,9 @@ struct t_splinter{
       adds(base_idx + 1, base_idx + 2);
       adds(base_idx + 2, base_idx + 0);
     }
-    int n=32*4*2*2;//2;
+    int n=num_players<=4?32*num_players*2*2:num_players*32;
     for(int i=0;i<n;i++){
-      t_world::add_ball(world,i,gen);
+      t_world::add_point(world,i,gen);
     }
   }
   #ifdef I_WORLD
@@ -323,13 +325,13 @@ struct t_splinter{
       w.your_id=player;
       out=QapSaveToStr(w);
     }
-    void init(unsigned seed)override{
+    void init(uint32_t seed,uint32_t num_players)override{
       gen=mt19937(seed);
-      init_world(w,gen);
+      init_world(w,gen,num_players);
     }
-    bool init_from_config(const string&cfg,string&outmsg)override{
+    int init_from_config(const string&cfg,string&outmsg)override{
       outmsg="no impl";
-      return false;
+      return 0;
     }
     unique_ptr<i_world> clone()override{return make_unique<t_world_impl>(*this);}
     void renderV0(QapDev&qDev)override{
@@ -339,6 +341,9 @@ struct t_splinter{
         0xFF8080FF, // синий
         0xFFFFFF80  // жЄлтый
       };
+      while(player_colors.size()<w.slot2score.size()){
+        player_colors.push_back(QapColor(255,rand()%256,rand()%256,rand()%256));
+      }
       auto&world=w;
       // --- –исуем арену ---
       qDev.SetColor(0x40000000);
@@ -380,7 +385,7 @@ struct t_splinter{
       }
 
       // --- –исуем шарики ---
-      for (int p = 0; p < 4; p++) {
+      for (int p = 0; p < world.slot2score.size(); p++) {
           for (int i = 0; i < 3; i++) {
               int idx = p * 3 + i;
               const auto& ball = world.balls[idx];
@@ -394,7 +399,7 @@ struct t_splinter{
     }
     int get_tick()override{return w.tick;}
   };
-  static unique_ptr<i_world> mk_world(const int version){
+  static unique_ptr<i_world> mk_world(int version){
     return make_unique<t_world_impl>();
   }
   #endif

@@ -2821,8 +2821,8 @@ struct i_world{
   virtual void get_score(vector<double>&out)=0;
   virtual void is_alive(vector<int>&out)=0;
   virtual void get_vpow(int player,string&out)=0;
-  virtual void init(unsigned seed)=0;
-  virtual bool init_from_config(const string&cfg,string&outmsg)=0;
+  virtual void init(uint32_t seed,uint32_t num_players)=0;
+  virtual int init_from_config(const string&cfg,string&outmsg)=0;
   virtual unique_ptr<i_world> clone()=0;
   virtual void renderV0(QapDev&qDev){}
   virtual int get_render_api_version(){return 0;}
@@ -2867,10 +2867,10 @@ struct GameSession {
       file_put_contents(*g_args.replay_out_file,s);
     }
     void init(){
+      world=TGame_mk_world(g_args.world_name);
+      world->init(g_args.seed_initial,g_args.num_players);
       carr.resize(g_args.num_players,nullptr);
       connected.assign(g_args.num_players,false);
-      world=TGame_mk_world(g_args.world_name);
-      world->init(g_args.seed_initial);
       start_new_tick();
       if(g_args.gui_mode||g_args.replay_in_file)ws.push_back(world->clone());
     }
