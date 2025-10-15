@@ -2982,22 +2982,54 @@ struct GameSession {
     }
     void send_vpow_to_all(){
       if(end)return;
-      lock_guard<mutex> lock(mtx);
-      vector<int> is_alive;world->is_alive(is_alive);
-      string vpow;
-      for(int i=0;i<g_args.num_players;i++){
-        if(is_alive[i]&&connected[i]){
-          vpow.clear();
-          world->get_vpow(i,vpow);
-          string svpow=QapSaveToStr(vpow);
-          if(end)return;
-          carr[i]->send(svpow);
+      vector<string> messages;
+      vector<bool> should_send;
+      vector<bool> should_off;
+      {
+        lock_guard<mutex> lock(mtx);
+        if (end) return;
+        vector<int> is_alive;
+        world->is_alive(is_alive);
+        messages.resize(g_args.num_players);
+        should_send.assign(g_args.num_players, false);
+        should_off.assign(g_args.num_players, false);
+
+        for (int i = 0; i < g_args.num_players; i++) {
+          if (is_alive[i] && connected[i]) {
+            string vpow;
+            world->get_vpow(i, vpow);
+            messages[i] = QapSaveToStr(vpow);
+            should_send[i] = true;
+          } else if (!is_alive[i]) {
+            should_off[i] = true;
+          }
         }
-        if(!is_alive[i]){
-          if(end)return;
+      }
+      for (int i = 0; i < g_args.num_players; i++) {
+        if (should_send[i]) {
+          carr[i]->send(messages[i]);
+        }
+        if (should_off[i]) {
           carr[i]->off();
         }
       }
+      //if(end)return;
+      //lock_guard<mutex> lock(mtx);
+      //vector<int> is_alive;world->is_alive(is_alive);
+      //string vpow;
+      //for(int i=0;i<g_args.num_players;i++){
+      //  if(is_alive[i]&&connected[i]){
+      //    vpow.clear();
+      //    world->get_vpow(i,vpow);
+      //    string svpow=QapSaveToStr(vpow);
+      //    if(end)return;
+      //    carr[i]->send(svpow);
+      //  }
+      //  if(!is_alive[i]){
+      //    if(end)return;
+      //    carr[i]->off();
+      //  }
+      //}
     }
     // Генерация отчёта (вызывается после завершения)
     string generate_report() const {
@@ -4702,6 +4734,12 @@ int QapLR_main(int argc,char*argv[]){
       }
     }
     auto shutdown=[&]{
+      #ifdef _WIN32
+      cerr << "=== QapLR: TerminateProcess(GetCurrentProcess(),0) ===" << endl;
+      TerminateProcess(GetCurrentProcess(),0);
+      exit(0);
+      return 0;
+      #endif
       {
         lock_guard<mutex> lock(session.mtx);
         session.end=true;

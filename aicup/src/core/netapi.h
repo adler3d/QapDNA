@@ -400,14 +400,43 @@ public:
     }
 
     void accept_loop() {
+        // Сделать серверный сокет non-blocking
+        #ifdef _WIN32
+        u_long mode = 1;
+        ioctlsocket(serverSocket, FIONBIO, &mode);
+        #else
+        int flags = fcntl(serverSocket, F_GETFL, 0);
+        fcntl(serverSocket, F_SETFL, flags | O_NONBLOCK);
+        #endif
+
         while (isRunning) {
+            // Ждём подключения с таймаутом
+            #ifdef _WIN32
+            fd_set readfds;
+            FD_ZERO(&readfds);
+            FD_SET(serverSocket, &readfds);
+            timeval tv{0, 100000}; // 100 мс
+            int activity = select(0, &readfds, nullptr, nullptr, &tv);
+            if (activity <= 0) {
+                continue; // таймаут или ошибка → проверим isRunning
+            }
+            #else
+            pollfd pfd{serverSocket, POLLIN, 0};
+            int activity = poll(&pfd, 1, 100); // 100 мс
+            if (activity <= 0) {
+                continue;
+            }
+            #endif
+
+            // Теперь accept() не заблокируется
             sockaddr_in client_addr{};
-#ifdef _WIN32
+            #ifdef _WIN32
             int client_len = sizeof(client_addr);
-#else
+            #else
             socklen_t client_len = sizeof(client_addr);
-#endif
+            #endif
             socket_t client_socket = accept(serverSocket, (sockaddr*)&client_addr, &client_len);
+
             if(!isRunning)break;
             if (client_socket == INVALID_SOCKET) {
                 break;
