@@ -3002,10 +3002,15 @@ struct GameSession {
     // Генерация отчёта (вызывается после завершения)
     string generate_report() const {
         lock_guard<mutex> lock(mtx);
+        vector<double> scores;world->get_score(scores);
         ostringstream oss;
         oss << "Game finished at tick " << (history.empty() ? 0 : history.back().tick) << "\n";
         oss << "SeedInit:  " << g_args.seed_initial << "\n";
         oss << "SeedStrat: " << g_args.seed_strategies << "\n";
+        oss << "=== Scores ===\n";
+        for(int i=0;i<scores.size();i++){
+          oss << scores[i] <<"\n";
+        }
         oss << "=== Error log ===\n";
         for (const auto& tick : history) {
             for (int i = 0; i < (int)tick.error_msgs.size(); ++i) {
@@ -4640,7 +4645,7 @@ int QapLR_main(int argc,char*argv[]){
         p.server=make_unique<t_server_api>(args.ports_from+i);
         auto&server=*p.server;
         server.onClientConnected = [&,i](int client_id, socket_t socket, const std::string& ip) {
-          std::cout << "[" << client_id << "] connected from IP " << ip <<"\" to socket at port "<<server.port<<endl;
+          std::cerr << "[" << client_id << "] connected from IP " << ip <<"\" to socket at port "<<server.port<<endl;
           if(p.client_id>=0)return;
           p.client_id=client_id;
           p.conn.p=&p;
@@ -4663,7 +4668,7 @@ int QapLR_main(int argc,char*argv[]){
 
         server.onClientDisconnected = [&,i](int client_id) {
           if(session.end)return;
-          std::cout << "[" << client_id << "] disconnected from socket at port "<<server.port<<endl;
+          std::cerr << "[" << client_id << "] disconnected from socket at port "<<server.port<<endl;
           if(p.client_id!=client_id)return;
           p.broken=true;
           if(p.conn.network_state==p.conn.nsDef)p.conn.network_state=p.conn.nsErr;
@@ -4674,7 +4679,7 @@ int QapLR_main(int argc,char*argv[]){
 
         server.onClientData = [&,i](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
           if(session.end)return;
-          //std::cout << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
+          //std::cerr << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
           if (p.broken || p.client_id != client_id) return;
           p.recv_buffer.append(data);
           while(!session.end){

@@ -335,11 +335,46 @@ struct t_splinter{
     }
     unique_ptr<i_world> clone()override{return make_unique<t_world_impl>(*this);}
     void renderV0(QapDev&qDev)override{
-      static vector<QapColor> player_colors={
+      static vector<QapColor> player_colors = {
+        // ¬аши исходные
         0xFFFF8080, // красный
         0xFF80FF80, // зелЄный
         0xFF8080FF, // синий
-        0xFFFFFF80  // жЄлтый
+        0xFFFFFF80, // жЄлтый
+
+        // ƒополнительные Ч 28 штук
+        0xFFFF80FF, // розовый (magenta)
+        0xFF80FFFF, // голубой (cyan)
+        0xFFFFFF00, // чистый жЄлтый (немного €рче)
+        0xFFFF0000, // чистый красный
+        0xFF00FF00, // чистый зелЄный
+        0xFF0000FF, // чистый синий
+        0xFF800080, // тЄмна€ маджента
+        0xFF008080, // тЄмный голубой (бирюзовый)
+        0xFF808000, // оливковый
+        0xFFFFA500, // оранжевый
+        0xFFDA70D6, // орхиде€
+        0xFF9370DB, // средний фиолетовый
+        0xFF4B0082, // индиго
+        0xFF483D8B, // тЄмный сланцевый серо-синий
+        0xFF00CED1, // тЄмный бирюзовый
+        0xFF2E8B57, // морска€ волна
+        0xFF8B4513, // седло-коричневый
+        0xFFA0522D, // сиена
+        0xFFCD853F, // перу
+        0xFFD2691E, // горький шоколад
+        0xFFB22222, // кирпичный красный
+        0xFF8B0000, // тЄмно-красный
+        0xFF228B22, // тЄмно-зелЄный
+        0xFF006400, // тЄмный зелЄный лесной
+        0xFF191970, // тЄмно-синий (midnight blue)
+        0xFF000080, // тЄмно-синий (navy)
+        0xFF4682B4, // стальной синий
+        0xFF6495ED, // василЄк
+        0xFF7B68EE, // средний сланцевый синий
+        0xFFBA55D3, // умеренный орхидейный
+        0xFFFF6347, // томатный
+        0xFF32CD32  // лаймовый зелЄный
       };
       while(player_colors.size()<w.slot2score.size()){
         player_colors.push_back(QapColor(255,rand()%256,rand()%256,rand()%256));

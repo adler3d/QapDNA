@@ -17,29 +17,23 @@ function formatTimestamp() {
 // Функция для запуска процесса с логированием
 function runWithLiveOutput(cmd, args, prefix) {
     const child = spawn(cmd, args, {
-        stdio: ['ignore', 'pipe', 'pipe'], // stdin=ignore, stdout/stderr=pipes
+        stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
     });
 
-    // Объединяем stderr в stdout
-    child.stderr.on('data', (data) => {
-        child.stdout.write(data);
-    });
+    // Обрабатываем stdout
+    readline.createInterface({ input: child.stdout, crlfDelay: Infinity })
+        .on('line', (line) => {
+            const ts = formatTimestamp();
+            console.log(`${ts} ${prefix}${line}`);
+        });
 
-    // Читаем построчно
-    const rl = readline.createInterface({
-        input: child.stdout,
-        crlfDelay: Infinity
-    });
-
-    rl.on('line', (line) => {
-        const ts = formatTimestamp();
-        console.log(`${ts} ${prefix}${line}`);
-    });
-
-    rl.on('close', () => {
-        child.stdout.destroy();
-    });
+    // Обрабатываем stderr (например, с пометкой [ERR])
+    readline.createInterface({ input: child.stderr, crlfDelay: Infinity })
+        .on('line', (line) => {
+            const ts = formatTimestamp();
+            console.log(`${ts} ${prefix}[STDERR] ${line}`);
+        });
 
     return child;
 }
@@ -48,11 +42,11 @@ function runWithLiveOutput(cmd, args, prefix) {
 // Запуск сервера
 // ----------------------------
 console.log("🚀 Starting QapLR.exe with live output...");
-
-if(0){
+let N=12; let port=31500;
+if(1){
   server = runWithLiveOutput(
       './QapLR.exe',
-      ['t_splinter', '16', '10', '0', '-p', '31500'],
+      ['t_splinter', N, '11', '0', '-p', port,'-g'],
       '[QapLR] '
   );
 }else server={on:()=>0};
@@ -64,8 +58,12 @@ setTimeout(() => {
     // ----------------------------
     const clients = [];
     const ports = [];//[31500, 31501, 31502, 31503];
-    for(let i=0;i<16;i++)ports.push(31500+i);
-    
+    for(let i=0;i<N-1;i++)ports.push(port+i);
+    const client = runWithLiveOutput(
+      './socket_adapter.exe',
+      ['-e', `127.0.0.1:${port+N-1}`, './adlerN0907.exe'],
+      `[AdlerN0907] `
+    );
     ports.forEach((port, i) => {
         console.log(`🔌 Starting client ${i + 1} for port ${port}...`);
         const client = runWithLiveOutput(
