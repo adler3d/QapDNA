@@ -351,15 +351,11 @@ public:
                 CLOSESOCKET(dummy);
             }
         }
-        // Закрываем все клиентские сокеты
         {
             std::lock_guard<std::mutex> lock(clientsMutex);
             for (auto& cs : clientSockets) {
                 CLOSESOCKET(cs.second);
             }
-            clientSockets.clear();
-            clientIps.clear();
-            ipToClientIds.clear();
         }
         
         CLOSESOCKET(serverSocket);
@@ -368,7 +364,17 @@ public:
         {
           workerThread.join();
         }
-
+        for (auto& t : clientThreads) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex);
+            clientSockets.clear();
+            clientIps.clear();
+            ipToClientIds.clear();
+        }
 #ifdef _WIN32
         WSACleanup();
 #endif
@@ -434,34 +440,40 @@ public:
             {
                 std::lock_guard<std::mutex> lock(clientsMutex);
                 clientThreads.emplace_back(&t_server_api::client_handler, this, client_socket, client_id);
-                clientThreads.back().detach();
+                //clientThreads.back().detach();
             }
         }
     }
 
     void client_handler(socket_t client_socket, int client_id) {
-        constexpr int buf_size = 1024;
-        char buffer[buf_size];
-
+        char buffer[1024];
         auto send_func = [client_socket](const std::string& msg) {
-            ::send(client_socket, msg.c_str(), static_cast<int>(msg.size()), 0);
+            send(client_socket, msg.c_str(), int(msg.size()), 0);
         };
 
         while (isRunning) {
-            int len = recv(client_socket, buffer, buf_size, 0);
-            if (len <= 0) break;
+    #ifdef _WIN32
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(client_socket, &fds);
+            timeval tv{0, 100000}; // 100 ms
+            if (select(0, &fds, nullptr, nullptr, &tv) <= 0) continue;
+    #else
+            pollfd pfd{client_socket, POLLIN, 0};
+            if (poll(&pfd, 1, 100) <= 0) continue;
+    #endif
 
-            std::string data(buffer, len);
+            int n = recv(client_socket, buffer, sizeof(buffer), 0);
+            if (n <= 0) break;
 
             if (onClientData) {
                 try {
-                    onClientData(client_id, data, send_func);
+                    onClientData(client_id, std::string(buffer, n), send_func);
                 } catch (...) {}
             }
         }
 
-        CLOSESOCKET(client_socket);
-
+        // Очистка под мьютексом
         {
             std::lock_guard<std::mutex> lock(clientsMutex);
             // Очищаем данные клиента
@@ -483,10 +495,10 @@ public:
         }
 
         if (onClientDisconnected) {
-            try {
-                onClientDisconnected(client_id);
-            } catch (...) {}
+            try { onClientDisconnected(client_id); } catch (...) {}
         }
+
+        CLOSESOCKET(client_socket);
     }
 
     void cleanup() {

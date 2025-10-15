@@ -2846,6 +2846,7 @@ struct GameSession {
     QapClock clock;
     mutable mutex mtx;
     vector<bool> connected;
+    atomic_bool end=false;
     struct i_connection{
       enum t_net_state{nsDef=0,nsOff=1,nsErr=-1};
       int network_state=nsDef;
@@ -2854,6 +2855,7 @@ struct GameSession {
     };
     vector<i_connection*> carr;
     void set_connected(int player_id, bool state) {
+        if(end)return;
         lock_guard<mutex> lock(mtx);
         if (player_id >= 0 && player_id < (int)connected.size()) {
             connected[player_id] = state;
@@ -2875,6 +2877,7 @@ struct GameSession {
       if(g_args.gui_mode||g_args.replay_in_file)ws.push_back(world->clone());
     }
     void submit_command(int player_id, const string& cmd) {
+        if(end)return;
         lock_guard<mutex> lock(mtx);
         if(!qap_check_id(current_tick.received,player_id))return;
         if(!current_tick.alive[player_id])return;
@@ -2886,10 +2889,14 @@ struct GameSession {
         current_tick.received[player_id] = true;
     }
     void update(){
+      if(end)return;
       if(!try_step())return;
       if(g_args.gui_mode)ws.push_back(world->clone());
       if(bool done=is_finished()){
-        for(auto&ex:carr)if(ex)ex->off();
+        {
+          lock_guard<mutex> lock(mtx);
+          for(auto&ex:carr)if(ex)ex->off();
+        }
         string report=generate_report();
         cerr<<report;
         cerr<<"time:"<<clock.MS()<<endl;
@@ -2900,6 +2907,7 @@ struct GameSession {
     }
 
     void start_new_tick() {
+        if(end)return;
         lock_guard<mutex> lock(mtx);
         if (!history.empty()) {
             current_tick.tick = history.back().tick + 1;
@@ -2916,6 +2924,7 @@ struct GameSession {
     }
 
     bool try_step() {
+        if(end)return false;
         if(bool inside_lock=true)
         {
           lock_guard<mutex> lock(mtx);
@@ -2960,6 +2969,7 @@ struct GameSession {
       return n==g_args.num_players;
     }
     void send_seed_to_all(){
+      if(end)return;
       lock_guard<mutex> lock(mtx);
       vector<int> is_alive;world->is_alive(is_alive);
       string seed(sizeof(uint32_t),0);
@@ -2971,6 +2981,7 @@ struct GameSession {
       }
     }
     void send_vpow_to_all(){
+      if(end)return;
       lock_guard<mutex> lock(mtx);
       vector<int> is_alive;world->is_alive(is_alive);
       string vpow;
@@ -2979,9 +2990,11 @@ struct GameSession {
           vpow.clear();
           world->get_vpow(i,vpow);
           string svpow=QapSaveToStr(vpow);
+          if(end)return;
           carr[i]->send(svpow);
         }
         if(!is_alive[i]){
+          if(end)return;
           carr[i]->off();
         }
       }
@@ -4614,7 +4627,7 @@ int QapLR_main(int argc,char*argv[]){
         void off()override{
           if(!p)return;
           if(network_state==nsDef)network_state=nsOff;
-          p->server->disconnect_client(p->client_id);
+          if(p->server)p->server->disconnect_client(p->client_id);
         };
       } conn;
     };
@@ -4649,6 +4662,7 @@ int QapLR_main(int argc,char*argv[]){
         };
 
         server.onClientDisconnected = [&,i](int client_id) {
+          if(session.end)return;
           std::cout << "[" << client_id << "] disconnected from socket at port "<<server.port<<endl;
           if(p.client_id!=client_id)return;
           p.broken=true;
@@ -4659,10 +4673,11 @@ int QapLR_main(int argc,char*argv[]){
         };
 
         server.onClientData = [&,i](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
+          if(session.end)return;
           //std::cout << "[" << client_id << "] received from socket at port "<<server.port<<": " << data<<endl;
           if (p.broken || p.client_id != client_id) return;
           p.recv_buffer.append(data);
-          while(true){
+          while(!session.end){
             if(p.recv_buffer.size()<sizeof(uint32_t))break;
             uint32_t len=*reinterpret_cast<const uint32_t*>(p.recv_buffer.data());
             if (len > 1024 * 1024) {
@@ -4675,15 +4690,26 @@ int QapLR_main(int argc,char*argv[]){
             string cmd(p.recv_buffer.data() + sizeof(uint32_t), len);
             session.submit_command(i,cmd);
             session.update();
-            p.recv_buffer.erase(0,packet_size);
+            if(!session.end)p.recv_buffer.erase(0,packet_size);
           }
         };
         server.start();
       }
     }
+    auto shutdown=[&]{
+      {
+        lock_guard<mutex> lock(session.mtx);
+        session.end=true;
+        for(auto&ex:session.carr)if(ex)ex->off();
+      }
+      for(auto&ex:players)ex.server=nullptr;
+      cerr << "=== QapLR: shutting down ===" << endl;
+    };
     #ifdef _WIN32
     if(args.gui_mode){
-      return QapLR_DoNice();
+      auto rv=QapLR_DoNice();
+      shutdown();
+      return rv;
     }
     #else
     if(args.gui_mode){cerr<<"gui_mode ignored"<<endl;}args.gui_mode=false;
@@ -4698,8 +4724,7 @@ int QapLR_main(int argc,char*argv[]){
         this_thread::sleep_for(16ms);
       }
     }
-    for(auto&ex:players)ex.server=nullptr;
-    cerr << "=== QapLR: shutting down ===" << endl;
+    shutdown();
     return 0;
 }
 void test(){

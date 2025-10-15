@@ -49,11 +49,13 @@ function runWithLiveOutput(cmd, args, prefix) {
 // ----------------------------
 console.log("🚀 Starting QapLR.exe with live output...");
 
-const server = runWithLiveOutput(
-    './QapLR.exe',
-    ['t_splinter', '4', '9', '0', '-p', '31500', '-o', 'replay4.cmds'],
-    '[QapLR] '
-);
+if(0){
+  server = runWithLiveOutput(
+      './QapLR.exe',
+      ['t_splinter', '16', '10', '0', '-p', '31500'],
+      '[QapLR] '
+  );
+}else server={on:()=>0};
 
 // Ждём, пока сервер стартует
 setTimeout(() => {

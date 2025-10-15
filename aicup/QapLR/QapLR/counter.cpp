@@ -55,7 +55,7 @@ static t_world::t_cmd dna/*gpt5*/(const t_world& w, int player_id)
     vec2d targetMid = com; // по умолчанию никуда не идЄм
     {
         const int EDGES[3][2] = {{0,1},{1,2},{2,0}};
-        for(int p=0;p<4;p++){
+        for(int p=0;p<w.slot2score.size();p++){
             if(p==player_id || w.slot2deaded[p]) continue;
             int b = p*3;
             for(int e=0;e<3;e++){
@@ -71,7 +71,7 @@ static t_world::t_cmd dna/*gpt5*/(const t_world& w, int player_id)
         // fallback: если проекции ни на один отрезок не попали Ч идЄм к ближайшему живому сопернику
         if(bestSegDist > 1e17){
             double best = 1e18;
-            for(int p=0;p<4;p++){
+            for(int p=0;p<w.slot2score.size();p++){
                 if(p==player_id || w.slot2deaded[p]) continue;
                 vec2d c = w.get_center_of_mass(p);
                 double d = (c - com).Mag();
