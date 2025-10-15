@@ -60,7 +60,7 @@ std::pair<std::string, int> parse_address(const std::string& addr) {
 }
 
 void print_help(const char* prog) {
-    std::cout << "Usage: " << prog << " [OPTIONS] <host:port> <program> [args...]\n"
+    std::cerr << "Usage: " << prog << " [OPTIONS] <host:port> <program> [args...]\n"
               << "\n"
               << "Options:\n"
               << "  -e, --no-stderr    Do not forward child's stderr to socket\n"
@@ -211,7 +211,7 @@ int main(int argc, char* argv[]) {
 #endif
     );
 
-    std::cout << "Connected to " << host << ":" << port << "\n";
+    std::cerr << "Connected to " << host << ":" << port << std::endl;
 
 #ifdef _WIN32
     // === Windows ===
@@ -269,6 +269,7 @@ int main(int argc, char* argv[]) {
         WaitForSingleObject(pi.hProcess, INFINITE);
         child_exited = true;
         closesocket(sock);
+        std::cerr << "child process exited" << std::endl;
         exit(0);
     });
 
@@ -286,7 +287,8 @@ int main(int argc, char* argv[]) {
 
     // Основной цикл: сокет → stdin
     copy_socket_to_pipe(sock, stdin_write);
-
+    
+    std::cerr << "copy_socket_to_pipe::done" << std::endl;
     // Клиент отключился → убиваем процесс
     DWORD exit_code = 1;
     if (WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
