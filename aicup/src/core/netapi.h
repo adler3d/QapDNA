@@ -22,6 +22,7 @@
   #include <netdb.h>
   #include <unistd.h>
   #include <fcntl.h>
+  #include <poll.h>
   using SOCKET = int;
   #define INVALID_SOCKET (-1)
   #define SOCKET_ERROR (-1)
