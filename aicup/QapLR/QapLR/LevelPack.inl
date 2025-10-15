@@ -155,14 +155,28 @@ public:
     #undef GOO
   }
   int frame=-1;bool set_frame=false;
+  void RenderBar(QapDev&qDev){
+    qDev.BindTex(0,nullptr);
+    vec2d mpos=kb.MousePos;
+    auto n=session.ws.size();auto W=pviewport->size.x;
+    int frame=Lerp<real>(0,n+1,(mpos.x+W*0.5)/W);
+    vec2d beg=pviewport->get_vertex_by_dir(vec2d(-1,-1));
+    vec2d end=beg+vec2d((frame<0?n:frame)*(W/n),0);
+    real hc=4;real hb=hc+8;
+    vec2d wh=vec2d(end.x-beg.x,hc);vec2d center=(beg+end)*0.5+vec2d(0,hb*0.5);
+    qDev.color=0xFF000000;
+    qDev.DrawQuad(0,center.y,W,hb);
+    qDev.color=0xFF0000FF;
+    qDev.DrawQuad(center.x,center.y,wh.x,wh.y);
+  }
   void RenderImpl(QapDev&qDev){
     QapDev::BatchScope Scope(qDev);
     t_offcentric_scope scope(qDev,cam_pos,cam_dir,scale,cam_offcentric);
     vec2d mpos=kb.MousePos;
-    qDev.BindTex(0, nullptr);
+    qDev.BindTex(0,nullptr);
     frame=-1;
     auto n=session.ws.size();auto W=pviewport->size.x;
-    if(set_frame)frame=Lerp<real>(0,n+1,(mpos.x+W*0.5)/W);
+    if(set_frame)if(kb.Down[mbLeft])frame=Lerp<real>(0,n+1,(mpos.x+W*0.5)/W);
     auto&ws=session.ws;
     if(frame<0||frame>=ws.size())frame=-1;
     lock_guard<mutex> lock(session.mtx);
@@ -199,6 +213,7 @@ public:
   void Render(QapDev&qDev){
     RenderImpl(qDev);
     RenderMap(qDev);
+    RenderBar(qDev);
     RenderText(qDev);
   }
   void RenderText(QapDev&qDev){

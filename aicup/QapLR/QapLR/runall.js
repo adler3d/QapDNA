@@ -42,11 +42,11 @@ function runWithLiveOutput(cmd, args, prefix) {
 // Запуск сервера
 // ----------------------------
 console.log("🚀 Starting QapLR.exe with live output...");
-let N=12; let port=31500;
+let N=4; let port=31500;
 if(1){
   server = runWithLiveOutput(
       './QapLR.exe',
-      ['t_splinter', N, '11', '0', '-p', port,'-g'],
+      ['t_splinter', N, '12', '0', '-p', port,'-g'],
       '[QapLR] '
   );
 }else server={on:()=>0};
