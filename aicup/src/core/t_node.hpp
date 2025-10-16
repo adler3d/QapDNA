@@ -262,7 +262,6 @@ struct t_node:t_process,t_node_cache{
   struct t_runned_game{
     t_game_decl gd;
     int tick=0;
-    bool started=true;
     pid_t runner_pid = 0;
     string runner_socket_path;
     unique_ptr<t_docker_api_v2> runner;
@@ -274,7 +273,7 @@ struct t_node:t_process,t_node_cache{
     vector<vector<t_cmd>> tick2cmds;
     vector<emitter_on_data_decoder> slot2eodd;
     string cdn_upload_token=UPLOAD_TOKEN;
-    //t_world w;
+    t_world w;
     void init(){
       slot2cmd.resize(gd.arr.size());
       slot2status.resize(gd.arr.size());
@@ -587,16 +586,14 @@ struct t_node:t_process,t_node_cache{
     );
   }
   void game_tick(t_runned_game&game){
-    if(game.started){
-      for(int i=0;i<game.slot2cmd.size();i++)game.w.use(i,game.slot2cmd[i]);
-      game.tick2cmds.push_back(game.slot2cmd);
-      game.w.step();
-      if(game.w.finished()||game.tick>=game.gd.maxtick){
-        for(int i=0;i<game.gd.arr.size();i++)container_monitor.kill(game,i);
-        container_monitor.clear(game.gd.game_id);
-        send_game_result(game);
-        return;
-      }
+    for(int i=0;i<game.slot2cmd.size();i++)game.w.use(i,game.slot2cmd[i]);
+    game.tick2cmds.push_back(game.slot2cmd);
+    game.w.step();
+    if(game.w.finished()||game.tick>=game.gd.maxtick){
+      for(int i=0;i<game.gd.arr.size();i++)container_monitor.kill(game,i);
+      container_monitor.clear(game.gd.game_id);
+      send_game_result(game);
+      return;
     }
     for(int i=0;i<game.slot2api.size();i++){
       if(!game.slot2status[i].ok())continue;
@@ -611,19 +608,6 @@ struct t_node:t_process,t_node_cache{
   }
   void on_player_stdout(t_runned_game&g,int player_id,const string_view&data){
     string s(data);
-    if(!g.started){
-      if(s.find("READY")==string::npos){
-        auto&api=g.slot2api[player_id];
-        api->on_stderr("\nERROR DETECTED: YOU MUST SAY READY BEFORE FIRST ACTION!!!\n");
-        return;
-      }
-      g.slot2ready[player_id]=true;
-      if(g.all_ready()){
-        tick(g);
-        g.started=true;
-      }
-      return;
-    }
     auto&eodd=g.slot2eodd[player_id];
     bool deaded=false;
     auto end=[&](const string&msg){
@@ -659,7 +643,7 @@ struct t_node:t_process,t_node_cache{
     container_monitor.update();
     container_monitor.clear(g.gd.game_id);
     game_tick(g);
-    if(g.started)g.tick++;
+    g.tick++;
     g.new_tick();
   }
 

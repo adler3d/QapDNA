@@ -4,9 +4,11 @@
 |-------------|-------------------|-----------------------------|-----------|
 | t_node → QapLR | `p0`, `p1`, …     | `<len><cmd>`                | Игровые команды от игроков |
 | t_node → QapLR | `drop/0`, `drop/1`| *(пусто или причина)*       | Игрок исключён (TL/ML и т.п.) |
-| QapLR → t_node | `p0`, `p1`, …     | `<len><cmd>`                | Игровые сообщения игрокам (seed, vpow, state) |
+| QapLR → t_node | `p0`, `p1`, …     | `<len><cmd>`                | Игровые сообщения игрокам (seed,vpow) |
 | QapLR → t_node | `violate/0`, …    | `"invalid move"`            | Игрок нарушил правила |
-| QapLR → t_node | `err0`, `err1`, … | `"small error"`              | Небольшая ошибка в cmd |
+| QapLR → t_node | `err0`, `err1`, … | `"small error"`             | Небольшая ошибка в cmd |
+| QapLR → t_node | `result`          | `100,50,7.5,200.0`          | slot2score             |
+| QapLR → t_node | `finished`        | `2025.10.16 14:30:15.149`   | end of game            |
 
 ---
 
