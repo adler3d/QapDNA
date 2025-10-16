@@ -891,7 +891,7 @@ struct t_node:t_process,t_node_cache{
         return false;
       }
 
-      auto wrapper = [this,&client,on_connect](int){
+      auto wrapper = [this,&client,on_connect](int fd){
         if (client.connected)return;
         int err = 0;
         socklen_t len = sizeof(err);
