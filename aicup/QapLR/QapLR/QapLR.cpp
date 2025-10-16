@@ -3061,6 +3061,12 @@ struct GameSession {
         }
         return oss.str();
     }
+    string gen_result(){
+      vector<double> scores;world->get_score(scores);
+      vector<string> out;
+      for(auto&ex:scores)out.push_back(to_string(ex));
+      return join(out,",");
+    }
 } session;
 #ifdef _WIN32
 #include "inetdownloader.hpp"
@@ -4773,6 +4779,7 @@ int QapLR_main(int argc,char*argv[]){
         while (!session.end) {
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
+        zchan_write("result",session.gen_result());
         zchan_write("finished",local_cur_date_str_v4());
         reader_running = false;
         if (stdin_reader.joinable()) {
