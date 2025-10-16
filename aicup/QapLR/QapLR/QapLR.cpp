@@ -10,6 +10,7 @@
   #include <intrin.h>
 #endif
 #include "../../src/core/netapi.h"
+#include "stdio_zchan_reader.inl"
 #include <stdlib.h>
 #include <malloc.h>
 #include <memory.h>
@@ -2851,6 +2852,7 @@ struct GameSession {
       enum t_net_state{nsDef=0,nsOff=1,nsErr=-1};
       int network_state=nsDef;
       virtual void send(const string&msg)=0;
+      virtual void err(const string&msg)=0;
       virtual void off()=0;
     };
     vector<i_connection*> carr;
@@ -2877,16 +2879,18 @@ struct GameSession {
       if(g_args.gui_mode||g_args.replay_in_file)ws.push_back(world->clone());
     }
     void submit_command(int player_id, const string& cmd) {
-        if(end)return;
-        lock_guard<mutex> lock(mtx);
-        if(!qap_check_id(current_tick.received,player_id))return;
-        if(!current_tick.alive[player_id])return;
-        if(current_tick.received[player_id]){
-          current_tick.error_msgs[player_id]+="\nWarning: another cmd at the same turn!\n";
-          return;
-        }
-        current_tick.commands[player_id] = cmd;
-        current_tick.received[player_id] = true;
+      if(end)return;
+      lock_guard<mutex> lock(mtx);
+      if(!qap_check_id(current_tick.received,player_id))return;
+      if(!current_tick.alive[player_id])return;
+      if(current_tick.received[player_id]){
+        auto msg="\nWarning: another cmd at the same turn!\n";
+        current_tick.error_msgs[player_id]+=msg;
+        if(carr[player_id])carr[player_id]->err(msg);
+        return;
+      }
+      current_tick.commands[player_id] = cmd;
+      current_tick.received[player_id] = true;
     }
     void update(){
       if(end)return;
@@ -2901,6 +2905,7 @@ struct GameSession {
         cerr<<report;
         cerr<<"time:"<<clock.MS()<<endl;
         save();
+        end=true;
       }else{
         send_vpow_to_all();
       }
@@ -2939,7 +2944,10 @@ struct GameSession {
           if (!all_received||all_failed) return false;
           for (int i = 0; i < (int)current_tick.commands.size(); ++i) {
               if(!current_tick.alive[i]||!connected[i])continue;
-              world->use(i,current_tick.commands[i],current_tick.error_msgs[i]);
+              string err;
+              world->use(i,current_tick.commands[i],err);
+              if(carr[i]&&err.size())carr[i]->err(err);
+              current_tick.error_msgs[i]+=err;
           }
           history.push_back(current_tick);
           world->step();
@@ -4642,16 +4650,6 @@ int QapLR_main(int argc,char*argv[]){
       return 0;
       #endif
     }
-
-    if (!args.player_names.empty()) {
-        cerr << "Player names: ";
-        for (const auto& n : args.player_names) cerr << n << " ";
-        cerr << "\n";
-    }
-    if (args.remote){
-      if (debug) cerr << "debug/repeat ignored?\n";
-      cerr << "Remote protocol enabled\n";
-    }
     session.init();
     struct t_player{
       unique_ptr<t_server_api> server;
@@ -4661,15 +4659,127 @@ int QapLR_main(int argc,char*argv[]){
       struct t_conn:GameSession::i_connection{
         t_player*p=nullptr;
         void send(const string&msg)override{if(p)p->server->send_to_client(p->client_id,msg);};
+        void err(const string&msg)override{};
         void off()override{
           if(!p)return;
           if(network_state==nsDef)network_state=nsOff;
           if(p->server)p->server->disconnect_client(p->client_id);
         };
       } conn;
+      struct t_conn2:GameSession::i_connection{
+        t_player*p=nullptr;
+        void send(const string&msg)override{if(p)zchan_write("p"+to_string(p->client_id),msg);};
+        void err(const string&msg)override{if(p)zchan_write("err"+to_string(p->client_id),msg);};
+        void off()override{
+          if(!p)return;
+          if(network_state==nsDef)network_state=nsOff;
+          if(p->server)p->server->disconnect_client(p->client_id);
+        };
+      } conn2;
     };
     vector<t_player> players;
     players.resize(args.num_players);
+    auto kill=[&](t_player&p,int i){
+      p.broken=true;
+      if(p.conn.network_state==p.conn.nsDef)p.conn.network_state=p.conn.nsErr;
+      p.conn.p=nullptr;
+      session.set_connected(i,false);
+      session.update();
+    };
+    if (!args.player_names.empty()) {
+        cerr << "Player names: ";
+        for (const auto& n : args.player_names) cerr << n << " ";
+        cerr << "\n";
+    }
+    if (args.remote){
+        if (debug) cerr << "debug/repeat ignored?\n";
+        std::cerr << "Remote protocol over stdin/stdout enabled\n";
+
+        // --- Zchan reader из stdin ---
+        std::atomic<bool> reader_running{true};
+        std::thread stdin_reader([&]() {
+            emitter_on_data_decoder decoder;
+            decoder.cb = [&](const std::string& z, const std::string& payload) {
+                if (z.size() >= 5 && z.substr(0, 5) == "drop/") {
+                    // Обработка отключения игрока по сигналу от t_node (TL/ML и т.п.)
+                    if (std::all_of(z.begin() + 5, z.end(), ::isdigit)) {
+                        int player_index = std::stoi(z.substr(5));
+                        if (qap_check_id(players,player_index)) {
+                            auto& p = players[player_index];
+                            if (!p.broken) {
+                                std::cerr << "Player " << player_index << " dropped by t_node\n";
+                                kill(p,player_index);
+                            }
+                        }
+                    }
+                } else if (z.size() >= 1 && z[0] == 'p' && std::all_of(z.begin() + 1, z.end(), ::isdigit)) {
+                    // Обработка игровых данных от игрока
+                    int player_index = std::stoi(z.substr(1));
+                    if (qap_check_id(players,player_index)) {
+                        auto& p = players[player_index];
+                        if (p.broken) return;
+
+                        p.recv_buffer.append(payload);
+                        while (!session.end) {
+                            if (p.recv_buffer.size() < sizeof(uint32_t)) break;
+                            uint32_t len = *reinterpret_cast<const uint32_t*>(p.recv_buffer.data());
+                            if (len > 1024 * 1024) {
+                                std::cerr << "Player " << player_index << " sent too large packet (" << len << ")\n";
+                                kill(p,player_index);
+                                zchan_write("violate/" + std::to_string(player_index), "oversized packet");
+                                break;
+                            }
+                            size_t packet_size = sizeof(uint32_t) + len;
+                            if (p.recv_buffer.size() < packet_size) break;
+
+                            std::string cmd(p.recv_buffer.data() + sizeof(uint32_t), len);
+                            session.submit_command(player_index, cmd);
+                            session.update();
+
+                            if (!session.end) {
+                                p.recv_buffer.erase(0, packet_size);
+                            }
+                        }
+                    }
+                }
+                // Игнорируем неизвестные zchan
+            };
+
+            char buffer[4096];
+            while (reader_running) {
+                std::cin.read(buffer, sizeof(buffer));
+                std::streamsize n = std::cin.gcount();
+                if (n <= 0) break; // EOF или ошибка
+                decoder.feed(buffer, static_cast<size_t>(n));
+            }
+        });
+
+        for (int i = 0; i < players.size(); ++i) {
+            auto&p=players[i];
+            session.carr[i]=&p.conn2;
+            p.conn2.p=&p;
+        }
+
+        for (int i = 0; i < players.size(); ++i) {
+            players[i].client_id = i;
+            players[i].broken = false;
+            session.set_connected(i, true);
+        }
+
+        session.send_seed_to_all();
+        session.send_vpow_to_all();
+        session.clock.Start();
+
+        while (!session.end) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+        zchan_write("finished",local_cur_date_str_v4());
+        reader_running = false;
+        if (stdin_reader.joinable()) {
+            stdin_reader.join();
+        }
+        return 0;
+    }
     if(args.ports_from>=0){
       cerr << "Ports-from enabled\n";
       for(int i=0;i<players.size();i++){
@@ -4702,11 +4812,7 @@ int QapLR_main(int argc,char*argv[]){
           if(session.end)return;
           std::cerr << "[" << client_id << "] disconnected from socket at port "<<server.port<<endl;
           if(p.client_id!=client_id)return;
-          p.broken=true;
-          if(p.conn.network_state==p.conn.nsDef)p.conn.network_state=p.conn.nsErr;
-          p.conn.p=nullptr;
-          session.set_connected(i,false);
-          session.update();
+          kill(p,i);
         };
 
         server.onClientData = [&,i](int client_id, const std::string& data, std::function<void(const std::string&)> send) {
@@ -4719,7 +4825,7 @@ int QapLR_main(int argc,char*argv[]){
             uint32_t len=*reinterpret_cast<const uint32_t*>(p.recv_buffer.data());
             if (len > 1024 * 1024) {
               cerr << "Player " << i << " sent too large packet (" << len << ")\n";
-              p.broken = true;
+              kill(p,i);
               break;
             }
             size_t packet_size=sizeof(uint32_t)+len;
