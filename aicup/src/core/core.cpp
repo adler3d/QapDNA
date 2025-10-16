@@ -1,4 +1,24 @@
 #include "netapi.h"
+
+#include <thread>
+#include <iostream>
+#include <chrono>
+#include <string>
+#include <algorithm>
+#include <vector>
+#include <map>
+#include <unordered_map>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <random>
+#include <array>
+using namespace std;
+
+#include "../../QapLR/QapLR/qap_assert.inl"
+#include "../../QapLR/QapLR/qap_vec.inl"
+#include "../../QapLR/QapLR/qap_io.inl"
+
 #include "FromQapEng.h"
 #include "thirdparty/picosha2.h"
 #include "thirdparty/httplib.h"//13

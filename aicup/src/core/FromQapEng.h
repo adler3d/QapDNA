@@ -43,7 +43,7 @@ typedef std::chrono::duration<double, std::milli> dms;
 double dmsc(dms diff){return diff.count();}
 using namespace std;
 //#include "thirdparty/sweepline/sweepline.hpp"
-template<typename TYPE>TYPE Sign(TYPE value){if(value>0){return TYPE(+1);}else{return TYPE(value<0?-1:0);}};
+//template<typename TYPE>TYPE Sign(TYPE value){if(value>0){return TYPE(+1);}else{return TYPE(value<0?-1:0);}};
 #define QAP_DEBUG
 #ifdef _WIN32
 class QapClock{
@@ -286,9 +286,9 @@ struct TScreenMode{
 };
 struct TSys{int UPS=128;TScreenMode SM;bool UPS_enabled=true;bool NeedClose=false;void ResetClock(){}}; TSys Sys;
 static const int Sys_UPD=64;
-inline string IToS(const int&val){return to_string(val);}
-inline string FToS(const double&val){return to_string(val);}
-inline string FToS2(const float&val){std::stringstream ss;ss<<std::fixed<<std::setprecision(2)<<val;return ss.str();}
+//inline string IToS(const int&val){return to_string(val);}
+//inline string FToS(const double&val){return to_string(val);}
+//inline string FToS2(const float&val){std::stringstream ss;ss<<std::fixed<<std::setprecision(2)<<val;return ss.str();}
 inline string FToS4(const float&val){std::stringstream ss;ss<<std::fixed<<std::setprecision(4)<<val;return ss.str();}
 #ifdef __EMSCRIPTEN__
 #define __debugbreak()EM_ASM({throw new Error("__debugbreak");});
@@ -314,7 +314,7 @@ inline bool SysQapDebugMsg(const string&msg,bool&ignore,const string&filename,co
 #else
 #define QapNoWay()
 #endif
-enum QapMsgBoxRetval{qmbrSkip,qmbrBreak,qmbrIgnore};
+/*enum QapMsgBoxRetval{qmbrSkip,qmbrBreak,qmbrIgnore};
 inline int WinMessageBox(const string&caption,const string&text)
 {
   #ifdef _WIN32
@@ -444,7 +444,7 @@ public:
     for(int i=0;i<count;i++)mem[n+i]=c[i];//FIXME: тут можно юзать memcpy
     pos+=count;
   };
-};
+};*/
 template<typename TYPE,size_t COUNT>
 inline size_t lenof(TYPE(&)[COUNT]){
   return COUNT;
@@ -961,7 +961,7 @@ void QapPopFront(vector<TYPE>&arr)
   if(last==arr.size())return;
   arr.resize(last);
 }*/
-template<class TYPE>static TYPE&qap_add_back(vector<TYPE>&arr){arr.push_back(TYPE());return arr.back();}
+//template<class TYPE>static TYPE&qap_add_back(vector<TYPE>&arr){arr.push_back(TYPE());return arr.back();}
 //-------------------------------------------//
 template<class TYPE,class FUNC>
 static vector<int> qap_find(vector<TYPE>&arr,FUNC&&func){
@@ -1008,7 +1008,7 @@ QapToolsVector<TYPE> QapToolsVectorEx(vector<TYPE>&ref)
   QapToolsVector<TYPE> tmp={ref};return std::move(tmp);
 }
 template<class TYPE>bool qap_includes(const vector<TYPE>&arr,const TYPE&value){for(int i=0;i<arr.size();i++){if(arr[i]==value)return true;}return false;}
-template<class TYPE>static bool qap_check_id(const vector<TYPE>&arr,int id){return id>=0&&id<arr.size();}
+//template<class TYPE>static bool qap_check_id(const vector<TYPE>&arr,int id){return id>=0&&id<arr.size();}
 template<class TYPE>static bool qap_check_id(int id,const vector<TYPE>&arr){return id>=0&&id<arr.size();}
 template<class TYPE>static bool qap_check_id(size_t id,const vector<TYPE>&arr){return id<arr.size();}
 template<class TYPE,class FUNC>
