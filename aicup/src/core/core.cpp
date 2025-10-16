@@ -161,6 +161,9 @@ void stream_write(t_unix_socket& client, const string& z, const string& data) {
 struct t_game_slot{string coder;int v=0;string cdn_bin_file;};
 struct t_game_decl{
   vector<t_game_slot> arr;
+  string world="t_splinter";
+  uint32_t seed_initial=0;
+  uint32_t seed_strategies=0;
   string config;
   int game_id=0;
   int maxtick=20000;// or 6000 * 0.050 == 5*60
@@ -455,7 +458,7 @@ struct t_cdn_game:t_finished_game{
     vector<double> tick2ms;
   };
   vector<t_player> slot2player;
-  vector<vector<t_cmd>> tick2cmds;
+  vector<vector<string>> tick2cmds;
   string serialize()const{return {};}
   int size(){return 0;}// TODO: need return serialize().size() but optimized!
 };
@@ -1213,11 +1216,18 @@ typedef int pid_t;
 void kill_by_pid(...){}
 pid_t fork(...){return {};}
 void execl(...){return;}
+int pipe(...){return {};}
+static constexpr int STDIN_FILENO=0;
+static constexpr int STDOUT_FILENO=0;
+#define dup2(...)0
+#define fdopen(...)0
+#define qap_read(...)0
 #else
 static inline pollfd make_pollin(int fd){return pollfd{fd,POLLIN,0};}
 static inline pollfd make_pollinout(int fd){return pollfd{fd,POLLIN|POLLOUT,0};}
 #define qap_close close
 void kill_by_pid(pid_t runner_pid){kill(runner_pid,SIGTERM);}
+#define qap_read read
 #endif
 
 #include <cstdlib>

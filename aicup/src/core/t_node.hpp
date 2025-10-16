@@ -1,4 +1,4 @@
-const string t_node_cache_dir="/t_node_cache/bins/";
+﻿const string t_node_cache_dir="/t_node_cache/bins/";
 struct t_node_cache{
   struct t_lru_cache{
     string log_file="/t_node_cache/lru.log";
@@ -145,6 +145,35 @@ struct t_unix_socket {
     if (sock != -1) { ::qap_close(sock); sock = -1; }
   }
 };
+struct t_player_packet_decoder {
+  string buffer;
+  vector<string> completed_packets;
+  using packet_cb_t = function<void(const string& cmd)>;
+  packet_cb_t on_packet;
+  t_player_packet_decoder(packet_cb_t cb = nullptr) : on_packet(cb) {}
+  void feed(const char* data, size_t len) {
+    buffer.append(data, len);
+    while (true) {
+      if (buffer.size() < sizeof(uint32_t)) break;
+      uint32_t cmd_len = *reinterpret_cast<const uint32_t*>(buffer.data());
+      if (cmd_len > 1024 * 1024) {
+        buffer.clear();
+        if(on_packet)on_packet("");
+        return;
+      }
+      size_t total_size = sizeof(uint32_t) + cmd_len;
+      if (buffer.size() < total_size) break;
+      string cmd(buffer.data() + sizeof(uint32_t), cmd_len);
+      if (on_packet) on_packet(cmd);
+      buffer.erase(0, total_size);
+    }
+  }
+  bool has_incomplete_data() const {
+    if (buffer.size() < sizeof(uint32_t)) return !buffer.empty();
+    uint32_t len = *reinterpret_cast<const uint32_t*>(buffer.data());
+    return buffer.size() < sizeof(uint32_t) + len;
+  }
+};
 template<>
 t_game_decl parse(const string_view&s){
   t_game_decl out;
@@ -153,6 +182,161 @@ t_game_decl parse(const string_view&s){
 }
 struct t_node:t_process,t_node_cache{
   struct t_runned_game;
+  struct t_qaplr_process {
+      pid_t pid = -1;
+      int stdin_fd = -1;   // write to QapLR
+      int stdout_fd = -1;  // read from QapLR
+      FILE* stdin_file = nullptr;
+      FILE* stdout_file = nullptr;
+
+      t_runned_game* pgame = nullptr;
+      t_node* pnode = nullptr;
+
+      emitter_on_data_decoder decoder;
+
+      ~t_qaplr_process() { stop(); }
+
+      void stop() {
+          if (stdin_file) { fclose(stdin_file); stdin_file = nullptr; }
+          if (stdout_file) { fclose(stdout_file); stdout_file = nullptr; }
+          if (pid > 0) {
+              kill_by_pid(pid);
+              pid = -1;
+          }
+      }
+
+      bool start(const t_game_decl& gd) {
+          int stdin_pipe[2], stdout_pipe[2];
+          if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0) {
+              perror("pipe");
+              return false;
+          }
+
+          pid = fork();
+          if (pid == 0) {
+              // Дочерний: перенаправляем stdin/stdout
+              dup2(stdin_pipe[0], STDIN_FILENO);
+              dup2(stdout_pipe[1], STDOUT_FILENO);
+              qap_close(stdin_pipe[0]); qap_close(stdin_pipe[1]);
+              qap_close(stdout_pipe[0]); qap_close(stdout_pipe[1]);
+
+              // Формируем аргументы
+              execl("./QapLR",
+                  "QapLR",
+                  "--remote",
+                  ("--world=" + gd.world).c_str(),
+                  ("--seed-initial=" + to_string(gd.seed_initial)).c_str(),
+                  ("--seed-strategies=" + to_string(gd.seed_strategies)).c_str(),
+                  ("--num-players=" + to_string(gd.arr.size())).c_str(),
+                  "--no-gui",
+                  nullptr
+              );
+              perror("execl QapLR failed");
+              _exit(1);
+          }
+
+          if (pid < 0) {
+              perror("fork");
+              qap_close(stdin_pipe[0]); qap_close(stdin_pipe[1]);
+              qap_close(stdout_pipe[0]); qap_close(stdout_pipe[1]);
+              return false;
+          }
+
+          // Родитель: закрываем ненужные концы
+          qap_close(stdin_pipe[0]);   // читать из stdin QapLR не будем
+          qap_close(stdout_pipe[1]);  // писать в stdout QapLR не будем
+
+          stdin_fd = stdin_pipe[1];
+          stdout_fd = stdout_pipe[0];
+
+          stdin_file = fdopen(stdin_fd, "w");
+          stdout_file = fdopen(stdout_fd, "r");
+          if (!stdin_file || !stdout_file) {
+              stop();
+              return false;
+          }
+
+          // Настройка буферизации: unbuffered для надёжности
+          setvbuf(stdin_file, nullptr, _IONBF, 0);
+          setvbuf(stdout_file, nullptr, _IONBF, 0);
+
+          // Запуск чтения из stdout QapLR
+          start_reading();
+
+          return true;
+      }
+
+      void start_reading() {
+          pnode->loop_v2.add(stdout_fd, [this](int fd) {
+              char buf[4096];
+              ssize_t n = qap_read(fd, buf, sizeof(buf));
+              if (n > 0) {
+                  decoder.feed(buf, n);
+              } else {
+                  // EOF или ошибка → QapLR завершился
+                  pnode->on_qaplr_finished(*pgame);
+                  pnode->loop_v2.remove(fd);
+                  stop();
+              }
+          });
+      }
+
+      void write_zchan(const string& z, const string& payload) {
+          string frame = qap_zchan_write(z, payload);
+          if (stdin_file) {
+              fwrite(frame.data(), 1, frame.size(), stdin_file);
+              fflush(stdin_file);
+          }
+      }
+
+      t_qaplr_process() {
+          decoder.cb = [this](const string& z, const string& payload) {
+              if (z == "finished") {
+                  pnode->on_qaplr_finished(*pgame);
+              } else if (z == "result") {
+                  // payload: "score0,score1,..."
+                  pgame->world.slot2score.clear();
+                  stringstream ss(payload);
+                  string item;
+                  while (getline(ss, item, ',')) {
+                      pgame->world.slot2score.push_back(stod(item));
+                  }
+              } else if (z.substr(0, 8) == "violate/") {
+                  if (isdigit(z[8])) {
+                      int player_id = stoi(z.substr(8));
+                      if (qap_check_id(player_id, pgame->slot2api)) {
+                          pnode->container_monitor.kill(*pgame, player_id);
+                          pgame->slot2status[player_id].PF = true;
+                      }
+                  }
+              } else if (z.substr(0, 3) == "err") {
+                  // Логируем ошибки, но не убиваем
+                  int player_id = stoi(z.substr(3));
+                  if (qap_check_id(player_id, pgame->slot2api)) {
+                      pgame->slot2api[player_id]->on_stderr("[QapLR] " + payload + "\n");
+                  }
+              }else if (z.substr(0, 5) == "seed/"&&isdigit(z[5])) {
+                  int player_id = stoi(z.substr(5));
+                  if (qap_check_id(player_id, pgame->slot2api)) {
+                      // Отправляем seed в контейнер — БЕЗ запуска TL!
+                      pgame->slot2api[player_id]->write_stdin(
+                          payload//qap_zchan_write("seed", payload)
+                      );
+                  }
+              } else if (z[0] == 'p' && isdigit(z[1])) {
+                  // Это данные для игрока — пересылаем в докер
+                  int player_id = stoi(z.substr(1));
+                  if (qap_check_id(player_id, pgame->slot2api)) {
+                      pgame->slot2api[player_id]->write_stdin(
+                          payload//qap_zchan_write("vpow", payload)  // или "cmd", но лучше "vpow"
+                      );
+                      // Запускаем таймер TL
+                      pnode->container_monitor.add(pgame, player_id);
+                  }
+              }
+          };
+      }
+  };
   struct t_docker_api_v2{
     int player_id;
     t_runned_game* pgame = nullptr;
@@ -180,8 +364,8 @@ struct t_node:t_process,t_node_cache{
         } else if (z == "log") {
           on_stderr("[CTRL] " + msg + "\n");
         } else if(z=="ai_binary_ack"){
-          pnode->send_vpow(*pgame,player_id);
-        } else if (z == "vpow") {
+          //pnode->send_vpow(*pgame,player_id);
+        }/* else if (z == "vpow") {
           if (pgame->runner.get()!= this)return;
           try {
             auto j = json::parse(msg);
@@ -209,7 +393,7 @@ struct t_node:t_process,t_node_cache{
           pgame->slot2status[id].EL=true;
           if(!qap_check_id(id,pgame->slot2api))return;
           t_node::kill(pgame->slot2api[id]->conid);
-        }
+        }*/
       };
     }
     void start_reading() {
@@ -219,7 +403,7 @@ struct t_node:t_process,t_node_cache{
             if (n > 0) {
                 decoder.feed(buf, n);
             } else {
-                // ����� ������
+                // Сокет закрыт
                 on_closed_stdout();
                 on_closed_stderr();
                 pnode->loop_v2.remove(fd);
@@ -262,37 +446,72 @@ struct t_node:t_process,t_node_cache{
   struct t_runned_game{
     t_game_decl gd;
     int tick=0;
-    pid_t runner_pid = 0;
-    string runner_socket_path;
-    unique_ptr<t_docker_api_v2> runner;
+    //pid_t runner_pid = 0;
+    //string runner_socket_path;
+    //unique_ptr<t_docker_api_v2> runner;
+    unique_ptr<t_qaplr_process> qaplr;
     vector<unique_ptr<t_docker_api_v2>> slot2api;
-    vector<t_cmd> slot2cmd;
+    vector<string> slot2cmd;
     vector<t_status> slot2status;
     vector<int> slot2ready;
     vector<string> slot2bin;
-    vector<vector<t_cmd>> tick2cmds;
-    vector<emitter_on_data_decoder> slot2eodd;
+    vector<vector<string>> tick2cmds;
+    //vector<emitter_on_data_decoder> slot2eodd;
+    vector<t_player_packet_decoder> slot2decoder;
     string cdn_upload_token=UPLOAD_TOKEN;
-    t_world w;
-    void init(){
+    //t_world w;
+    t_world world;
+    t_node*pnode=nullptr;
+    void init(t_node*pnode){
+      this->pnode=pnode;
       slot2cmd.resize(gd.arr.size());
       slot2status.resize(gd.arr.size());
       slot2ready.resize(gd.arr.size());
       slot2bin.resize(gd.arr.size());
-      slot2eodd.resize(gd.arr.size());
+      slot2decoder.resize(gd.arr.size());
+      init_decoders();
+    }
+    static string mk_len_packed(const string&msg){
+      string out(sizeof(uint32_t),'0');
+      uint32_t&len=(uint32_t&)out[0];len=msg.size();
+      return out+msg;
+    }
+    void init_decoders(){
+      for (int i = 0; i < gd.arr.size(); ++i) {
+        int player_id = i;
+        slot2decoder[i].on_packet = [this, player_id](const string& cmd) {
+          if (cmd.empty()) {
+            // Ошибка: oversized или битый пакет
+            if (qap_check_id(player_id, slot2api)) {
+              slot2api[player_id]->on_stderr("[t_node] oversized or invalid packet\n");
+              pnode->container_monitor.kill(*this, player_id);
+              slot2status[player_id].PF = true;
+            }
+            return;
+          }
+
+          // Команда получена полностью!
+          // 1. Сохраняем для replay
+          if (tick2cmds.size() <= tick) tick2cmds.resize(tick + 1,vector<string>(gd.arr.size()));
+          tick2cmds[tick][player_id] = cmd;
+
+          // 2. Останавливаем таймер TL
+          for (auto& task : pnode->container_monitor.tasks) {
+            if (task.pgame == this && task.player_id == player_id && !task.done) {
+              task.on_done(pnode->container_monitor.clock);
+              break;
+            }
+          }
+          
+          // 3. Пересылаем в QapLR
+          if (qaplr) {
+            qaplr->write_zchan("p"+to_string(player_id),mk_len_packed(cmd));
+          }
+        };
+      }
     }
     void free(){
-      if (runner_pid > 0) {
-        kill_by_pid(runner_pid);
-        runner_pid = 0;
-      }
-      if (runner) {
-        runner->socket.qap_close();
-      }
-      if (!runner_socket_path.empty()) {
-        unlink(runner_socket_path.c_str());
-        runner_socket_path.clear();
-      }
+      qaplr=nullptr;
       for (auto& api : slot2api) {
         if (api) {
           //t_node::kill(api->conid);
@@ -326,7 +545,7 @@ struct t_node:t_process,t_node_cache{
     t_finished_game mk_fg(){
       t_finished_game out;
       out.game_id=gd.game_id;
-      out.slot2score=w.slot2score;
+      out.slot2score=world.slot2score;
       int i=-1;
       for(auto&ex:slot2status){
         i++;
@@ -363,6 +582,9 @@ struct t_node:t_process,t_node_cache{
     static void kill(t_runned_game&g,int pid){
       auto&conid=g.slot2api[pid]->conid;
       t_node::kill(conid);
+      if(g.qaplr){
+        g.qaplr->write_zchan("drop/"+to_string(pid),"");
+      }
     }
     struct t_task{
       t_runned_game*pgame=nullptr;
@@ -387,16 +609,23 @@ struct t_node:t_process,t_node_cache{
         return true;
       }
     };
+    mutex tasks_mtx;
     vector<t_task> tasks;
     t_node*pnode=nullptr;
     QapClock clock;
     void add(t_runned_game*pgame,int player_id) {
+      lock_guard<mutex> lock(tasks_mtx);
+      QapCleanIf(tasks, [&](const t_task& t) {
+        return t.pgame == pgame && t.player_id == player_id;
+      });
       tasks.push_back({pgame,player_id,clock.MS()});
     }
     void clear(int game_id){
+      lock_guard<mutex> lock(tasks_mtx);
       QapCleanIf(tasks,[&](const t_task&t){return t.pgame->gd.game_id==game_id;});
     }
     void update(){
+      lock_guard<mutex> lock(tasks_mtx);
       bool frag=false;
       for(auto&t:tasks)if(t.done){
         frag=frag||t.kill_if_TL(t.ms);
@@ -448,7 +677,7 @@ struct t_node:t_process,t_node_cache{
   }
   static string config2seed(const string&config){return {};}
   vector<unique_ptr<t_runned_game>> rgarr;
-  // ����������� ��������
+  // Асинхронная отправка
   void t_cdn_api_upload_async(
       const string& path,
       const t_cdn_game& data,
@@ -477,66 +706,16 @@ struct t_node:t_process,t_node_cache{
     //capi.write_to_socket(local_main_ip_port,payload);
     swd->try_write("game_uploaded:"+UPLOAD_TOKEN,serialize(ref));
   }
-  bool new_runner(t_runned_game&g){
-    auto& runner_api_ptr = g.runner;
-    runner_api_ptr = make_unique<t_docker_api_v2>();
-    t_docker_api_v2& runner_api = *runner_api_ptr;
-    runner_api.pnode = this;
-    runner_api.player_id = -1;  // �� �����
-    runner_api.pgame = &g;
-    runner_api.conid = "runner_host_" + to_string(g.gd.game_id);
-
-    // ���� � ������
-    string socketDir = "/tmp/runner_sockets";
-    system(("mkdir -p " + socketDir).c_str());
-    runner_api.socket_path_on_host = socketDir + "/runner_" + to_string(g.gd.game_id) + ".sock";
-    unlink(runner_api.socket_path_on_host.c_str());
-    g.runner_socket_path = runner_api.socket_path_on_host;
-
-    pid_t pid = fork();
-
-    if (pid == 0) {
-      // �������� �������
-      execl("./runner", "runner", g.runner_socket_path.c_str(), nullptr);
-      // ���� ���� ����� � ������
-      perror("execl failed");
-      _exit(1);
-    } else if (pid < 0) {
-      perror("fork failed");
-      return false;
-    }
-
-    // ��������
-    g.runner_pid = pid;
-    LOG("Started t_runner with PID=" + to_string(pid));
-
-    // ��� �������� ������
-    loop_v2.wait_for_socket(g.runner_socket_path, 5000);
-
-    if (!runner_api.socket.connect_unix(g.runner_socket_path)) {
-      LOG("Failed to connect to runner socket: " + g.runner_socket_path);
-      kill_by_pid(pid);  // ���������� �������
-      g.runner_pid = 0;
-      unlink(g.runner_socket_path.c_str());
-      return false;
-    }
-
-    runner_api.start_reading();
-
-    // ���������� init
-    string init_data = serialize(g.gd);  // ��� � JSON
-    stream_write(runner_api.socket, "init", init_data);
-    return true;
-  }
   int game_n=0;mutex rgarr_mutex;
   bool new_game(const t_game_decl&gd){
     t_runned_game*pgame=nullptr;
     {lock_guard<mutex> lock(rgarr_mutex);auto&gu=qap_add_back(rgarr);gu=make_unique<t_runned_game>();pgame=gu.get();}
     auto&g=*pgame;
     g.gd=gd;
-    g.init();
-    if(!new_runner(g)){
-      LOG("t_runner spawn failed, aborting game " + to_string(gd.game_id));
+    g.init(this);
+    g.qaplr=make_unique<t_qaplr_process>();
+    if(!g.qaplr->start(gd)){
+      LOG("qaplr spawn failed, aborting game " + to_string(gd.game_id));
       lock_guard<mutex> lock(rgarr_mutex);
       QapCleanIf(rgarr, [&](const auto& ref) {
         return ref->gd.game_id == gd.game_id;
@@ -585,29 +764,56 @@ struct t_node:t_process,t_node_cache{
       }
     );
   }
-  void game_tick(t_runned_game&game){
-    for(int i=0;i<game.slot2cmd.size();i++)game.w.use(i,game.slot2cmd[i]);
-    game.tick2cmds.push_back(game.slot2cmd);
-    game.w.step();
-    if(game.w.finished()||game.tick>=game.gd.maxtick){
-      for(int i=0;i<game.gd.arr.size();i++)container_monitor.kill(game,i);
-      container_monitor.clear(game.gd.game_id);
-      send_game_result(game);
-      return;
+  void on_qaplr_finished(t_runned_game& g) {
+    LOG("QapLR finished for game " + to_string(g.gd.game_id));
+    for (int i = 0; i < (int)g.slot2api.size(); ++i) {
+      if (g.slot2status[i].ok()) {
+          container_monitor.kill(g, i);
+      }
     }
-    for(int i=0;i<game.slot2api.size();i++){
-      if(!game.slot2status[i].ok())continue;
-      send_vpow(game,i);
-    }
+    container_monitor.clear(g.gd.game_id);
+    send_game_result(g);
   }
-  void send_vpow(t_runned_game&game,int i){
-    string vpow=serialize(game.w,i);
-    auto&api=game.slot2api[i];
-    api->write_stdin(qap_zchan_write("vpow",vpow));
-    container_monitor.add(&game,i);
-  }
+  //void game_tick(t_runned_game&game){
+  //  for(int i=0;i<game.slot2cmd.size();i++)game.w.use(i,game.slot2cmd[i]);
+  //  game.tick2cmds.push_back(game.slot2cmd);
+  //  game.w.step();
+  //  if(game.w.finished()||game.tick>=game.gd.maxtick){
+  //    for(int i=0;i<game.gd.arr.size();i++)container_monitor.kill(game,i);
+  //    container_monitor.clear(game.gd.game_id);
+  //    send_game_result(game);
+  //    return;
+  //  }
+  //  for(int i=0;i<game.slot2api.size();i++){
+  //    if(!game.slot2status[i].ok())continue;
+  //    send_vpow(game,i);
+  //  }
+  //}
+  //void send_vpow(t_runned_game&game,int i){
+  //  string vpow=serialize(game.w,i);
+  //  auto&api=game.slot2api[i];
+  //  api->write_stdin(qap_zchan_write("vpow",vpow));
+  //  container_monitor.add(&game,i);
+  //}
   void on_player_stdout(t_runned_game&g,int player_id,const string_view&data){
-    string s(data);
+    /*
+      TODO: мы не можешь тут просто так пересылать данные в qaplr.
+      я планировал что тут будет определяться момент когда команда от t_ai окончательно пришла.
+      и затем на основе этой логики решать был ли нарушен TL.
+      тоесть тут мы должны точно знать когда достигнут конец сообщения.
+      кодировка в которой приходят данные очень простая "<len><cmd>" где len типа uint32, а за ним сразу cmd на len байтов.
+      мы должны создать класс похожий на то что сейчас храниться в slot2eodd[player_id].
+      он там будет хранить свой буффер и накапливать содержимое?
+      или ещё лучше, он будет подсчитывать сколько байтов через него прошло? нет.
+      всё же он должен иметь хотя бы 4 байтовый буфер чтобы ловить все <len> маркеры сообщений.
+      тоесть он должен нам всего-то навсего сообщать когда сообщение закончилось...
+      нет... всё же придться хранить полноценный буффер. да точно полноценный буфер.
+      мы тут внутри t_node должны под конец симуляции сообрать всю инфу необходимую для того чтобы сделать replay.
+      тоесть мы должны запомнить все t_cmd от всех игроков, а так же все ошибки/отключения.
+    */
+    if (!qap_check_id(player_id, g.slot2decoder)) return;
+    g.slot2decoder[player_id].feed(data.data(), data.size());
+    /*string s(data);
     auto&eodd=g.slot2eodd[player_id];
     bool deaded=false;
     auto end=[&](const string&msg){
@@ -637,20 +843,20 @@ struct t_node:t_process,t_node_cache{
     }
     if(g.all_ready()){
       tick(g);
-    }
+    }*/
   }
-  void tick(t_runned_game&g){
-    container_monitor.update();
-    container_monitor.clear(g.gd.game_id);
-    game_tick(g);
-    g.tick++;
-    g.new_tick();
-  }
+  //void tick(t_runned_game&g){
+  //  container_monitor.update();
+  //  container_monitor.clear(g.gd.game_id);
+  //  game_tick(g);
+  //  g.tick++;
+  //  g.new_tick();
+  //}
 
   struct t_event_loop_v2{
     struct t_monitored_fd {
       int fd;
-      string path;  // ��� Unix-socket
+      string path;  // для Unix-socket
       function<void(int fd)> on_ready;
       //function<void()> on_error;
       bool connected = false;
@@ -714,7 +920,7 @@ struct t_node:t_process,t_node_cache{
         }
         pnode->container_monitor.update();
         if(pfds.empty()){this_thread::sleep_for(16ms);}
-        int n = poll(pfds.data(), pfds.size(), 1);  // 1ms ������� � ���������
+        int n = poll(pfds.data(), pfds.size(), 1);  // 1ms таймаут — нормально
         if (n <= 0) continue;
 
         {
@@ -725,7 +931,7 @@ struct t_node:t_process,t_node_cache{
                 if (f.fd == pfd.fd) {
                   //if (f.on_error) f.on_error();
                   qap_close(pfd.fd);
-                  remove(pfd.fd);  // ������� �� ������
+                  remove(pfd.fd);  // удаляем из списка
                   LOG("Socket error on fd="+to_string(pfd.fd));
                   break;
                 }
@@ -791,7 +997,7 @@ struct t_node:t_process,t_node_cache{
     periodic_cleanup();
     //periodic_ping();
 
-    // new_game(...) � ���-�� ����������
+    // new_game(...) — где-то вызывается
 
     //loop.run(this);
     //auto cores=to_string(thread::hardware_concurrency());

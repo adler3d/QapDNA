@@ -2852,6 +2852,8 @@ struct GameSession {
       enum t_net_state{nsDef=0,nsOff=1,nsErr=-1};
       int network_state=nsDef;
       virtual void send(const string&msg)=0;
+      virtual void send_seed(const string&msg){send(msg);}
+      virtual void send_vpow(const string&msg){send(msg);}
       virtual void err(const string&msg)=0;
       virtual void off()=0;
     };
@@ -2984,7 +2986,7 @@ struct GameSession {
       *(uint32_t*)seed.data()=g_args.seed_strategies;
       for(int i=0;i<g_args.num_players;i++){
         if(is_alive[i]&&connected[i]){
-          carr[i]->send(seed);
+          carr[i]->send_seed(seed);
         }
       }
     }
@@ -4675,6 +4677,7 @@ int QapLR_main(int argc,char*argv[]){
       struct t_conn2:GameSession::i_connection{
         t_player*p=nullptr;
         void send(const string&msg)override{if(p)zchan_write("p"+to_string(p->client_id),msg);};
+        void send_seed(const string&msg)override{if(p)zchan_write("seed/"+to_string(p->client_id),msg);};
         void err(const string&msg)override{if(p)zchan_write("err"+to_string(p->client_id),msg);};
         void off()override{
           if(!p)return;
@@ -4698,94 +4701,94 @@ int QapLR_main(int argc,char*argv[]){
         cerr << "\n";
     }
     if (args.remote){
-        if (debug) cerr << "debug/repeat ignored?\n";
-        std::cerr << "Remote protocol over stdin/stdout enabled\n";
+      if (debug) cerr << "debug/repeat ignored?\n";
+      std::cerr << "Remote protocol over stdin/stdout enabled\n";
 
-        // --- Zchan reader из stdin ---
-        std::atomic<bool> reader_running{true};
-        std::thread stdin_reader([&]() {
-            emitter_on_data_decoder decoder;
-            decoder.cb = [&](const std::string& z, const std::string& payload) {
-                if (z.size() >= 5 && z.substr(0, 5) == "drop/") {
-                    // Обработка отключения игрока по сигналу от t_node (TL/ML и т.п.)
-                    if (std::all_of(z.begin() + 5, z.end(), ::isdigit)) {
-                        int player_index = std::stoi(z.substr(5));
-                        if (qap_check_id(players,player_index)) {
-                            auto& p = players[player_index];
-                            if (!p.broken) {
-                                std::cerr << "Player " << player_index << " dropped by t_node\n";
-                                kill(p,player_index);
-                            }
-                        }
-                    }
-                } else if (z.size() >= 1 && z[0] == 'p' && std::all_of(z.begin() + 1, z.end(), ::isdigit)) {
-                    // Обработка игровых данных от игрока
-                    int player_index = std::stoi(z.substr(1));
-                    if (qap_check_id(players,player_index)) {
-                        auto& p = players[player_index];
-                        if (p.broken) return;
-
-                        p.recv_buffer.append(payload);
-                        while (!session.end) {
-                            if (p.recv_buffer.size() < sizeof(uint32_t)) break;
-                            uint32_t len = *reinterpret_cast<const uint32_t*>(p.recv_buffer.data());
-                            if (len > 1024 * 1024) {
-                                std::cerr << "Player " << player_index << " sent too large packet (" << len << ")\n";
-                                kill(p,player_index);
-                                zchan_write("violate/" + std::to_string(player_index), "oversized packet");
-                                break;
-                            }
-                            size_t packet_size = sizeof(uint32_t) + len;
-                            if (p.recv_buffer.size() < packet_size) break;
-
-                            std::string cmd(p.recv_buffer.data() + sizeof(uint32_t), len);
-                            session.submit_command(player_index, cmd);
-                            session.update();
-
-                            if (!session.end) {
-                                p.recv_buffer.erase(0, packet_size);
-                            }
-                        }
-                    }
+      // --- Zchan reader из stdin ---
+      std::atomic<bool> reader_running{true};
+      std::thread stdin_reader([&]() {
+        emitter_on_data_decoder decoder;
+        decoder.cb = [&](const std::string& z, const std::string& payload) {
+          if (z.size() >= 5 && z.substr(0, 5) == "drop/") {
+            // Обработка отключения игрока по сигналу от t_node (TL/ML и т.п.)
+            if (std::all_of(z.begin() + 5, z.end(), ::isdigit)) {
+              int player_index = std::stoi(z.substr(5));
+              if (qap_check_id(players,player_index)) {
+                auto& p = players[player_index];
+                if (!p.broken) {
+                  std::cerr << "Player " << player_index << " dropped by t_node\n";
+                  kill(p,player_index);
                 }
-                // Игнорируем неизвестные zchan
-            };
-
-            char buffer[4096];
-            while (reader_running) {
-                std::cin.read(buffer, sizeof(buffer));
-                std::streamsize n = std::cin.gcount();
-                if (n <= 0) break; // EOF или ошибка
-                decoder.feed(buffer, static_cast<size_t>(n));
+              }
             }
-        });
+          } else if (z.size() >= 1 && z[0] == 'p' && std::all_of(z.begin() + 1, z.end(), ::isdigit)) {
+            // Обработка игровых данных от игрока
+            int player_index = std::stoi(z.substr(1));
+            if (qap_check_id(players,player_index)) {
+              auto& p = players[player_index];
+              if (p.broken) return;
 
-        for (int i = 0; i < players.size(); ++i) {
-            auto&p=players[i];
-            session.carr[i]=&p.conn2;
-            p.conn2.p=&p;
-        }
+              p.recv_buffer.append(payload);
+              while (!session.end) {
+                if (p.recv_buffer.size() < sizeof(uint32_t)) break;
+                uint32_t len = *reinterpret_cast<const uint32_t*>(p.recv_buffer.data());
+                if (len > 1024 * 1024) {
+                  std::cerr << "Player " << player_index << " sent too large packet (" << len << ")\n";
+                  kill(p,player_index);
+                  zchan_write("violate/" + std::to_string(player_index), "oversized packet");
+                  break;
+                }
+                size_t packet_size = sizeof(uint32_t) + len;
+                if (p.recv_buffer.size() < packet_size) break;
 
-        for (int i = 0; i < players.size(); ++i) {
-            players[i].client_id = i;
-            players[i].broken = false;
-            session.set_connected(i, true);
-        }
+                std::string cmd(p.recv_buffer.data() + sizeof(uint32_t), len);
+                session.submit_command(player_index, cmd);
+                session.update();
 
-        session.send_seed_to_all();
-        session.send_vpow_to_all();
-        session.clock.Start();
+                if (!session.end) {
+                  p.recv_buffer.erase(0, packet_size);
+                }
+              }
+            }
+          }
+          // Игнорируем неизвестные zchan
+        };
 
-        while (!session.end) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        char buffer[4096];
+        while (reader_running) {
+          std::cin.read(buffer, sizeof(buffer));
+          std::streamsize n = std::cin.gcount();
+          if (n <= 0) break; // EOF или ошибка
+          decoder.feed(buffer, static_cast<size_t>(n));
         }
-        zchan_write("result",session.gen_result());
-        zchan_write("finished",local_cur_date_str_v4());
-        reader_running = false;
-        if (stdin_reader.joinable()) {
-            stdin_reader.join();
-        }
-        return 0;
+      });
+
+      for (int i = 0; i < players.size(); ++i) {
+        auto&p=players[i];
+        session.carr[i]=&p.conn2;
+        p.conn2.p=&p;
+      }
+
+      for (int i = 0; i < players.size(); ++i) {
+        players[i].client_id = i;
+        players[i].broken = false;
+        session.set_connected(i, true);
+      }
+
+      session.send_seed_to_all();
+      session.send_vpow_to_all();
+      session.clock.Start();
+
+      while (!session.end) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+      }
+      zchan_write("result",session.gen_result());
+      zchan_write("finished",local_cur_date_str_v4());
+      reader_running = false;
+      if (stdin_reader.joinable()) {
+        stdin_reader.join();
+      }
+      return 0;
     }
     if(args.ports_from>=0){
       cerr << "Ports-from enabled\n";
