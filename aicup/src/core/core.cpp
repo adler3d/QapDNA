@@ -609,6 +609,7 @@ struct t_main : t_process,t_http_base {
         if(z=="ping:"+UPLOAD_TOKEN){
           auto n=node(client_id,true);
           if(n.size())sch.on_ping(n);
+          server.send_to_client(client_id,qap_zchan_write("pong",":)"));
         }
       };
     }

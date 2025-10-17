@@ -975,6 +975,7 @@ struct t_node:t_process,t_node_cache{
   string unique_token;
   int main(){
     static auto cores=to_string(thread::hardware_concurrency()*32);
+    atomic<bool> pong_received{false};
     auto cb=[&](const string&z,const string&payload){
       if(z=="hi"){
         if(unique_token.empty())unique_token=payload;
@@ -988,16 +989,27 @@ struct t_node:t_process,t_node_cache{
         new_game(parse<t_game_decl>(payload));
         LOG("t_node::new_game aft");
       }
+      if (z == "pong") {
+        pong_received = true;
+      }
     };
     swd=make_unique<SocketWithDecoder>(local_main_ip_port,std::move(cb),true);
     swd->begin();
-    thread([this]{
+    thread([this,&pong_received]{
       while(true){
+        pong_received = false;
+        bool sent = swd->try_write("ping:" + UPLOAD_TOKEN, qap_time());
+        if (!sent) {
+          LOG("t_node::ping send failed");
+          swd->reconnect();
+          continue;
+        }
+        this_thread::sleep_for(2s); // ждём ответ
+        if (!pong_received) {
+          LOG("t_node::pong not received — reconnecting");
+          swd->reconnect();
+        }
         this_thread::sleep_for(1s);
-        bool ok=swd->try_write("ping:"+UPLOAD_TOKEN,qap_time());
-        LOG("t_node::ping result:"+string(ok?"true":"false"));
-        if(ok)continue;
-        swd->reconnect();
       }
     }).detach();
     periodic_cleanup();
