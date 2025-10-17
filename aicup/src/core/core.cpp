@@ -23,6 +23,7 @@ using namespace std;
 #include "FromQapEng.h"
 #include "thirdparty/picosha2.h"
 #include "thirdparty/httplib.h"//13
+#undef ADD
 #include "thirdparty/json.hpp"
 #include <vector>
 #include <cmath>

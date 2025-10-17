@@ -290,14 +290,14 @@ static const int Sys_UPD=64;
 //inline string FToS(const double&val){return to_string(val);}
 //inline string FToS2(const float&val){std::stringstream ss;ss<<std::fixed<<std::setprecision(2)<<val;return ss.str();}
 inline string FToS4(const float&val){std::stringstream ss;ss<<std::fixed<<std::setprecision(4)<<val;return ss.str();}
-#ifdef __EMSCRIPTEN__
+/*#ifdef __EMSCRIPTEN__
 #define __debugbreak()EM_ASM({throw new Error("__debugbreak");});
 #else
   #ifndef _WIN32
   #define __debugbreak()__builtin_trap()
   #endif
 #endif
-/*
+
 inline bool SysQapAssert(const string&exp,bool&ignore,const string&filename,const int line,const string&funcname);
 inline bool SysQapDebugMsg(const string&msg,bool&ignore,const string&filename,const int line,const string&funcname);
 #if(defined(_DEBUG)||defined(QAP_DEBUG))
