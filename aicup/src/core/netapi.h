@@ -203,7 +203,7 @@ class SocketWithDecoder {
   }
 
 public:
-  SocketWithDecoder(const std::string& ep, std::function<void(const std::string&, const std::string&)>&& cb)
+  SocketWithDecoder(const std::string& ep, std::function<void(const std::string&, const std::string&)>&& cb,bool withoutconnect)
     : endpoint(ep)
     , message_cb(std::move(cb))
   {
@@ -211,9 +211,12 @@ public:
       message_cb(z, payload);
     };
 
-    if (connect()) {
-      start_reader();
-    }
+    if(!withoutconnect)begin();
+  }
+
+  void begin(){
+    if(!connect())return;
+    start_reader();
   }
 
   ~SocketWithDecoder() {

@@ -989,7 +989,8 @@ struct t_node:t_process,t_node_cache{
         new_game(parse<t_game_decl>(payload));
       }
     };
-    swd=make_unique<SocketWithDecoder>(local_main_ip_port,std::move(cb));
+    swd=make_unique<SocketWithDecoder>(local_main_ip_port,std::move(cb),true);
+    swd->begin();
     thread([this]{
       while(true){
         this_thread::sleep_for(1s);
