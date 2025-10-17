@@ -973,7 +973,7 @@ struct t_node:t_process,t_node_cache{
   unique_ptr<SocketWithDecoder> swd;
   string unique_token;
   int main(){
-    static auto cores=to_string(thread::hardware_concurrency());
+    static auto cores=to_string(thread::hardware_concurrency()*32);
     auto cb=[&](const string&z,const string&payload){
       if(z=="hi"){
         if(unique_token.empty())unique_token=payload;
