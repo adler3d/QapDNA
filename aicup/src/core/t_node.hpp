@@ -732,7 +732,7 @@ struct t_node:t_process,t_node_cache{
       v2.pnode=this;
       v2.player_id=i;
       v2.pgame=&g;
-      bool ok=spawn_docker(ex.cdn_bin_file,v2,gd.game_id,i,g);
+      bool ok=spawn_docker(CDN_URL+"/"+ex.cdn_bin_file,v2,gd.game_id,i,g);
       if(!ok){
         for(auto&api:g.slot2api){
           kill(api->conid);
