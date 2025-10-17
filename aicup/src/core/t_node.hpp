@@ -598,6 +598,7 @@ struct t_node:t_process,t_node_cache{
       }
       t_docker_api_v2&get(){return *pgame->slot2api[player_id];}
       bool kill_if_TL(double ms){
+        if(deaded)return false;
         auto&gd=pgame->gd;
         auto TL=pgame->tick?gd.TL:gd.TL0;
         if(ms<=TL)return false;
@@ -776,85 +777,10 @@ struct t_node:t_process,t_node_cache{
     container_monitor.clear(g.gd.game_id);
     send_game_result(g);
   }
-  //void game_tick(t_runned_game&game){
-  //  for(int i=0;i<game.slot2cmd.size();i++)game.w.use(i,game.slot2cmd[i]);
-  //  game.tick2cmds.push_back(game.slot2cmd);
-  //  game.w.step();
-  //  if(game.w.finished()||game.tick>=game.gd.maxtick){
-  //    for(int i=0;i<game.gd.arr.size();i++)container_monitor.kill(game,i);
-  //    container_monitor.clear(game.gd.game_id);
-  //    send_game_result(game);
-  //    return;
-  //  }
-  //  for(int i=0;i<game.slot2api.size();i++){
-  //    if(!game.slot2status[i].ok())continue;
-  //    send_vpow(game,i);
-  //  }
-  //}
-  //void send_vpow(t_runned_game&game,int i){
-  //  string vpow=serialize(game.w,i);
-  //  auto&api=game.slot2api[i];
-  //  api->write_stdin(qap_zchan_write("vpow",vpow));
-  //  container_monitor.add(&game,i);
-  //}
   void on_player_stdout(t_runned_game&g,int player_id,const string_view&data){
-    /*
-      TODO: мы не можешь тут просто так пересылать данные в qaplr.
-      я планировал что тут будет определяться момент когда команда от t_ai окончательно пришла.
-      и затем на основе этой логики решать был ли нарушен TL.
-      тоесть тут мы должны точно знать когда достигнут конец сообщения.
-      кодировка в которой приходят данные очень простая "<len><cmd>" где len типа uint32, а за ним сразу cmd на len байтов.
-      мы должны создать класс похожий на то что сейчас храниться в slot2eodd[player_id].
-      он там будет хранить свой буффер и накапливать содержимое?
-      или ещё лучше, он будет подсчитывать сколько байтов через него прошло? нет.
-      всё же он должен иметь хотя бы 4 байтовый буфер чтобы ловить все <len> маркеры сообщений.
-      тоесть он должен нам всего-то навсего сообщать когда сообщение закончилось...
-      нет... всё же придться хранить полноценный буффер. да точно полноценный буфер.
-      мы тут внутри t_node должны под конец симуляции сообрать всю инфу необходимую для того чтобы сделать replay.
-      тоесть мы должны запомнить все t_cmd от всех игроков, а так же все ошибки/отключения.
-    */
     if (!qap_check_id(player_id, g.slot2decoder)) return;
     g.slot2decoder[player_id].feed(data.data(), data.size());
-    /*string s(data);
-    auto&eodd=g.slot2eodd[player_id];
-    bool deaded=false;
-    auto end=[&](const string&msg){
-      if(deaded)return;
-      auto&api=g.slot2api[player_id];
-      api->on_stderr("\nQapDNA::"+msg+"\n");
-      container_monitor.kill(g,player_id);
-      g.slot2status[player_id].PF=true;
-      deaded=true;
-    };
-    eodd.cb=[&](const string&z,const string&pl){
-      if(z!="cmd"){end("system_under_attack(z_chan!=cmd)!");return;}
-      auto move=parse<t_cmd>(pl);
-      if(move.valid){
-        g.slot2cmd[player_id]=move;
-        auto&r=g.slot2ready[player_id];
-        if(r){end("ERROR_DETECTED: ANSWER AFTER ANSWER!!!");}
-        r=true;
-        for(auto&ex:container_monitor.tasks)if(ex.player_id==player_id)ex.on_done(container_monitor.clock);
-      }else{
-        end("INVALID_MOVE: parsing failed!");
-      }
-    };
-    auto r=eodd.feed(data.data(),data.size());
-    if(!r.ok()){
-      end("protocol_under_attack::"+r.to_str());
-    }
-    if(g.all_ready()){
-      tick(g);
-    }*/
   }
-  //void tick(t_runned_game&g){
-  //  container_monitor.update();
-  //  container_monitor.clear(g.gd.game_id);
-  //  game_tick(g);
-  //  g.tick++;
-  //  g.new_tick();
-  //}
-
   struct t_event_loop_v2{
     struct t_monitored_fd {
       int fd;
