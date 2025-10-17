@@ -979,11 +979,14 @@ struct t_node:t_process,t_node_cache{
       if(z=="hi"){
         if(unique_token.empty())unique_token=payload;
         bool ok=swd->try_write("node_up:"+UPLOAD_TOKEN,cores+","+unique_token);
+        LOG("t_node::node_up result:"+string(ok?"true":"false"));
         //if(!ok)return;
         //swd->reconnect();
       }
       if(z=="new_game:"+UPLOAD_TOKEN){
+        LOG("t_node::new_game bef");
         new_game(parse<t_game_decl>(payload));
+        LOG("t_node::new_game aft");
       }
     };
     swd=make_unique<SocketWithDecoder>(local_main_ip_port,std::move(cb),true);
@@ -992,6 +995,7 @@ struct t_node:t_process,t_node_cache{
       while(true){
         this_thread::sleep_for(1s);
         bool ok=swd->try_write("ping:"+UPLOAD_TOKEN,qap_time());
+        LOG("t_node::ping result:"+string(ok?"true":"false"));
         if(ok)continue;
         swd->reconnect();
       }
