@@ -1348,11 +1348,11 @@ int main() {
   if(bool prod=true){
     string mode="t_main";
     if("t_main"==mode){
-      publish_runner_image();
       thread([]{
         t_cdn cdn;
         return cdn.main();
       }).detach();
+      publish_runner_image();
       thread([]{
         t_node node;
         return node.main();
@@ -1363,7 +1363,7 @@ int main() {
       m.ai2cid.push_back(0);}
       {auto&b=qap_add_back(qap_add_back(m.carr).set(1,"Dobord","dobord@example.com","123").sarr);
       b.status="ok:";b.cdn_bin_url="1";b.cdn_src_url="1";b.prod_time=qap_time();}
-      {auto&b=qap_add_back(qap_add_back(m.carr).set(0,"Adler3D","adler3d@ya.ru","321").sarr);
+      {auto&b=qap_add_back(qap_add_back(m.carr).set(2,"Adler3D","adler3d@ya.ru","321").sarr);
       b.status="ok:";b.cdn_bin_url="2";b.cdn_src_url="2";b.prod_time=qap_time();}
       m.ai2cid.push_back(0);
       m.ai2cid.push_back(1);
