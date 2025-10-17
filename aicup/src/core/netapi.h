@@ -324,20 +324,20 @@ public:
         server_addr.sin_addr.s_addr = INADDR_ANY;
 
         if (bind(serverSocket, (sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
-            std::cerr << "Bind failed\n";
+            LOG("t_server_api::Bind failed at port "+std::to_string(port));
             cleanup();
             return;
         }
 
         if (listen(serverSocket, SOMAXCONN) == SOCKET_ERROR) {
-            std::cerr << "Listen failed\n";
+            LOG("t_server_api::Listen failed at port "+std::to_string(port));
             cleanup();
             return;
         }
 
         workerThread = std::thread([this]() { this->accept_loop(); });
 
-        std::cerr << "Server listening on port " << port << std::endl;
+        LOG("t_server_api::Server listening on port "+std::to_string(port));
     }
 
     void stop() {

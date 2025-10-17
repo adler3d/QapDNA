@@ -1,10 +1,12 @@
+#include <string>
+#include <algorithm>
+void LOG(const std::string&str);
 #include "netapi.h"
 
 #include <thread>
 #include <iostream>
 #include <chrono>
 #include <string>
-#include <algorithm>
 #include <vector>
 #include <map>
 #include <unordered_map>
@@ -47,8 +49,8 @@ const string CDN_HOSTPORT = "127.0.0.1:"+to_string(t_cdn::CDN_PORT);
 const string CDN_URL="http://"+CDN_HOSTPORT;
 const string CDN_URL_IMAGES=CDN_URL+"/images/"; //TODO: replace to t_main "ip:port/images/"
 const string COMPILER_URL="http://127.0.0.1:3000";
-
-static void LOG(const string&str){cerr<<"["<<qap_time()<<"] "<<(str)<<endl;}
+const string int MAIN_PORT=31457;
+void LOG(const string&str){cerr<<"["<<qap_time()<<"] "<<(str)<<endl;}
 bool isValidName(const std::string& name) {
   for (char c : name) {
     if (!isalnum(c)&&c!='_'&&c!='.') {
@@ -158,7 +160,7 @@ void update_score(vector<t_player_with_score>& players) {
 
 
 using namespace std;
-string local_main_ip_port="127.0.0.1:31456";
+string local_main_ip_port="127.0.0.1:"+to_string(MAIN_PORT);
 //vector<string> split(...){return {};}
 //#define QapAssert(...)
 string generate_token(string coder_name,string time) {
@@ -764,9 +766,9 @@ struct t_main : t_process,t_http_base {
       return pmain->server.send_to_client(cid,payload);
     }
   };
-  t_server_api server{31456};
+  t_server_api server{MAIN_PORT};
   Scheduler sch;t_sch_api sch_api;
-  int main(int port=31456){
+  int main(int port=MAIN_PORT){
     sch.api=&sch_api;sch_api.pmain=this;
     thread([this]{sch.main();}).detach();
     client_killer();
@@ -1442,19 +1444,5 @@ int main(int argc,char*argv[]){
       return n.main();
     }
   }
-  t_net_api api;
-  //string line;
-  //if (api.readline_from_socket("127.0.0.1:80", line)) {
-  //  std::cout << "Received: " << line << std::endl;
-  //}
-
-  api.write_to_socket("127.0.0.1:31456", "POST / HTTP/1.1\r\n\r\n\r\n");
-  string line;
-  for(;;){
-    line.clear();
-    api.readline_from_socket("127.0.0.1:31456",line);
-  }
-  //api.close_socket("82.208.124.191:80");
-
   return 0;
 }
