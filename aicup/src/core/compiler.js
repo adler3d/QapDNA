@@ -73,7 +73,7 @@ async function compileSource(data) {
 
   const tempDir = path.join(TEMP_DIR, `${coder_id}_${elf_version}_${Date.now()}`);
   const sourcePath = path.join(tempDir, 'ai.cpp');
-  const binaryPath = path.join(tempDir, 'ai.bin');//output_path; // прямой путь от сервера
+  const binaryPath = path.join(tempDir, 'ai.elf');//output_path; // прямой путь от сервера
 
   try {
     // 1. Создать временную папку
@@ -115,7 +115,7 @@ async function compileSource(data) {
       var compilationSuccess=true;
       if (compilationSuccess) {
         const binaryBuffer = await fs.readFile(binaryPath);
-        await uploadToCdn(`binary/${coder_id}_${elf_version}.bin`, binaryBuffer, process.env.UPLOAD_TOKEN);
+        await uploadToCdn(`binary/${coder_id}_${elf_version}.elf`, binaryBuffer, process.env.UPLOAD_TOKEN);
       }
       return {
         success: true,

@@ -638,7 +638,7 @@ struct t_node:t_process,t_node_cache{
   };
   t_container_monitor container_monitor;
   bool spawn_docker(const string& cdn_url, t_docker_api_v2& api, int game_id, int player_id, t_runned_game& g) {
-    api.conid = "game_" + to_string(game_id) + "_p" + to_string(player_id) + "_" + to_string((rand()<<16)+rand());
+    api.conid = "game_" + to_string(game_id) + "_p" + to_string(player_id) + "_" + to_string(unsigned(rand()<<16)+rand());
     //api.socket_path_on_host = "/tmp/dokcon_" + api.conid + ".sock";
     string socketDir = "/tmp/dokcon_sockets";
     api.socket_path_on_host=socketDir+"/dokcon_"+api.conid+".sock";
