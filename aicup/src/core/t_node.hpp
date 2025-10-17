@@ -364,6 +364,7 @@ struct t_node:t_process,t_node_cache{
           on_stderr("[CTRL] " + msg + "\n");
         } else if(z=="ai_binary_ack"){
           LOG("t_node::ai_binary_ack");
+          pgame->on_container_ready(player_id);
           //pnode->send_vpow(*pgame,player_id);
         }/* else if (z == "vpow") {
           if (pgame->runner.get()!= this)return;
@@ -462,6 +463,33 @@ struct t_node:t_process,t_node_cache{
     //t_world w;
     t_world world;
     t_node*pnode=nullptr;
+    int num_containers_ready = 0;
+    bool qaplr_launched = false;
+    void on_container_ready(int player_id) {
+      if (slot2status[player_id].ok()) {
+        ++num_containers_ready;
+        LOG("t_runned_game::container " + to_string(player_id) + " ready (" + to_string(num_containers_ready) + "/" + to_string(gd.arr.size()) + ")");
+        if (num_containers_ready == (int)gd.arr.size() && !qaplr_launched) {
+          launch_qaplr();
+        }
+      }
+    }
+    void launch_qaplr() {
+      if (qaplr_launched) return;
+      qaplr_launched = true;
+      qaplr=make_unique<t_qaplr_process>();
+      qaplr->pnode=pnode;
+      qaplr->pgame=this;
+      if(!qaplr->start(gd)){
+        LOG("t_node::qaplr spawn failed, aborting game " + to_string(gd.game_id));
+        lock_guard<mutex> lock(pnode->rgarr_mutex);
+        QapCleanIf(pnode->rgarr, [&](const auto& ref) {
+          return ref->gd.game_id == gd.game_id;
+        });
+        return;
+      }
+      LOG("t_runned_game::QapLR launched after all containers ready");
+    }
     void init(t_node*pnode){
       this->pnode=pnode;
       slot2cmd.resize(gd.arr.size());
@@ -716,6 +744,7 @@ struct t_node:t_process,t_node_cache{
     auto&g=*pgame;
     g.gd=gd;
     g.init(this);
+    /*
     g.qaplr=make_unique<t_qaplr_process>();
     g.qaplr->pnode=this;
     g.qaplr->pgame=&g;
@@ -726,7 +755,7 @@ struct t_node:t_process,t_node_cache{
         return ref->gd.game_id == gd.game_id;
       });
       return false;
-    }
+    }*/
     int i=-1;
     for(auto&ex:gd.arr){
       i++;
