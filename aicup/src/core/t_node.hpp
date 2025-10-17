@@ -715,6 +715,7 @@ struct t_node:t_process,t_node_cache{
     g.init(this);
     g.qaplr=make_unique<t_qaplr_process>();
     g.qaplr->pnode=this;
+    g.qaplr->pgame=&g;
     if(!g.qaplr->start(gd)){
       LOG("t_node::qaplr spawn failed, aborting game " + to_string(gd.game_id));
       lock_guard<mutex> lock(rgarr_mutex);
@@ -1001,6 +1002,7 @@ struct t_node:t_process,t_node_cache{
         bool sent = swd->try_write("ping:" + UPLOAD_TOKEN, qap_time());
         if (!sent) {
           LOG("t_node::ping send failed");
+          this_thread::sleep_for(250ms);
           swd->reconnect();
           continue;
         }
