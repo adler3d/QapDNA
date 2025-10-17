@@ -320,6 +320,7 @@ struct t_node:t_process,t_node_cache{
                       pgame->slot2api[player_id]->write_stdin(
                           payload//qap_zchan_write("seed", payload)
                       );
+                      LOG("seed delivered");
                   }
               } else if (z[0] == 'p' && isdigit(z[1])) {
                   // Это данные для игрока — пересылаем в докер
@@ -362,6 +363,7 @@ struct t_node:t_process,t_node_cache{
         } else if (z == "log") {
           on_stderr("[CTRL] " + msg + "\n");
         } else if(z=="ai_binary_ack"){
+          LOG("t_node::ai_binary_ack");
           //pnode->send_vpow(*pgame,player_id);
         }/* else if (z == "vpow") {
           if (pgame->runner.get()!= this)return;
