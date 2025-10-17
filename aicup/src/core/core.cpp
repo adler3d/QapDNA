@@ -733,10 +733,8 @@ struct t_main : t_process,t_http_base {
     http_server_main();
     server.start();//server.
     cout << "[t_main] Server started on port "+to_string(port)+"\n";
-    cout << "Press Enter to stop...\n";
-    string dummy;
-    getline(cin, dummy);
-
+    //cout << "Press Enter to stop...\n"; string dummy;getline(cin, dummy);
+    for(;;){std::this_thread::sleep_for(1000ms);}
     server.stop();
     return 0;
   }
