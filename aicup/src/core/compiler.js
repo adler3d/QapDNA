@@ -176,11 +176,11 @@ app.use(express.json({ limit: '10mb' }));
 
 app.post('/compile', async (req, res) => {
   const job = req.body;
-
-  // Валидация
-  if (!job.coder_id || !job.elf_version || !job.source_code ) {
+  var a=["coder_id","elf_version","source_code"];var b=[];
+  a.map(f=>{if(!(f in job))b.push(f);});
+  if (b.length) {
     return res.status(400).json({
-      error: 'Missing required fields: coder_id, elf_version, source_code\nkeys:'+JSON.stringify(/*Object.keys*/(job))
+      error: 'Missing required fields: '+b.join(",")+'\nprovided fields:'+JSON.stringify(Object.keys(job))
     });
   }
 
