@@ -866,9 +866,12 @@ struct t_node:t_process,t_node_cache{
     vector<t_monitored_fd> fds;
     mutex mtx;
     t_node*pnode=nullptr;
+    void remove_without_lock(int fd) {
+      QapCleanIf(fds, [fd](const t_monitored_fd& f) { return f.fd == fd; });
+    }
     void remove(int fd) {
       lock_guard<mutex> lock(mtx);
-      QapCleanIf(fds, [fd](const t_monitored_fd& f) { return f.fd == fd; });
+      remove_without_lock(fd);
     }
     void add(int fd, function<void(int)>&&on_ready/*, const function<void()>& on_error = []{}*/) {
       lock_guard<mutex> lock(mtx);
@@ -933,7 +936,7 @@ struct t_node:t_process,t_node_cache{
                 if (f.fd == pfd.fd) {
                   //if (f.on_error) f.on_error();
                   qap_close(pfd.fd);
-                  remove(pfd.fd);  // удаляем из списка
+                  remove_without_lock(pfd.fd);  // удаляем из списка
                   LOG("t_node::Socket error on fd="+to_string(pfd.fd));
                   break;
                 }
