@@ -49,7 +49,7 @@ function checkSecurity(source) {
 //const fetch = require('node-fetch');
 
 async function uploadToCdn(path, dataBuffer, token) {
-  const url = `http://t_cdn:12346/${path}`;
+  const url = `http://127.0.0.1:12346/${path}`;
   const res = await fetch(url, {
     method: 'PUT',
     headers: {
