@@ -40,6 +40,7 @@ auto now=std::chrono::high_resolution_clock::now;
 typedef std::chrono::duration<double, std::milli> dms;
 double dmsc(dms diff){return diff.count();}
 using namespace std;
+#include "qap_time.inl"
 #include "thirdparty/sweepline/sweepline.hpp"
 #define QAP_DEBUG
 #ifdef _WIN32

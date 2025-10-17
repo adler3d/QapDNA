@@ -18,6 +18,7 @@ using namespace std;
 #include "../../QapLR/QapLR/qap_assert.inl"
 #include "../../QapLR/QapLR/qap_vec.inl"
 #include "../../QapLR/QapLR/qap_io.inl"
+#include "../../QapLR/QapLR/qap_time.inl"
 
 #include "FromQapEng.h"
 #include "thirdparty/picosha2.h"

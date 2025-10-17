@@ -55,7 +55,7 @@ struct t_node_cache{
   }
   bool save_to_cache(const string&fn,const string&mem) {
     string path=get_cache_path(fn);
-    system(("mkdir -p "+t_node_cache_dir).c_str());
+    (void)system(("mkdir -p "+t_node_cache_dir).c_str());
     file_put_contents(path,mem);
     return true;
   }
@@ -223,12 +223,16 @@ struct t_node:t_process,t_node_cache{
               // Формируем аргументы
               execl("./QapLR",
                   "QapLR",
+                  gd.world.c_str(),
+                  to_string(gd.arr.size()).c_str(),
+                  to_string(gd.seed_initial).c_str(),
+                  to_string(gd.seed_strategies).c_str(),
+                  //("--world=" + gd.world).c_str(),
+                  //("--num-players=" + to_string(gd.arr.size())).c_str(),
+                  //("--seed-initial=" + to_string(gd.seed_initial)).c_str(),
+                  //("--seed-strategies=" + to_string(gd.seed_strategies)).c_str(),
+                  //"--no-gui",
                   "--remote",
-                  ("--world=" + gd.world).c_str(),
-                  ("--seed-initial=" + to_string(gd.seed_initial)).c_str(),
-                  ("--seed-strategies=" + to_string(gd.seed_strategies)).c_str(),
-                  ("--num-players=" + to_string(gd.arr.size())).c_str(),
-                  "--no-gui",
                   nullptr
               );
               perror("execl QapLR failed");
@@ -574,7 +578,7 @@ struct t_node:t_process,t_node_cache{
   static void kill(const string&conid){
     thread t([&](){
       string cmd="docker kill "+conid;
-      system(cmd.c_str());
+      (void)system(cmd.c_str());
     });
     t.detach();
   }
@@ -652,7 +656,7 @@ struct t_node:t_process,t_node_cache{
       return false;
     }
     g.slot2bin[player_id] = binary;
-    system(("mkdir -p " + socketDir).c_str());
+    (void)system(("mkdir -p " + socketDir).c_str());
     string cmd = "docker run -d --rm --memory=512m --memory-swap=512m --network=none --cpus=\"1.0\" "
                  "-e SOCKET_PATH="+api.socket_path_in_container+" "
                  "--name " + api.conid + " "

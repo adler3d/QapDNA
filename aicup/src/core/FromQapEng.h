@@ -297,6 +297,7 @@ inline string FToS4(const float&val){std::stringstream ss;ss<<std::fixed<<std::s
   #define __debugbreak()__builtin_trap()
   #endif
 #endif
+/*
 inline bool SysQapAssert(const string&exp,bool&ignore,const string&filename,const int line,const string&funcname);
 inline bool SysQapDebugMsg(const string&msg,bool&ignore,const string&filename,const int line,const string&funcname);
 #if(defined(_DEBUG)||defined(QAP_DEBUG))
@@ -314,7 +315,7 @@ inline bool SysQapDebugMsg(const string&msg,bool&ignore,const string&filename,co
 #else
 #define QapNoWay()
 #endif
-/*enum QapMsgBoxRetval{qmbrSkip,qmbrBreak,qmbrIgnore};
+enum QapMsgBoxRetval{qmbrSkip,qmbrBreak,qmbrIgnore};
 inline int WinMessageBox(const string&caption,const string&text)
 {
   #ifdef _WIN32
@@ -1182,7 +1183,7 @@ static std::string local_cur_date_str_v4() {
 
   return oss.str();
 }
-
+/*
 string qap_time(){
   using namespace std::chrono;
   system_clock::time_point now = system_clock::now();
@@ -1219,4 +1220,4 @@ long long qap_time_diff(const std::string&t1,const std::string&t2){
   auto tp1=parse_qap_time(t1);
   auto tp2=parse_qap_time(t2);
   return chrono::duration_cast<chrono::milliseconds>(tp2-tp1).count();
-}
+}*/
