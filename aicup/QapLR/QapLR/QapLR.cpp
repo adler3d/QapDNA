@@ -4784,7 +4784,7 @@ int QapLR_main(int argc,char*argv[]){
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
       }
       zchan_write("result",session.gen_result());
-      zchan_write("finished",local_cur_date_str_v4());
+      zchan_write("finished",qap_time());
       reader_running = false;
       if (stdin_reader.joinable()) {
         stdin_reader.join();
