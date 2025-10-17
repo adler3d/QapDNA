@@ -1354,6 +1354,7 @@ int main() {
       }).detach();
       publish_runner_image();
       thread([]{
+        if(!ensure_runner_image())return -3145601;
         t_node node;
         return node.main();
       }).detach();
