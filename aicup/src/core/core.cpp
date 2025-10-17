@@ -944,7 +944,7 @@ struct t_main : t_process,t_http_base {
           g.ordered_at=qap_time();
         }
         sch.add_game_decl(gd);
-        json resp = {{"game_id", gd.game_id}, {"status", "scheduled"},{"time",qap_time()}};
+        json resp = {{"game_id", gd.game_id}, {"status", "scheduled"},{"time",qap_time()},{"slot:",slots.size()}};
         res.status = 200;
         res.set_content(resp.dump(), "application/json");
       } catch (const exception& e) {
