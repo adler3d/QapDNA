@@ -712,6 +712,7 @@ struct t_node:t_process,t_node_cache{
     g.gd=gd;
     g.init(this);
     g.qaplr=make_unique<t_qaplr_process>();
+    g.qaplr->pnode=this;
     if(!g.qaplr->start(gd)){
       LOG("qaplr spawn failed, aborting game " + to_string(gd.game_id));
       lock_guard<mutex> lock(rgarr_mutex);
