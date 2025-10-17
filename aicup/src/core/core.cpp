@@ -1344,12 +1344,25 @@ bool ensure_runner_image() {
 }
 
 #include "t_node.hpp"
-
-int main() {
+void setup_main(t_main&m){
+  {auto&b=qap_add_back(qap_add_back(m.carr).set(0,"Adler","adler3d@gmail.com","321").sarr);
+  b.status="ok:";b.cdn_bin_url="0";b.cdn_src_url="0";b.prod_time=qap_time();
+  m.ai2cid.push_back(0);}
+  {auto&b=qap_add_back(qap_add_back(m.carr).set(1,"Dobord","dobord@example.com","123").sarr);
+  b.status="ok:";b.cdn_bin_url="1";b.cdn_src_url="1";b.prod_time=qap_time();}
+  {auto&b=qap_add_back(qap_add_back(m.carr).set(2,"Adler3D","adler3d@ya.ru","321").sarr);
+  b.status="ok:";b.cdn_bin_url="2";b.cdn_src_url="2";b.prod_time=qap_time();}
+  m.ai2cid.push_back(0);
+  m.ai2cid.push_back(1);
+  m.ai2cid.push_back(2);
+  qap_add_back(m.carr).set(3,"Admin","admin@example.com","admin");
+}
+int main(int argc,char*argv[]){
   srand(time(0));
   if(bool prod=true){
-    string mode="t_main";
-    if("t_main"==mode){
+    string mode="all";
+    if(argc>1)mode=argv[1];
+    if("all"==mode){
       thread([]{
         t_cdn cdn;
         return cdn.main();
@@ -1361,17 +1374,13 @@ int main() {
         return node.main();
       }).detach();
       t_main m;
-      {auto&b=qap_add_back(qap_add_back(m.carr).set(0,"Adler","adler3d@gmail.com","321").sarr);
-      b.status="ok:";b.cdn_bin_url="0";b.cdn_src_url="0";b.prod_time=qap_time();
-      m.ai2cid.push_back(0);}
-      {auto&b=qap_add_back(qap_add_back(m.carr).set(1,"Dobord","dobord@example.com","123").sarr);
-      b.status="ok:";b.cdn_bin_url="1";b.cdn_src_url="1";b.prod_time=qap_time();}
-      {auto&b=qap_add_back(qap_add_back(m.carr).set(2,"Adler3D","adler3d@ya.ru","321").sarr);
-      b.status="ok:";b.cdn_bin_url="2";b.cdn_src_url="2";b.prod_time=qap_time();}
-      m.ai2cid.push_back(0);
-      m.ai2cid.push_back(1);
-      m.ai2cid.push_back(2);
-      qap_add_back(m.carr).set(3,"Admin","admin@example.com","admin");
+      setup_main(m);
+      return m.main();
+    }
+    if("t_main"==mode){
+      publish_runner_image();
+      t_main m;
+      setup_main(m);
       return m.main();
     }
     if("t_node"==mode){

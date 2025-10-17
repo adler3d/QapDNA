@@ -50,6 +50,7 @@ void zchan_write(const std::string& z, const std::string& payload) {
     std::cout.write(frame.data(), static_cast<std::streamsize>(frame.size()));
     std::cout.flush();
     if (std::cout.fail()) {
-        std::cerr << "ERROR: Failed to write to stdout (zchan=" << z << ")\n";
+        std::cerr << "QapLR: ERROR: Failed to write to stdout (zchan=" << z << ")"<<endl;
+        TerminateProcess(GetCurrentProcess(),0);
     }
 };
