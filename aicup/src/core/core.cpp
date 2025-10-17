@@ -44,7 +44,7 @@ const string ARCHIVE_NAME = "/tmp/universal-runner.tar";
 const string CDN_HOSTPORT = "127.0.0.1:"+to_string(t_cdn::CDN_PORT);
 const string CDN_URL="http://"+CDN_HOSTPORT;
 const string CDN_URL_IMAGES=CDN_URL+"/images/"; //TODO: replace to t_main "ip:port/images/"
-const string COMPILER_URL="http://127.0.0.1:"+3000;
+const string COMPILER_URL="http://127.0.0.1:3000";
 
 static void LOG(const string&str){cout<<(str)<<endl;}
 bool isValidName(const std::string& name) {
@@ -639,7 +639,7 @@ struct t_main : t_process,t_http_base {
     t_coder_rec::t_source b;
     b.time=qap_time();
     b.cdn_src_url="source/"+to_string(p->id)+"_"+v+".cpp";
-    b.cdn_bin_url="binary/"+to_string(p->id)+"_"+v+".cpp";
+    b.cdn_bin_url="binary/"+to_string(p->id)+"_"+v+".elf";
     b.size=src.size();
     {lock_guard<mutex> lock(*p->sarr_mtx);p->sarr.push_back(b);}
     json body_json;
