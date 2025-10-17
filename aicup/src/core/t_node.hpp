@@ -701,6 +701,7 @@ struct t_node:t_process,t_node_cache{
     bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr,binary](){
       stream_write(api_ptr->socket, "ai_binary", binary);
       stream_write(api_ptr->socket, "ai_start", "");
+      LOG("loop_v2.connect_to_container_socket::done::after::ai_start");
       api_ptr->start_reading();
     });
 
