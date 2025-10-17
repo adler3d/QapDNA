@@ -174,12 +174,6 @@ struct t_player_packet_decoder {
     return buffer.size() < sizeof(uint32_t) + len;
   }
 };
-template<>
-t_game_decl parse(const string_view&s){
-  t_game_decl out;
-  out.arr.resize(4);
-  return out;
-}
 struct t_node:t_process,t_node_cache{
   struct t_runned_game;
   struct t_qaplr_process {
@@ -689,9 +683,9 @@ struct t_node:t_process,t_node_cache{
       function<void(const string& error)> on_done
   ) {
     thread([path, data, token, on_done = move(on_done)]() {
-      string error;
+      string error;auto DATA=data;
       try {
-        auto s=http_put_with_auth(path, data.serialize(),token);
+        auto s=http_put_with_auth(path, DATA.serialize(),token);
         if(s!=200)error="HTTP error "+to_string(s);
       } catch (const exception& e) {
         error = string("Exception in http_put_with_auth:") + e.what();

@@ -164,8 +164,13 @@ string generate_token(string coder_name,string time) {
   return "token:"+to_string((rand()<<16)+rand())+coder_name+time;
   //return sha256( random_bytes(32) + time + coder_name );
 }
-template<class TYPE>TYPE parse(const string_view&s){return {};}
-string serialize(...){return "nope";}
+template<class TYPE>TYPE parse(const string&s){
+  TYPE out;
+  QapLoadFromStr(out,s);
+  return out;
+}
+template<class TYPE>
+string serialize(const TYPE&ref){auto out=ref;return QapSaveToStr(out);}
 
 template<class t_unix_socket>
 void stream_write(t_unix_socket& client, const string& z, const string& data) {
@@ -179,18 +184,34 @@ void stream_write(t_unix_socket& client, const string& z, const string& data) {
   client.write(strData.c_str(), strData.length());
 }
 
-struct t_game_slot{string coder;int v=0;string cdn_bin_file;};
+struct t_game_slot{
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_game_slot
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(string,coder,{})\
+  ADD(int,v,0)\
+  ADD(string,cdn_bin_file,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+};
 struct t_game_decl{
-  vector<t_game_slot> arr;
-  string world="t_splinter";
-  uint32_t seed_initial=0;
-  uint32_t seed_strategies=0;
-  string config;
-  int game_id=0;
-  int maxtick=20000;// or 6000 * 0.050 == 5*60
-  int stderr_max=1024*64;
-  double TL=20.0;
-  double TL0=1000.0;
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_game_decl
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(vector<t_game_slot>,arr,{})\
+  ADD(string,world,"t_splinter")\
+  ADD(uint32_t,seed_initial,{})\
+  ADD(uint32_t,seed_strategies,{})\
+  ADD(string,config,{})\
+  ADD(int,game_id,{})\
+  ADD(int,maxtick,20000)\
+  ADD(int,stderr_max,1024*64)\
+  ADD(double,TL,20.0)\
+  ADD(double,TL0,1000.0)\
+  //===
+  #include "defprovar.inl"
+  //===
 };
 
 struct QueuedGame {
@@ -447,49 +468,77 @@ struct t_coder_rec{
     return v;
   }
 };
-struct t_cmd{bool valid=true;};
+//struct t_cmd{bool valid=true;};
 struct t_world{
-  void use(int player_id,const t_cmd&cmd){}
-  void step(){};
-  bool finished(){return false;}
+  //void use(int player_id,const t_cmd&cmd){}
+  //void step(){};
+  //bool finished(){return false;}
   vector<double> slot2score;
 };
 struct t_game_uploaded_ack{
-  int game_id;
-  string err;
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_game_uploaded_ack
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(int,game_id,{})\
+  ADD(string,err,{})\
+  //===
+  #include "defprovar.inl"
+  //===
 };
 struct t_finished_game{
-  int game_id;
-  vector<double> slot2ms;
-  vector<double> slot2score;
-  vector<string> slot2status; // OK, TL, PF, stderr
-  int tick=0;
-  int size=0;
-  //string reason; // "maxtick", "crash", "TL", "PF"
-  //double duration_sec;
-  //time_t finished_at;
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_finished_game
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(int,game_id,{})\
+  ADD(vector<double>,slot2ms,{})\
+  ADD(vector<double>,slot2score,{})\
+  ADD(vector<string>,slot2status,{})\
+  ADD(int,tick,0)\
+  ADD(int,size,0)\
+  //===
+  #include "defprovar.inl"
+  //===
   string cdn_file()const{return to_string(game_id);};
   string serialize()const{return {};}
 };
-struct t_cdn_game:t_finished_game{
+struct t_cdn_game{
   struct t_player{
-    string coder;
-    string v;
-    string err;
-    vector<double> tick2ms;
+    #define DEF_PRO_COPYABLE()
+    #define DEF_PRO_CLASSNAME()t_player
+    #define DEF_PRO_VARIABLE(ADD)\
+    ADD(string,coder,{})\
+    ADD(string,v,{})\
+    ADD(string,err,{})\
+    ADD(vector<double>,tick2ms,{})\
+    //===
+    #include "defprovar.inl"
+    //===
   };
-  vector<t_player> slot2player;
-  vector<vector<string>> tick2cmds;
-  string serialize()const{return {};}
-  int size(){return 0;}// TODO: need return serialize().size() but optimized!
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_cdn_game
+  #define DEF_PRO_VARIABLE(ADD) \
+  ADD(t_finished_game,fg,{})\
+  ADD(vector<t_player>,slot2player,{})\
+  ADD(vector<vector<string>>,tick2cmds,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+  string serialize(){return QapSaveToStr(*this);}
+  int size(){return serialize().size();}// TODO: need return serialize().size() but optimized!
 };
 struct t_game{
-  t_game_decl gd;
-  t_finished_game fg;
-  string ordered_at;
-  string finished_at;
-  string status="new";
-  string author;
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_game
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(t_game_decl,gd,{})\
+  ADD(t_finished_game,fg,{})\
+  ADD(string,ordered_at,{})\
+  ADD(string,finished_at,{})\
+  ADD(string,status,"new")\
+  ADD(string,author,{})\
+  //===
+  #include "defprovar.inl"
+  //===
 };
 struct t_main : t_process,t_http_base {
   vector<t_coder_rec> carr;mutex carr_mtx;vector<size_t> ai2cid;
