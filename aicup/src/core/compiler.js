@@ -180,7 +180,7 @@ app.post('/compile', async (req, res) => {
   // Валидация
   if (!job.coder_id || !job.elf_version || !job.source_code ) {
     return res.status(400).json({
-      error: 'Missing required fields: coder_id, elf_version, source_code\nkeys:'+JSON.stringify(Object.keys(job))
+      error: 'Missing required fields: coder_id, elf_version, source_code\nkeys:'+/*JSON.stringify*/(Object.keys(job))
     });
   }
 
