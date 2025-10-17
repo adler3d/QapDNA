@@ -202,7 +202,7 @@ struct t_node:t_process,t_node_cache{
       bool start(const t_game_decl& gd) {
           int stdin_pipe[2], stdout_pipe[2];
           if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0) {
-              perror("pipe");
+              LOG("t_node::start::pipe error");
               return false;
           }
 
@@ -647,6 +647,7 @@ struct t_node:t_process,t_node_cache{
     string binary;
     if (!download_binary(cdn_url, binary)) {
       api.on_stderr("download failed\n");
+      LOG("spawn_docker::download_binary failed at "+cdn_url);
       return false;
     }
     g.slot2bin[player_id] = binary;
@@ -661,6 +662,7 @@ struct t_node:t_process,t_node_cache{
 
     int result = system(cmd.c_str());
     if (result != 0) {
+      LOG("spawn_docker::docker run failed: " + to_string(result)+" for "+cdn_url);
       api.on_stderr("docker run failed: " + to_string(result) + "\n");
       return false;
     }
@@ -714,7 +716,7 @@ struct t_node:t_process,t_node_cache{
     g.qaplr=make_unique<t_qaplr_process>();
     g.qaplr->pnode=this;
     if(!g.qaplr->start(gd)){
-      LOG("qaplr spawn failed, aborting game " + to_string(gd.game_id));
+      LOG("t_node::qaplr spawn failed, aborting game " + to_string(gd.game_id));
       lock_guard<mutex> lock(rgarr_mutex);
       QapCleanIf(rgarr, [&](const auto& ref) {
         return ref->gd.game_id == gd.game_id;
@@ -735,7 +737,7 @@ struct t_node:t_process,t_node_cache{
         for(auto&api:g.slot2api){
           kill(api->conid);
         }
-        LOG("game("+to_string(gd.game_id)+") aborted due to spawn_docker error:"+v2.conid);
+        LOG("t_node::game("+to_string(gd.game_id)+") aborted due to spawn_docker error:"+v2.conid);
         swd->try_write("game_aborted:"+UPLOAD_TOKEN,to_string(gd.game_id)+","+to_string(i));
         lock_guard<mutex> lock(rgarr_mutex);
         QapCleanIf(rgarr,[&](auto&ref){return ref->gd.game_id==gd.game_id;});
@@ -764,7 +766,7 @@ struct t_node:t_process,t_node_cache{
     );
   }
   void on_qaplr_finished(t_runned_game& g) {
-    LOG("QapLR finished for game " + to_string(g.gd.game_id));
+    LOG("t_node::QapLR finished for game " + to_string(g.gd.game_id));
     for (int i = 0; i < (int)g.slot2api.size(); ++i) {
       if (g.slot2status[i].ok()) {
           container_monitor.kill(g, i);
@@ -879,14 +881,14 @@ struct t_node:t_process,t_node_cache{
             waited += poll_interval_ms;
         }
         if (!fs::exists(socket_path)) {
-          LOG("Socket file not created after waiting: "+socket_path);
+          LOG("t_node::Socket file not created after waiting: "+socket_path);
         }
     }
     bool connect_to_container_socket(t_docker_api_v2&api,function<void()>&&on_connect) {
       wait_for_socket(api.socket_path_on_host);
       auto&client=api.socket;
       if (!client.connect_unix(api.socket_path_on_host)) {
-        LOG("client.connect_unix(path) failed with "+api.socket_path_on_host); 
+        LOG("t_node::client.connect_unix(path) failed with "+api.socket_path_on_host); 
         return false;
       }
 
@@ -895,7 +897,7 @@ struct t_node:t_process,t_node_cache{
         int err = 0;
         socklen_t len = sizeof(err);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0) {
-          client.qap_close();LOG("connect_to_container_socket::wrapper failed"); 
+          client.qap_close();LOG("t_node::connect_to_container_socket::wrapper failed"); 
           return;
         }
         client.connected = true;
@@ -931,7 +933,7 @@ struct t_node:t_process,t_node_cache{
                   //if (f.on_error) f.on_error();
                   qap_close(pfd.fd);
                   remove(pfd.fd);  // удаляем из списка
-                  LOG("Socket error on fd="+to_string(pfd.fd));
+                  LOG("t_node::Socket error on fd="+to_string(pfd.fd));
                   break;
                 }
               }

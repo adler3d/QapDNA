@@ -48,7 +48,7 @@ const string CDN_URL="http://"+CDN_HOSTPORT;
 const string CDN_URL_IMAGES=CDN_URL+"/images/"; //TODO: replace to t_main "ip:port/images/"
 const string COMPILER_URL="http://127.0.0.1:3000";
 
-static void LOG(const string&str){cout<<(str)<<endl;}
+static void LOG(const string&str){cerr<<"["<<qap_time()<<"] "<<(str)<<endl;}
 bool isValidName(const std::string& name) {
   for (char c : name) {
     if (!isalnum(c)&&c!='_'&&c!='.') {
@@ -284,7 +284,7 @@ struct Scheduler {
         return;
       }
     }
-    LOG("add_cores call from unk node: "+node);
+    LOG("Scheduler:: add_cores call from unk node: "+node);
   }
   //not thread safe!
   t_node_info*node2i(const string&node,int cores_needed=-1){
@@ -313,7 +313,7 @@ struct Scheduler {
         auto game=q.front();q.pop();
         target->used_cores+=cores_needed;
         if(!api->assign_game(game,target->name))fails.push_back(game);
-        LOG("Scheduled game on node: "+target->name+" ; game_id:"+to_string(game.game_id));
+        LOG("Scheduler:: Scheduled game on node: "+target->name+" ; game_id:"+to_string(game.game_id));
       }
     }
   }
@@ -325,10 +325,10 @@ struct Scheduler {
   }
   bool on_node_up(const string&payload,const string&node) {
     int cores=stoi(payload);
-    if (cores <= 0 || cores > 128){LOG("more than 128 cores??? cores=="+to_string(cores));cores = 8;}
+    if (cores <= 0 || cores > 128){LOG("Scheduler:: more than 128 cores??? cores=="+to_string(cores));cores = 8;}
     lock_guard<mutex> lock(mtx);
     if(auto*p=node2i(node)){
-      LOG("node already under control: "+node);
+      LOG("Scheduler:: node already under control: "+node);
       *p={node,cores,0,true,qap_time()};//TODO: we think all cores is unused but this is not always true
       return true;
     }
@@ -343,7 +343,7 @@ struct Scheduler {
   void on_ping(const string&node){
     lock_guard<mutex> lock(mtx);
     auto*p=node2i(node);
-    if(!p){LOG("ping from unk node: "+node);return;}
+    if(!p){LOG("Scheduler:: ping from unk node: "+node);return;}
     p->last_heartbeat=qap_time();
   }
   void cleanup_old_nodes() {
@@ -354,7 +354,7 @@ struct Scheduler {
         lock_guard<mutex> lock(mtx);
         for (auto it = narr.begin(); it != narr.end(); ) {
           if (qap_time_diff(it->last_heartbeat,now) > 60*1000) {
-            LOG("Node timeout: "+it->name);
+            LOG("Scheduler:: Node timeout: "+it->name);
             it = narr.erase(it);
           } else {
             ++it;
@@ -557,7 +557,7 @@ struct t_main : t_process,t_http_base {
           auto result=parse<t_finished_game>(payload);
           lock_guard<mutex> lock(garr_mtx);
           auto gid=result.game_id;
-          if(gid<0||gid>=garr.size()){LOG("wrong game_id form "+to_string(client_id));return;}
+          if(gid<0||gid>=garr.size()){LOG("t_main::wrong game_id form "+to_string(client_id));return;}
           auto&g=garr[gid];
           g.fg=result;
           g.status="finished";
@@ -569,7 +569,7 @@ struct t_main : t_process,t_http_base {
           auto result=parse<t_game_uploaded_ack>(payload);
           lock_guard<mutex> lock(garr_mtx);
           auto gid=result.game_id;
-          if(gid<0||gid>=garr.size()){LOG("wrong game_id form "+to_string(client_id));return;}
+          if(gid<0||gid>=garr.size()){LOG("t_main::wrong game_id form "+to_string(client_id));return;}
           auto&g=garr[gid];
           g.status="uploaded";
         }
@@ -579,7 +579,7 @@ struct t_main : t_process,t_http_base {
           auto game_id=stoi(a[0]);
           lock_guard<mutex> lock(garr_mtx);
           auto gid=game_id;
-          if(gid<0||gid>=garr.size()){LOG("wrong game_id form "+to_string(client_id));return;}
+          if(gid<0||gid>=garr.size()){LOG("t_main::wrong game_id form "+to_string(client_id));return;}
           auto&g=garr[gid];
           g.status="aborted by "+a[1];
           g.finished_at=qap_time();
