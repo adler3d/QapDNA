@@ -1284,7 +1284,7 @@ bool upload_to_cdn() {
   cout << "[t_main] Uploading to CDN...\n";
   string cmd = "curl -X PUT -T " + ARCHIVE_NAME + " "
                "-H 'Authorization: Bearer " + UPLOAD_TOKEN + "' "
-               + CDN_URL_IMAGES + "images/universal-runner.tar";
+               + CDN_URL_IMAGES + "universal-runner.tar";
   int result = system(cmd.c_str());
   if (result != 0) {
     cerr << "[t_main] Failed to upload to CDN\n";
