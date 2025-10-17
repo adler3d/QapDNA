@@ -94,7 +94,7 @@ async function compileSource(data) {
     await fs.writeFile(sourcePath, source_code);
 
     // 4. Выполнить компиляцию с ограничениями
-    const command = `g++ -O2 -static -s -o "${binaryPath}" "${sourcePath}"`;
+    const command = `g++ -I./ -O2 -static -s -o "${binaryPath}" "${sourcePath}"`;
 
     // Обёртка с ulimit (ограничение памяти и времени)
     const memLimitKB = memory_limit_mb * 1024;
