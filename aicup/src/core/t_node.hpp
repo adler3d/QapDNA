@@ -737,10 +737,10 @@ struct t_node:t_process,t_node_cache{
     auto*api_ptr=&api;api.binary=binary;
     bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr](){
       api_ptr->init_writer();
-      api_ptr->write_stdin_raw(qap_zchan_write("true","please delivered this to dokcon.js"));
+      //api_ptr->write_stdin_raw(qap_zchan_write("true","please delivered this to dokcon.js"));
       LOG("loop_v2.connect_to_container_socket::done::bef::start_reading");
       api_ptr->start_reading();
-      api_ptr->write_stdin_raw(qap_zchan_write("false","please don't delivered this to dokcon.js"));
+      //api_ptr->write_stdin_raw(qap_zchan_write("false","please don't delivered this to dokcon.js"));
     });
 
     return ok;
