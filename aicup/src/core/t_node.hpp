@@ -868,6 +868,7 @@ struct t_node:t_process,t_node_cache{
           for (auto& f : fds) {
             pfds.push_back(make_pollinout(f.fd));
           }
+          LOG("pfds.size()=="+to_string(pfds.size()));
         }
         pnode->container_monitor.update();
         if(pfds.empty()){this_thread::sleep_for(16ms);}
