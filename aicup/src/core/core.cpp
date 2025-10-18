@@ -1295,6 +1295,7 @@ static constexpr int STDOUT_FILENO=0;
 #define dup2(...)0
 #define fdopen(...)0
 #define qap_read(...)0
+#define send(...)0
 #else
 static inline pollfd make_pollin(int fd){return pollfd{fd,POLLIN,0};}
 static inline pollfd make_pollinout(int fd){return pollfd{fd,POLLIN|POLLOUT,0};}

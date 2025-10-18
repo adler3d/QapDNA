@@ -121,13 +121,6 @@ struct t_unix_socket {
     return fd;
   }
   #endif
-  void write(const void* data, size_t len) {
-    if (sock != -1) ::send(sock, (const char*)data, len, 0);
-  }
-  void write(const string&s) {
-    write(s.data(),s.size());
-  }
-
   //string read_chunk() {
   //  char buf[4096];
   //  int n = recv(sock, buf, sizeof(buf)-1, 0);
@@ -361,22 +354,77 @@ struct t_node:t_process,t_node_cache{
     string socket_path_on_host;
     emitter_on_data_decoder decoder;
     string binary;
+
+    struct t_writer {
+      queue<string> q;
+      mutex mtx;
+      condition_variable cv;
+      t_unix_socket* sock;
+      atomic<bool> stop{false};
+      thread th;
+
+      t_writer(t_unix_socket* s) : sock(s) {
+        th = thread([this] {
+          while (!stop) {
+            unique_lock<mutex> lock(mtx);
+            cv.wait(lock, [this] { return stop || !q.empty(); });
+            if (stop) break;
+            string data = move(q.front()); q.pop();
+            lock.unlock();
+
+            // Блокирующая, но изолированная отправка
+            const char* ptr = data.data();
+            size_t sent = 0;
+            while (sent < data.size() && !stop) {
+              ssize_t n = send(sock->sock, ptr + sent, data.size() - sent, MSG_NOSIGNAL);
+              if (n <= 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                  this_thread::sleep_for(1ms);
+                  continue;
+                }
+                break; // ошибка
+              }
+              sent += n;
+            }
+          }
+        });
+      }
+
+      void write(string data) {
+        lock_guard<mutex> lock(mtx);
+        q.push(move(data));
+        cv.notify_one();
+      }
+
+      ~t_writer() {
+        stop = true;
+        cv.notify_one();
+        if (th.joinable()) th.join();
+      }
+    };
+
+    unique_ptr<t_writer> writer;
+
+    void init_writer() {
+      writer = make_unique<t_writer>(&socket);
+    }
+
+    void write_stdin_raw(const string& data) {
+      if (writer)return writer->write(data);
+      LOG("t_node::t_docker_api_v2::write_stdin_raw::to early, writer==nulptr!");
+    }
     ~t_docker_api_v2() {
-        socket.qap_close();
-        if (!socket_path_on_host.empty()) {
-            unlink(socket_path_on_host.c_str());
-        }
+      socket.qap_close();
+      if (!socket_path_on_host.empty()) {
+          unlink(socket_path_on_host.c_str());
+      }
     }
     t_docker_api_v2() {
       decoder.cb = [this](const string& z, const string& msg) {
         LOG("t_node::t_docker_api_v2::cb::z='"+z+"' msg='"+msg+"' sock="+to_string(socket.sock));
-        //stream_write(socket, "stress", "test");
-        socket.write(qap_zchan_write("stress2","test2"));
         if(z=="hi from dokcon.js"){
-          socket.write(qap_zchan_write("ai_binary",binary));
-          socket.write(qap_zchan_write("ai_start","2025.10.18 12:55:05.686"));
-          //stream_write(socket, "ai_binary", binary);
-          //stream_write(socket, "ai_start", "2025.10.18 12:55:05.686");
+          write_stdin(qap_zchan_write("ai_binary",binary));
+          write_stdin(qap_zchan_write("ai_start","2025.10.18 12:55:05.686"));
         }
         if (z == "ai_stdout") {
           on_stdout(string_view(msg));
@@ -387,7 +435,6 @@ struct t_node:t_process,t_node_cache{
         } else if(z=="ai_binary_ack"){
           LOG("t_node::ai_binary_ack");
           pgame->on_container_ready(player_id);
-          //pnode->send_vpow(*pgame,player_id);
         }
       };
     }
@@ -419,16 +466,8 @@ struct t_node:t_process,t_node_cache{
     void on_closed_stderr() {}
     void on_stdin_open() {}
 
-    void write_stdin(const string& data) {
-      if (socket.connected) {
-        stream_write(socket, "ai_stdin",data);
-      }
-    }
-
-    void close_stdin() {
-      if (socket.connected) {
-        stream_write(socket, "ai_stdin","EOF\n");
-      }
+    void write_stdin(const string&data){
+      write_stdin_raw(qap_zchan_write("ai_stdin",data));
     }
   };
   struct t_status{
@@ -693,10 +732,11 @@ struct t_node:t_process,t_node_cache{
     }
     auto*api_ptr=&api;api.binary=binary;
     bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr](){
-      stream_write(api_ptr->socket, "true", "please delivered this to dokcon.js");
+      api_ptr->init_writer();
+      api_ptr->write_stdin(qap_zchan_write("true","please delivered this to dokcon.js"));
       LOG("loop_v2.connect_to_container_socket::done::bef::start_reading");
       api_ptr->start_reading();
-      stream_write(api_ptr->socket, "false", "please don't delivered this to dokcon.js");
+      api_ptr->write_stdin(qap_zchan_write("false","please don't delivered this to dokcon.js"));
     });
 
     return ok;
@@ -894,8 +934,6 @@ struct t_node:t_process,t_node_cache{
             vector<string> arr;
             for(auto&ex:pfds){
               arr.push_back(to_string(ex.fd));
-              t_unix_socket s{ex.fd};
-              s.write(qap_zchan_write("stress2","test2"));
             }
             LOG("pfds.size()=="+to_string(pfds.size())+"==["+join(arr,",")+"]");
             //clock.Start();
