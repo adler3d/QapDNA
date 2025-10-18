@@ -793,7 +793,7 @@ struct t_node:t_process,t_node_cache{
   struct t_event_loop_v2{
     struct t_monitored_fd {
       int fd;
-      string path;  // для Unix-socket
+      //string path;  // для Unix-socket
       function<void(int fd)> on_ready;
       //function<void()> on_error;
       //bool connected = false;
@@ -804,15 +804,18 @@ struct t_node:t_process,t_node_cache{
     t_node*pnode=nullptr;
     void remove_without_lock(int fd) {
       QapCleanIf(fds, [fd](const t_monitored_fd& f) { return f.fd == fd; });
+      LOG("t_event_loop_v2::remove_without_lock fd="+to_string(fd));
     }
     void remove(int fd) {
       lock_guard<mutex> lock(mtxr);
       fdsr.insert(fd);
+      LOG("t_event_loop_v2::remove fd="+to_string(fd));
       //remove_without_lock(fd);
     }
     void add(int fd, function<void(int)>&&on_ready/*, const function<void()>& on_error = []{}*/) {
       lock_guard<mutex> lock(mtx2);
-      fds2.push_back({fd, "", std::move(on_ready)/*, on_error*/});
+      fds2.push_back({fd, std::move(on_ready)/*, on_error*/});
+      LOG("t_event_loop_v2::add fd="+to_string(fd));
     }
     void wait_for_socket(const std::string& socket_path, int max_wait_ms=1024, int poll_interval_ms=16) {
         namespace fs = std::filesystem;
