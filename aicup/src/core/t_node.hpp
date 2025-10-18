@@ -274,6 +274,7 @@ struct t_node:t_process,t_node_cache{
               t_unix_socket socket{fd};
               char buf[4096];
               int n = socket.read(buf, sizeof(buf));
+              LOG("t_qaplr::socket::read n="+to_string(n));
               if (n > 0) {
                 decoder.feed(buf, n);
               } else if (n < 0) {
