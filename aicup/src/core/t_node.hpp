@@ -128,16 +128,28 @@ struct t_unix_socket {
     write(s.data(),s.size());
   }
 
-  string read_chunk() {
-    char buf[4096];
-    int n = recv(sock, buf, sizeof(buf)-1, 0);
-    if (n <= 0) { qap_close(); return ""; }
-    return string(buf, n);
-  }
-
+  //string read_chunk() {
+  //  char buf[4096];
+  //  int n = recv(sock, buf, sizeof(buf)-1, 0);
+  //  if (n <= 0) { qap_close(); return ""; }
+  //  return string(buf, n);
+  //}
   int read(char*buf,int size) {
     int n = recv(sock, buf, size, 0);
-    if (n <= 0) { qap_close();}
+    if (n <= 0) {
+      #ifdef _WIN32
+      int err = WSAGetLastError();
+      if (err == WSAEWOULDBLOCK || err == WSAEINPROGRESS) {
+        return 0; // временно нет данных
+      }
+      #else
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        return 0; // временно нет данных
+      }
+      #endif
+      qap_close();
+      return -1;
+    }
     return n;
   }
 
@@ -266,15 +278,15 @@ struct t_node:t_process,t_node_cache{
 
       void start_reading() {
           pnode->loop_v2.add(stdout_fd, [this](int fd) {
+              t_unix_socket socket{fd};
               char buf[4096];
-              ssize_t n = qap_read(fd, buf, sizeof(buf));
+              int n = socket.read(buf, sizeof(buf));
               if (n > 0) {
-                  decoder.feed(buf, n);
-              } else {
-                  // EOF или ошибка → QapLR завершился
-                  pnode->on_qaplr_finished(*pgame);
-                  pnode->loop_v2.remove(fd);
-                  stop();
+                decoder.feed(buf, n);
+              } else if (n < 0) {
+                // Ошибка → закрыть
+                pnode->loop_v2.remove(fd);
+                socket.qap_close();
               }
           });
       }
