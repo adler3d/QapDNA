@@ -92,9 +92,13 @@ async function handleConnection(socket) {
         const filePath = path.join(TMP_DIR, AI_BIN_NAME);
         try {
           await fs.promises.writeFile(filePath, bmsg, { mode: 0o755 });
+          console.error('otpravlen0');
           stream_write_encoder(socket, 'log')('Binary saved');
+          console.error('otpravlen1');
           stream_write_encoder(socket, 'ai_binary_ack')(bmsg.length+"");
+          console.error('otpravlen2');
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen!');
+          console.error('otpravlen3');
         } catch (err) {
           stream_write_encoder(socket, 'log')(`Write error: ${err.message}`);
         }
