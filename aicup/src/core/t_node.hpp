@@ -393,7 +393,7 @@ struct t_node:t_process,t_node_cache{
             int n = socket.read(buf, sizeof(buf));
             if (n > 0) {
                 decoder.feed(buf, n);
-            } else {
+            } else if (n < 0){
                 // Сокет закрыт
                 on_closed_stdout();
                 on_closed_stderr();
