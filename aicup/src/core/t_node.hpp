@@ -362,7 +362,7 @@ struct t_node:t_process,t_node_cache{
       t_unix_socket* sock;
       atomic<bool> stop{false};
       thread th;
-
+      unsigned long long total=0;
       t_writer(t_unix_socket* s) : sock(s) {
         th = thread([this] {
           while (!stop) {
@@ -377,7 +377,7 @@ struct t_node:t_process,t_node_cache{
             size_t sent = 0;
             while (sent < data.size() && !stop) {
               ssize_t n = send(sock->sock, ptr + sent, data.size() - sent, MSG_NOSIGNAL);
-              LOG("t_node::t_writer::send n="+to_string(n)+" sock="+to_string(sock->sock));
+              LOG("t_node::t_writer::send n="+to_string(n)+" sock="+to_string(sock->sock)+" next_total="+to_string(total+n));
               if (n <= 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                   this_thread::sleep_for(1ms);
@@ -386,7 +386,7 @@ struct t_node:t_process,t_node_cache{
                 LOG("t_node::t_writer::send errno="+to_string(errno)+" sock="+to_string(sock->sock));
                 break; // ошибка
               }
-              sent += n;
+              sent += n;total+=n;
             }
           }
         });
@@ -399,6 +399,7 @@ struct t_node:t_process,t_node_cache{
       }
 
       ~t_writer() {
+        LOG("t_node::t_writer::dctor for sock="+to_string(sock->sock));
         stop = true;
         cv.notify_one();
         if (th.joinable()) th.join();
