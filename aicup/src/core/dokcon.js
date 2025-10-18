@@ -66,6 +66,7 @@ async function handleConnection(socket) {
   console.log('Client connected');
   let aiProcess = null;
   socket.setNoDelay(true);
+  stream_write_encoder(socket,'hi from dokcon.js')('2025.10.18 12:01:08.493');
   socket.on('close', () => {
     if (aiProcess) {
       console.log('Killing AI process due to socket close');
@@ -97,8 +98,16 @@ async function handleConnection(socket) {
           console.error('otpravlen1');
           stream_write_encoder(socket, 'ai_binary_ack')(bmsg.length+"");
           console.error('otpravlen2');
-          stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen!');
+          stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 1');
           console.error('otpravlen3');
+          stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 2');
+          console.error('otpravlen4');
+          stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 3');
+          console.error('otpravlen5');
+          stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 4');
+          console.error('otpravlen6');
+          stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 5');
+          console.error('otpravlen7');
         } catch (err) {
           stream_write_encoder(socket, 'log')(`Write error: ${err.message}`);
         }
@@ -282,6 +291,7 @@ async function runClientUnix(socketPath, binaryFilePath) {
         if (z === 'log' && msg.includes('exited')) {
           client.end();
         }
+        console.error("msg from z='"+z+"'");
       });
 
       client.on('close', () => {
