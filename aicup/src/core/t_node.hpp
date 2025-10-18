@@ -707,7 +707,7 @@ struct t_node:t_process,t_node_cache{
       const string& token,
       function<void(const string& error)> on_done
   ) {
-    thread([path, data, token, on_done = move(on_done)]() {
+    thread([path, data, token, on_done = std::move(on_done)]() {
       string error;auto DATA=data;
       try {
         auto s=http_put_with_auth(path, DATA.serialize(),token);
@@ -863,7 +863,7 @@ struct t_node:t_process,t_node_cache{
         fd=-1;
       };
 
-      add(client.sock,move(wrapper));
+      add(client.sock,std::move(wrapper));
       return true;
     }
 
@@ -889,7 +889,10 @@ struct t_node:t_process,t_node_cache{
           auto cur=qap_time();
           if(qap_time_diff(time,cur)>2500/*clock.MS()>2500*/){
             vector<string> arr;
-            for(auto&ex:pfds)arr.push_back(to_string(ex.fd));
+            for(auto&ex:pfds){
+              arr.push_back(to_string(ex.fd));
+              stream_write(ex.fd, "stress2", "test2");
+            }
             LOG("pfds.size()=="+to_string(pfds.size())+"==["+join(arr,",")+"]");
             //clock.Start();
             time=cur;
