@@ -891,7 +891,8 @@ struct t_node:t_process,t_node_cache{
             vector<string> arr;
             for(auto&ex:pfds){
               arr.push_back(to_string(ex.fd));
-              stream_write(ex.fd, "stress2", "test2");
+              t_unix_socket s{ex.fd};
+              s.write(qap_zchan_write("stress2","test2"));
             }
             LOG("pfds.size()=="+to_string(pfds.size())+"==["+join(arr,",")+"]");
             //clock.Start();
