@@ -356,6 +356,7 @@ struct t_node:t_process,t_node_cache{
     }
     t_docker_api_v2() {
       decoder.cb = [this](const string& z, const string& msg) {
+        LOG("t_node::t_docker_api_v2::cb::z='"+z+"' msg='"+msg+"'");
         if (z == "ai_stdout") {
           on_stdout(string_view(msg));
         } else if (z == "ai_stderr") {
