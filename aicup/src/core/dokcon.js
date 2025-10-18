@@ -9,26 +9,24 @@ const SOCKET_PATH = process.env.SOCKET_PATH || '/tmp/dokcon.sock';
 
 var two_log=console.log;
 
-var emitter_on_data_decoder = (emitter, cb) => {
-  var rd = Buffer.from([]);
-  emitter.on('data', data => {
-    two_log('Received raw data, length=' + data.length+" value="+data);
-    rd = Buffer.concat([rd, data]);
-    var e = rd.indexOf("\0");
-    if (e < 0) return;
-    var en = e + 1;
-    var zpos = rd.indexOf('\0', en);
-    if (zpos < 0) return;
-    var zn = zpos + 1;
-    var blen = rd.slice(0, e);
-    var len = blen.toString("binary") | 0;
-    if (rd.length < zn + len) return;
-    var bz = rd.slice(en, en + zpos - en);
-    var z = bz.toString("binary");
-    var bmsg = rd.slice(zn, zn + len);
-    var msg = bmsg.toString("binary");
-    rd = rd.slice(zn + len);
-    cb(z, msg, bz, bmsg);
+var emitter_on_data_decoder=(emitter,cb)=>{
+  var rd=Buffer.from([]);
+  emitter.on('data',data=>{
+    two_log('Received raw data, length=' + data.length+" value="+(data+"").substr(0,128));
+    rd=Buffer.concat([rd,data]);
+    var e=rd.indexOf("\0");
+    if(e<0)return;
+    var en=e+1;
+    var zpos=rd.indexOf('\0',en);
+    if(zpos<0)return;
+    var zn=zpos+1;
+    var blen=rd.slice(0,e);
+    var len=blen.toString("binary")|0;
+    if(rd.length<zn+len)return;
+    var bz=rd.slice(en,en+zpos-en);var z=bz.toString("binary");
+    var bmsg=rd.slice(zn,zn+len);var msg=bmsg.toString("binary");
+    rd=rd.slice(zn+len);
+    cb(z,msg,bz,bmsg);
   });
 };
 
