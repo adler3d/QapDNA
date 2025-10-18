@@ -4,7 +4,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const AI_BIN_NAME = './ai.bin';
-const TMP_DIR = '.'; // можно на /tmpfs
+const TMP_DIR = '/tmpfs'; // можно на /tmpfs
 const SOCKET_PATH = process.env.SOCKET_PATH || '/tmp/dokcon.sock';
 
 // === ВСТАВКА emitter_on_data_decoder и stream_write_encoder ===
@@ -92,6 +92,7 @@ async function handleConnection(socket) {
         console.log(`Saving binary of length ${bmsg.length}`);
         const filePath = path.join(TMP_DIR, AI_BIN_NAME);
         try {
+          console.error('otpravlenZ');
           await fs.promises.writeFile(filePath, bmsg, { mode: 0o755 });
           console.error('otpravlen0');
           stream_write_encoder(socket, 'log')('Binary saved');
@@ -109,6 +110,7 @@ async function handleConnection(socket) {
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 5');
           console.error('otpravlen7');
         } catch (err) {
+          console.error('FAILED TO WRITE BINARY:', err);
           stream_write_encoder(socket, 'log')(`Write error: ${err.message}`);
         }
         break;
@@ -125,7 +127,7 @@ async function handleConnection(socket) {
         }
         console.error('Starting AI process');
         console.error(aiBin);
-        aiProcess = spawn("./ai.bin",[],{stdio:['pipe','pipe','pipe'],windowsHide:true});
+        aiProcess = spawn(aiBin,[],{stdio:['pipe','pipe','pipe'],windowsHide:true});
 
         // Перенаправляем stdout/stderr через стрим-протокол
         aiProcess.stdout.on('data', stream_write_encoder(socket, 'ai_stdout'));
