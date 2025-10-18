@@ -806,7 +806,7 @@ struct t_node:t_process,t_node_cache{
     struct t_monitored_fd {
       int fd;
       //string path;  // для Unix-socket
-      function<void(int fd)> on_ready;
+      function<void(int&fd)> on_ready;
       //function<void()> on_error;
       //bool connected = false;
     };
@@ -824,7 +824,7 @@ struct t_node:t_process,t_node_cache{
       LOG("t_event_loop_v2::remove fd="+to_string(fd));
       //remove_without_lock(fd);
     }
-    void add(int fd, function<void(int)>&&on_ready/*, const function<void()>& on_error = []{}*/) {
+    void add(int fd, function<void(int&)>&&on_ready/*, const function<void()>& on_error = []{}*/) {
       lock_guard<mutex> lock(mtx2);
       fds2.push_back({fd, std::move(on_ready)/*, on_error*/});
       LOG("t_event_loop_v2::add fd="+to_string(fd));
@@ -848,7 +848,7 @@ struct t_node:t_process,t_node_cache{
         return false;
       }
 
-      auto wrapper = [this,&client,on_connect](int fd){
+      auto wrapper = [this,&client,on_connect](int&fd){
         if (client.connected)return;
         int err = 0;
         socklen_t len = sizeof(err);
@@ -858,6 +858,7 @@ struct t_node:t_process,t_node_cache{
         }
         client.connected = true;
         on_connect();
+        fd=-1;
       };
 
       add(client.sock,move(wrapper));
@@ -877,7 +878,7 @@ struct t_node:t_process,t_node_cache{
           }
           {
             lock_guard<mutex> lock(mtxr);
-            QapCleanIf(fds,[this](const t_monitored_fd&f){return fdsr.count(f.fd);});
+            QapCleanIf(fds,[this](const t_monitored_fd&f){return -1==f.fd||fdsr.count(f.fd);});
             fdsr.clear();
           }
           for (auto& f : fds) {
@@ -914,7 +915,7 @@ struct t_node:t_process,t_node_cache{
               // data ready
               for (auto& f : fds) {
                 if (f.fd == pfd.fd) {
-                  f.on_ready(pfd.fd);
+                  f.on_ready(f.fd);
                 }
               }
             }
