@@ -5,4 +5,4 @@ COPY dokcon.js /dokcon/
 
 WORKDIR /dokcon
 
-CMD ["sh", "-c", "node dokcon.js server_unix && sleep infinity"]
+CMD ["sh", "-c", "node dokcon.js server_unix ; sleep infinity"]
