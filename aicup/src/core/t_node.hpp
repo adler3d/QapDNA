@@ -270,11 +270,11 @@ struct t_node:t_process,t_node_cache{
       }
 
       void start_reading() {
-          pnode->loop_v2.add(stdout_fd, [this](int fd) {
+          pnode->loop_v2.add(stdout_fd, [this](int&fd) {
               t_unix_socket socket{fd};
               char buf[4096];
               int n = socket.read(buf, sizeof(buf));
-              LOG("t_qaplr::socket::read n="+to_string(n));
+              LOG("t_qaplr::socket::read n="+to_string(n)+" fd="+to_string(fd));
               if (n > 0) {
                 decoder.feed(buf, n);
               } else if (n < 0) {
