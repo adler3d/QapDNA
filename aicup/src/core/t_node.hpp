@@ -322,7 +322,7 @@ struct t_node:t_process,t_node_cache{
                   int player_id = stoi(z.substr(5));
                   if (qap_check_id(player_id, pgame->slot2api)) {
                       // Отправляем seed в контейнер — БЕЗ запуска TL!
-                      pgame->slot2api[player_id]->write_stdin(
+                      pgame->slot2api[player_id]->write_stdin_raw(
                           payload//qap_zchan_write("seed", payload)
                       );
                       LOG("seed delivered");
@@ -331,7 +331,7 @@ struct t_node:t_process,t_node_cache{
                   // Это данные для игрока — пересылаем в докер
                   int player_id = stoi(z.substr(1));
                   if (qap_check_id(player_id, pgame->slot2api)) {
-                      pgame->slot2api[player_id]->write_stdin(
+                      pgame->slot2api[player_id]->write_stdin_raw(
                           payload//qap_zchan_write("vpow", payload)  // или "cmd", но лучше "vpow"
                       );
                       // Запускаем таймер TL
@@ -423,8 +423,8 @@ struct t_node:t_process,t_node_cache{
       decoder.cb = [this](const string& z, const string& msg) {
         LOG("t_node::t_docker_api_v2::cb::z='"+z+"' msg='"+msg+"' sock="+to_string(socket.sock));
         if(z=="hi from dokcon.js"){
-          write_stdin(qap_zchan_write("ai_binary",binary));
-          write_stdin(qap_zchan_write("ai_start","2025.10.18 12:55:05.686"));
+          write_stdin_raw(qap_zchan_write("ai_binary",binary));
+          write_stdin_raw(qap_zchan_write("ai_start","2025.10.18 12:55:05.686"));
         }
         if (z == "ai_stdout") {
           on_stdout(string_view(msg));
@@ -733,10 +733,10 @@ struct t_node:t_process,t_node_cache{
     auto*api_ptr=&api;api.binary=binary;
     bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr](){
       api_ptr->init_writer();
-      api_ptr->write_stdin(qap_zchan_write("true","please delivered this to dokcon.js"));
+      api_ptr->write_stdin_raw(qap_zchan_write("true","please delivered this to dokcon.js"));
       LOG("loop_v2.connect_to_container_socket::done::bef::start_reading");
       api_ptr->start_reading();
-      api_ptr->write_stdin(qap_zchan_write("false","please don't delivered this to dokcon.js"));
+      api_ptr->write_stdin_raw(qap_zchan_write("false","please don't delivered this to dokcon.js"));
     });
 
     return ok;
