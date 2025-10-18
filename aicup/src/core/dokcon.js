@@ -237,6 +237,65 @@ async function runClient(host, port, binaryFilePath) {
   });
 }
 
+async function runClientUnix(socketPath, binaryFilePath) {
+  return new Promise((resolve, reject) => {
+    const client = net.createConnection(socketPath);
+
+    client.on('connect', async () => {
+      console.log('Connected to Unix socket:', socketPath);
+
+      // Читаем бинарник
+      const binData = fs.readFileSync(binaryFilePath);
+
+      // Отправляем бинарь
+      stream_write_encoder(client, 'ai_binary')(binData);
+      console.log('Sent binary');
+
+      let binaryAckReceived = false;
+
+      emitter_on_data_decoder(client, (z, msg, bz, bmsg) => {
+        if (z === 'log') {
+          console.log('Log:', msg);
+        }
+
+        if (z === 'ai_binary_ack' && !binaryAckReceived) {
+          binaryAckReceived = true;
+          console.log('Received ai_binary_ack, starting AI...');
+          stream_write_encoder(client, 'ai_start')('');
+        }
+
+        if (z === 'ai_stdout') {
+          console.log('AI stdout:', msg);
+        }
+
+        if (z === 'ai_stderr') {
+          console.error('AI stderr:', msg);
+        }
+
+        // Опционально: завершить, если AI вышел
+        if (z === 'log' && msg.includes('exited')) {
+          client.end();
+        }
+      });
+
+      client.on('close', () => {
+        console.log('Connection closed');
+        resolve();
+      });
+
+      client.on('error', (err) => {
+        console.error('Socket error:', err.message);
+        reject(err);
+      });
+    });
+
+    client.on('error', (err) => {
+      console.error('Failed to connect to Unix socket:', err.message);
+      reject(err);
+    });
+  });
+}
+
 // --- Запуск ---
 
 if (process.argv[2] === 'server_unix') {
@@ -248,6 +307,10 @@ if (process.argv[2] === 'server_unix') {
   const port = parseInt(process.argv[4]);
   const file = process.argv[5];
   runClient(host, port, file).catch(console.error);
+} else if (process.argv[2] === 'client_unix' && process.argv[3] && process.argv[4]) {
+  const socketPath = process.argv[3];
+  const binaryFilePath = process.argv[4];
+  runClientUnix(socketPath, binaryFilePath).catch(console.error);
 } else {
   console.log('Usage: node dokcon.js [server_unix|server_tcp|client_tcp <host> <port> <file>]');
   //node dokcon.js client_tcp 127.0.0.1 4000 ai.exe
