@@ -261,7 +261,7 @@ async function runClientUnix(socketPath, binaryFilePath) {
         if (z === 'ai_binary_ack' && !binaryAckReceived) {
           binaryAckReceived = true;
           console.log('Received ai_binary_ack, starting AI...');
-          stream_write_encoder(client, 'ai_start')('');
+          stream_write_encoder(client, 'ai_start')('hm...');
         }
 
         if (z === 'ai_stdout') {
