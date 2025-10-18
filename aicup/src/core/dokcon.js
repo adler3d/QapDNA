@@ -4,7 +4,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const AI_BIN_NAME = './ai.bin';
-const TMP_DIR = '/tmpfs'; // можно на /tmpfs
+const TMP_DIR = '.'///tmpfs'; // можно на /tmpfs
 const SOCKET_PATH = process.env.SOCKET_PATH || '/tmp/dokcon.sock';
 
 var two_log=console.log;
