@@ -94,6 +94,7 @@ async function handleConnection(socket) {
           await fs.promises.writeFile(filePath, bmsg, { mode: 0o755 });
           stream_write_encoder(socket, 'log')('Binary saved');
           stream_write_encoder(socket, 'ai_binary_ack')(bmsg.length+"");
+          stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen!');
         } catch (err) {
           stream_write_encoder(socket, 'log')(`Write error: ${err.message}`);
         }
