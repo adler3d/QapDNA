@@ -820,17 +820,19 @@ struct t_node:t_process,t_node_cache{
       string path;  // для Unix-socket
       function<void(int fd)> on_ready;
       //function<void()> on_error;
-      bool connected = false;
+      //bool connected = false;
     };
     vector<t_monitored_fd> fds,fds2;
-    mutex mtx,mtx2;
+    set<int> fdsr;
+    mutex mtx,mtx2,mtxr;
     t_node*pnode=nullptr;
     void remove_without_lock(int fd) {
       QapCleanIf(fds, [fd](const t_monitored_fd& f) { return f.fd == fd; });
     }
     void remove(int fd) {
-      lock_guard<mutex> lock(mtx);
-      remove_without_lock(fd);
+      lock_guard<mutex> lock(mtxr);
+      fdsr.insert(fd);
+      //remove_without_lock(fd);
     }
     void add(int fd, function<void(int)>&&on_ready/*, const function<void()>& on_error = []{}*/) {
       lock_guard<mutex> lock(mtx2);
@@ -881,6 +883,11 @@ struct t_node:t_process,t_node_cache{
             lock_guard<mutex> lock(mtx2);
             for(auto&f:fds2)fds.push_back(f);
             fds2.clear();
+          }
+          {
+            lock_guard<mutex> lock(mtxr);
+            QapCleanIf(fds,[this](const t_monitored_fd&f){return fdsr.count(f.fd);});
+            fdsr.clear();
           }
           for (auto& f : fds) {
             pfds.push_back(make_pollinout(f.fd));
