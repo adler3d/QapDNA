@@ -144,6 +144,7 @@ function startServer(useUnixSocket) {
     server.listen(SOCKET_PATH, () => {
       console.log(`Server listening on Unix socket ${SOCKET_PATH}`);
     });
+    fs.chmodSync(SOCKET_PATH, 0o777);
   } else {
     const PORT = 4000;
     const server = net.createServer(handleConnection);
