@@ -22,11 +22,13 @@ var emitter_on_data_decoder=(emitter,cb)=>{
       if(zpos<0)return;
       var zn=zpos+1;
       var blen=rd.slice(0,e);
-      var len=blen.toString("binary")|0;
+      var len=parseInt(blen.toString("binary"),10);
       if(rd.length<zn+len)return;
       var bz=rd.slice(en,en+zpos-en);var z=bz.toString("binary");
       var bmsg=rd.slice(zn,zn+len);var msg=bmsg.toString("binary");
       rd=rd.slice(zn+len);
+      two_log('rd=' + rd.length+" value="+(rd+"").substr(0,128));
+      two_log('z=' + z+" msg="+(msg+"").substr(0,128));
       cb(z,msg,bz,bmsg);
     }
   });
