@@ -689,7 +689,7 @@ struct t_node:t_process,t_node_cache{
     }
     auto*api_ptr=&api;api.binary=binary;
     bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr](){
-      stream_write(api_ptr->socket, "true", "please delivered this to dokcon.js");
+      //stream_write(api_ptr->socket, "true", "please delivered this to dokcon.js");
       LOG("loop_v2.connect_to_container_socket::done::bef::start_reading");
       api_ptr->start_reading();
     });
