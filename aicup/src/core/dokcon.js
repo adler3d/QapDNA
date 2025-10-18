@@ -114,8 +114,9 @@ async function handleConnection(socket) {
           stream_write_encoder(socket, 'log')('Binary not found');
           break;
         }
-        console.log('Starting AI process');
-        aiProcess = spawn(aiBin,[],{stdio:['pipe','pipe','pipe'],windowsHide:true});
+        console.error('Starting AI process');
+        console.error(aiBin);
+        aiProcess = spawn("./ai.bin",[],{stdio:['pipe','pipe','pipe'],windowsHide:true});
 
         // Перенаправляем stdout/stderr через стрим-протокол
         aiProcess.stdout.on('data', stream_write_encoder(socket, 'ai_stdout'));
