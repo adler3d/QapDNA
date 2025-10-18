@@ -634,6 +634,7 @@ struct t_node:t_process,t_node_cache{
   }
   static void kill(const string&conid){
     thread t([&](){
+      LOG("t_node::kill conid="+conid);
       string cmd="docker kill "+conid;
       (void)system(cmd.c_str());
     });
@@ -953,8 +954,9 @@ struct t_node:t_process,t_node_cache{
                 if (f.fd == pfd.fd) {
                   //if (f.on_error) f.on_error();
                   qap_close(pfd.fd);
-                  remove_without_lock(pfd.fd);  // удаляем из списка
-                  LOG("t_node::Socket error on fd="+to_string(pfd.fd));
+                  f.fd=-1;
+                  //remove_without_lock(pfd.fd);  // удаляем из списка
+                  LOG("t_node::Socket error on fd="+to_string(pfd.fd)+" revents="+to_string(pfd.revents));
                   break;
                 }
               }
