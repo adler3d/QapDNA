@@ -675,7 +675,7 @@ struct t_node:t_process,t_node_cache{
       api.on_stderr("docker run failed: " + to_string(result) + "\n");
       return false;
     }
-    auto*api_ptr=&api;api->binary=binary;
+    auto*api_ptr=&api;api.binary=binary;
     bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr](){
       stream_write(api_ptr->socket, "true", "please delivered this to dokcon.js");
       LOG("loop_v2.connect_to_container_socket::done::bef::start_reading");
