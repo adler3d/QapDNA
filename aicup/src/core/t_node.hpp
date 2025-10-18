@@ -370,6 +370,7 @@ struct t_node:t_process,t_node_cache{
     t_docker_api_v2() {
       decoder.cb = [this](const string& z, const string& msg) {
         LOG("t_node::t_docker_api_v2::cb::z='"+z+"' msg='"+msg+"'");
+        stream_write(socket, "stress", "test");
         if(z=="hi from dokcon.js"){
           stream_write(socket, "ai_binary", binary);
           stream_write(socket, "ai_start", "2025.10.18 12:55:05.686");
@@ -689,9 +690,10 @@ struct t_node:t_process,t_node_cache{
     }
     auto*api_ptr=&api;api.binary=binary;
     bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr](){
-      //stream_write(api_ptr->socket, "true", "please delivered this to dokcon.js");
+      stream_write(api_ptr->socket, "true", "please delivered this to dokcon.js");
       LOG("loop_v2.connect_to_container_socket::done::bef::start_reading");
       api_ptr->start_reading();
+      stream_write(api_ptr->socket, "false", "please don't delivered this to dokcon.js");
     });
 
     return ok;
