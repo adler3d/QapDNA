@@ -822,8 +822,8 @@ struct t_node:t_process,t_node_cache{
       //function<void()> on_error;
       bool connected = false;
     };
-    vector<t_monitored_fd> fds;
-    mutex mtx;
+    vector<t_monitored_fd> fds,fds2;
+    mutex mtx,mtx2;
     t_node*pnode=nullptr;
     void remove_without_lock(int fd) {
       QapCleanIf(fds, [fd](const t_monitored_fd& f) { return f.fd == fd; });
@@ -833,8 +833,8 @@ struct t_node:t_process,t_node_cache{
       remove_without_lock(fd);
     }
     void add(int fd, function<void(int)>&&on_ready/*, const function<void()>& on_error = []{}*/) {
-      lock_guard<mutex> lock(mtx);
-      fds.push_back({fd, "", std::move(on_ready)/*, on_error*/});
+      lock_guard<mutex> lock(mtx2);
+      fds2.push_back({fd, "", std::move(on_ready)/*, on_error*/});
     }
     void wait_for_socket(const std::string& socket_path, int max_wait_ms=1024, int poll_interval_ms=16) {
         namespace fs = std::filesystem;
@@ -877,8 +877,12 @@ struct t_node:t_process,t_node_cache{
         pfds.clear();
         {
           lock_guard<mutex> lock(mtx);
+          {
+            lock_guard<mutex> lock(mtx2);
+            for(auto&f:fds2)fds.push_back(f);
+            fds2.clear();
+          }
           for (auto& f : fds) {
-            //pfds.push_back({f.fd, POLLIN | POLLOUT, 0});
             pfds.push_back(make_pollinout(f.fd));
           }
         }
