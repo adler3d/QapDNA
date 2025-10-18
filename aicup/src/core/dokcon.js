@@ -61,12 +61,13 @@ var stream_write_encoder = (stream, z) => data => {
 // === КОНЕЦ ВСТАВКИ ===
 
 // --- Сервер (управляющая программа) ---
-var two_log=(a,b)=>{console.log(a,b);console.error(a,b);};
+var two_log=console.log;//(a,b)=>{console.log(a,b);console.error(a,b);};
 async function handleConnection(socket) {
   two_log('Client connected');
   let aiProcess = null;
   socket.setNoDelay(true);
   stream_write_encoder(socket,'hi from dokcon.js')('2025.10.18 12:01:08.493');
+  two_log('after hi');
   socket.on('close', () => {
     if (aiProcess) {
       two_log('Killing AI process due to socket close');
@@ -74,6 +75,7 @@ async function handleConnection(socket) {
       aiProcess = null;
     }
   });
+  two_log('a bit later');
   socket.on('error', err => {
     two_log('Socket error:', err);
     if (aiProcess) {
@@ -81,12 +83,16 @@ async function handleConnection(socket) {
       aiProcess = null;
     }
   });
+  
+  two_log('a bit later 2');
   emitter_on_data_decoder(socket, async (z, msg, bz, bmsg) => {
+    two_log('something happen...');
     if (aiProcess) {
       // Пересылаем в stdin AI
       aiProcess.stdin.write(bmsg); // бинарно!
       return;
     }
+    two_log('something happen?');
     switch (z) {
       case 'ai_binary':
         two_log(`Saving binary of length ${bmsg.length}`);
@@ -150,6 +156,7 @@ async function handleConnection(socket) {
 
       default:
         stream_write_encoder(socket, 'log')(`Unknown channel: ${z}`);
+        two_log(`Unknown channel: ${z}`);
     }
   });
 }
