@@ -370,10 +370,13 @@ struct t_node:t_process,t_node_cache{
     t_docker_api_v2() {
       decoder.cb = [this](const string& z, const string& msg) {
         LOG("t_node::t_docker_api_v2::cb::z='"+z+"' msg='"+msg+"' sock="+to_string(socket.sock));
-        stream_write(socket, "stress", "test");
+        //stream_write(socket, "stress", "test");
+        socket.write(qap_zchan_write("stress2","test2"));
         if(z=="hi from dokcon.js"){
-          stream_write(socket, "ai_binary", binary);
-          stream_write(socket, "ai_start", "2025.10.18 12:55:05.686");
+          socket.write(qap_zchan_write("ai_binary",binary));
+          socket.write(qap_zchan_write("ai_start","2025.10.18 12:55:05.686"));
+          //stream_write(socket, "ai_binary", binary);
+          //stream_write(socket, "ai_start", "2025.10.18 12:55:05.686");
         }
         if (z == "ai_stdout") {
           on_stdout(string_view(msg));
