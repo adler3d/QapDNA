@@ -866,7 +866,7 @@ struct t_main : t_process,t_http_base {
           b.token = sha256(b.time + name + email + to_string((rand() << 16) + rand()) + "2025.08.23 15:10:42.466");
           b.sarr_mtx = make_unique<mutex>();
 
-          carr.push_back(move(b));
+          carr.push_back(std::move(b));
         }
 
         // Возвращаем информацию о новом кодере

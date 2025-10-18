@@ -7,10 +7,12 @@ const AI_BIN_NAME = './ai.bin';
 const TMP_DIR = '/tmpfs'; // можно на /tmpfs
 const SOCKET_PATH = process.env.SOCKET_PATH || '/tmp/dokcon.sock';
 
-// === ВСТАВКА emitter_on_data_decoder и stream_write_encoder ===
+var two_log=console.log;
+
 var emitter_on_data_decoder = (emitter, cb) => {
   var rd = Buffer.from([]);
   emitter.on('data', data => {
+    two_log('Received raw data, length=' + data.length);
     rd = Buffer.concat([rd, data]);
     var e = rd.indexOf("\0");
     if (e < 0) return;
@@ -38,30 +40,7 @@ var stream_write_encoder=(stream,z)=>data=>{
     Buffer.from(data?data:"","binary")
   ]));
 };
-/*
-var stream_write_encoder = (stream, z) => data => {
-  var sep = Buffer.from([0]);
 
-  let payload;
-  if (Buffer.isBuffer(data)) {
-    payload = data;
-  } else {
-    payload = Buffer.from(data ? data.toString() : "", "utf8");
-  }
-
-  const lenBuf = Buffer.from(payload.length.toString(), "utf8");
-  const zBuf = Buffer.from(z, "utf8");
-
-  stream.write(Buffer.concat([
-    lenBuf, sep,
-    zBuf, sep,
-    payload
-  ]));
-};*/
-// === КОНЕЦ ВСТАВКИ ===
-
-// --- Сервер (управляющая программа) ---
-var two_log=console.log;//(a,b)=>{console.log(a,b);console.error(a,b);};
 async function handleConnection(socket) {
   two_log('Client connected');
   let aiProcess = null;
