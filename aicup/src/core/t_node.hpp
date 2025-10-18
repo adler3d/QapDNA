@@ -850,7 +850,7 @@ struct t_node:t_process,t_node_cache{
     }
 
     void run() {
-      vector<pollfd> pfds;QapClock clock;
+      vector<pollfd> pfds;auto time=qap_time();//QapClock clock;
       while (true) {
         pfds.clear();
         {
@@ -868,9 +868,11 @@ struct t_node:t_process,t_node_cache{
           for (auto& f : fds) {
             pfds.push_back(make_pollinout(f.fd));
           }
-          if(clock.MS()>2500){
+          auto cur=qap_time();
+          if(qap_time_diff(time,cur)>2500/*clock.MS()>2500*/){
             LOG("pfds.size()=="+to_string(pfds.size()));
-            clock.Start();
+            //clock.Start();
+            time=cur;
           }
         }
         pnode->container_monitor.update();
