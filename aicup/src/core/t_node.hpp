@@ -888,7 +888,9 @@ struct t_node:t_process,t_node_cache{
           }
           auto cur=qap_time();
           if(qap_time_diff(time,cur)>2500/*clock.MS()>2500*/){
-            LOG("pfds.size()=="+to_string(pfds.size()));
+            vector<string> arr;
+            for(auto&ex:pfds)arr.push_back(to_string(ex.fd));
+            LOG("pfds.size()=="+to_string(pfds.size())+"==["+join(arr,",")+"]");
             //clock.Start();
             time=cur;
           }
