@@ -246,8 +246,8 @@ struct t_node:t_process,t_node_cache{
           }
 
           // Родитель: закрываем ненужные концы
-          qap_close(stdin_pipe[0]);   // читать из stdin QapLR не будем
-          qap_close(stdout_pipe[1]);  // писать в stdout QapLR не будем
+          //qap_close(stdin_pipe[0]);   // читать из stdin QapLR не будем
+          //qap_close(stdout_pipe[1]);  // писать в stdout QapLR не будем
 
           stdin_fd = stdin_pipe[1];
           stdout_fd = stdout_pipe[0];
