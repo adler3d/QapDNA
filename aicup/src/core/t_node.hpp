@@ -690,7 +690,7 @@ struct t_node:t_process,t_node_cache{
                //"--mount type=bind,src=" + api.socket_path_on_host + ",dst=/tmp/dokcon.sock "
                  "--mount type=tmpfs,tmpfs-size=64m,destination=/tmpfs "
                  "universal-runner:latest";
-
+    LOG("spawn_docker::say\n"+cmd);
     int result = system(cmd.c_str());
     if (result != 0) {
       LOG("spawn_docker::docker run failed: " + to_string(result)+" for "+cdn_url);
