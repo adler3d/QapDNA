@@ -61,7 +61,7 @@ var stream_write_encoder = (stream, z) => data => {
 // === КОНЕЦ ВСТАВКИ ===
 
 // --- Сервер (управляющая программа) ---
-var two_log=()=>{console.log(...arguments);console.error(...arguments);};
+var two_log=(a,b)=>{console.log(a,b);console.error(a,b);};
 async function handleConnection(socket) {
   two_log('Client connected');
   let aiProcess = null;
