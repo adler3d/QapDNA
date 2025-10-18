@@ -12,7 +12,7 @@ var two_log=console.log;
 var emitter_on_data_decoder = (emitter, cb) => {
   var rd = Buffer.from([]);
   emitter.on('data', data => {
-    two_log('Received raw data, length=' + data.length);
+    two_log('Received raw data, length=' + data.length+" value="+data);
     rd = Buffer.concat([rd, data]);
     var e = rd.indexOf("\0");
     if (e < 0) return;
