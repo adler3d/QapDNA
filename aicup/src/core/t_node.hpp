@@ -348,6 +348,7 @@ struct t_node:t_process,t_node_cache{
     string socket_path_in_container="/tmp/dokcon.sock";
     string socket_path_on_host;
     emitter_on_data_decoder decoder;
+    string binary;
     ~t_docker_api_v2() {
         socket.qap_close();
         if (!socket_path_on_host.empty()) {
@@ -357,6 +358,10 @@ struct t_node:t_process,t_node_cache{
     t_docker_api_v2() {
       decoder.cb = [this](const string& z, const string& msg) {
         LOG("t_node::t_docker_api_v2::cb::z='"+z+"' msg='"+msg+"'");
+        if(z=="hi from dokcon.js"){
+          stream_write(socket, "ai_binary", binary);
+          stream_write(socket, "ai_start", "2025.10.18 12:55:05.686");
+        }
         if (z == "ai_stdout") {
           on_stdout(string_view(msg));
         } else if (z == "ai_stderr") {
@@ -367,35 +372,7 @@ struct t_node:t_process,t_node_cache{
           LOG("t_node::ai_binary_ack");
           pgame->on_container_ready(player_id);
           //pnode->send_vpow(*pgame,player_id);
-        }/* else if (z == "vpow") {
-          if (pgame->runner.get()!= this)return;
-          try {
-            auto j = json::parse(msg);
-            if (!j.contains("to")||!j.contains("data"))return;
-            int player_id = j["to"];
-            auto d=j["data"];
-            if(!d.is_string())return;
-            string data=d;
-            if(!qap_check_id(player_id,pgame->slot2api))return;
-            auto& api = pgame->slot2api[player_id];
-            auto& status = pgame->slot2status[player_id];
-            if (api && status.ok()) {
-              string packet = qap_zchan_write("vpow", data);
-              api->write_stdin(packet);
-            }
-          } catch (...) {
-            LOG("Invalid vpow format from runner: " + msg);
-          }
-        } else if (z == "event") {
-          if (pgame->runner.get()!= this)return;
-          auto j = json::parse(msg);
-          if (j["type"] != "player_eliminated")return;
-          int id = j["id"];
-          if(!qap_check_id(id,pgame->slot2status))return;
-          pgame->slot2status[id].EL=true;
-          if(!qap_check_id(id,pgame->slot2api))return;
-          t_node::kill(pgame->slot2api[id]->conid);
-        }*/
+        }
       };
     }
     void start_reading() {
@@ -698,11 +675,10 @@ struct t_node:t_process,t_node_cache{
       api.on_stderr("docker run failed: " + to_string(result) + "\n");
       return false;
     }
-    auto*api_ptr=&api;
-    bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr,binary](){
-      stream_write(api_ptr->socket, "ai_binary", binary);
-      stream_write(api_ptr->socket, "ai_start", "");
-      LOG("loop_v2.connect_to_container_socket::done::after::ai_start");
+    auto*api_ptr=&api;api->binary=binary;
+    bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr](){
+      stream_write(api_ptr->socket, "true", "please delivered this to dokcon.js");
+      LOG("loop_v2.connect_to_container_socket::done::bef::start_reading");
       api_ptr->start_reading();
     });
 
