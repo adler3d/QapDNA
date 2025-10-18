@@ -270,17 +270,22 @@ struct t_node:t_process,t_node_cache{
       }
 
       void start_reading() {
-          pnode->loop_v2.add(stdout_fd, [this](int&fd) {
-              t_unix_socket socket{fd};
+          pnode->loop_v2.add(stdout_fd, [this](int& fd) {
               char buf[4096];
-              int n = socket.read(buf, sizeof(buf));
+              ssize_t n = ::read(fd, buf, sizeof(buf));
               LOG("t_qaplr::socket::read n="+to_string(n)+" fd="+to_string(fd));
               if (n > 0) {
-                decoder.feed(buf, n);
-              } else if (n < 0) {
-                // Ошибка → закрыть
-                pnode->loop_v2.remove(fd);
-                socket.qap_close();
+                  decoder.feed(buf, n);
+              } else if (n == 0) {
+                  // EOF — дочерний процесс закрыл stdout → завершился
+                  pnode->loop_v2.remove(fd);
+                  ::close(fd);
+                  pnode->on_qaplr_finished(*pgame);  // ← ВАЖНО!
+              } else {
+                  // Ошибка чтения
+                  pnode->loop_v2.remove(fd);
+                  ::close(fd);
+                  pnode->on_qaplr_finished(*pgame);
               }
           });
       }
