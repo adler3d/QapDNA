@@ -61,15 +61,15 @@ var stream_write_encoder = (stream, z) => data => {
 // === КОНЕЦ ВСТАВКИ ===
 
 // --- Сервер (управляющая программа) ---
-
+var two_log=()=>{console.log(...arguments);console.error(...arguments);};
 async function handleConnection(socket) {
-  console.log('Client connected');
+  console.error('Client connected');
   let aiProcess = null;
   socket.setNoDelay(true);
   stream_write_encoder(socket,'hi from dokcon.js')('2025.10.18 12:01:08.493');
   socket.on('close', () => {
     if (aiProcess) {
-      console.log('Killing AI process due to socket close');
+      console.error('Killing AI process due to socket close');
       aiProcess.kill();
       aiProcess = null;
     }
@@ -89,7 +89,7 @@ async function handleConnection(socket) {
     }
     switch (z) {
       case 'ai_binary':
-        console.log(`Saving binary of length ${bmsg.length}`);
+        console.error(`Saving binary of length ${bmsg.length}`);
         const filePath = path.join(TMP_DIR, AI_BIN_NAME);
         try {
           console.error('otpravlenZ');
@@ -159,14 +159,14 @@ function startServer(useUnixSocket) {
     if (fs.existsSync(SOCKET_PATH)) fs.unlinkSync(SOCKET_PATH);
     const server = net.createServer(handleConnection);
     server.listen(SOCKET_PATH, () => {
-      console.log(`Server listening on Unix socket ${SOCKET_PATH}`);
+      console.error(`Server listening on Unix socket ${SOCKET_PATH}`);
     });
     fs.chmodSync(SOCKET_PATH, 0o777);
   } else {
     const PORT = 4000;
     const server = net.createServer(handleConnection);
     server.listen(PORT, () => {
-      console.log(`Server listening on TCP port ${PORT}`);
+      console.error(`Server listening on TCP port ${PORT}`);
     });
   }
 }
