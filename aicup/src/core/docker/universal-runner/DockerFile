@@ -5,5 +5,4 @@ COPY dokcon.js /dokcon/
 
 WORKDIR /dokcon
 
-# Запускаем сервер
-CMD ["node", "dokcon.js", "server_unix"]
+CMD ["sh", "-c", "node dokcon.js server_unix && sleep infinity"]
