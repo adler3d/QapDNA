@@ -369,7 +369,7 @@ struct t_node:t_process,t_node_cache{
             unique_lock<mutex> lock(mtx);
             cv.wait(lock, [this] { return stop || !q.empty(); });
             if (stop) break;
-            string data = move(q.front()); q.pop();
+            string data = std::move(q.front()); q.pop();
             lock.unlock();
 
             // Блокирующая, но изолированная отправка
@@ -377,11 +377,13 @@ struct t_node:t_process,t_node_cache{
             size_t sent = 0;
             while (sent < data.size() && !stop) {
               ssize_t n = send(sock->sock, ptr + sent, data.size() - sent, MSG_NOSIGNAL);
+              LOG("t_node::t_writer::send n="+to_string(n)+" sock="+to_string(sock->sock));
               if (n <= 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                   this_thread::sleep_for(1ms);
                   continue;
                 }
+                LOG("t_node::t_writer::send errno="+to_string(errno)+" sock="+to_string(sock->sock));
                 break; // ошибка
               }
               sent += n;
