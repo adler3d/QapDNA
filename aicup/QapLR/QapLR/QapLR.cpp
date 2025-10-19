@@ -4759,17 +4759,32 @@ int QapLR_main(int argc,char*argv[]){
           }
           // Игнорируем неизвестные zchan
         };
-
+            InputReader reader;
         char buffer[4096];
-        while (reader_running) {
-          LOG("bef read");
-          std::cin.read(buffer, sizeof(buffer));
-          std::streamsize n = std::cin.gcount();
-          LOG("gcount="+to_string(n));
-          if (n <= 0) break; // EOF или ошибка
-          auto r=decoder.feed(buffer, static_cast<size_t>(n));
-          LOG("decoder.feed(buf,"+to_string(n)+")="+r.to_str()+";buff="+string(buffer,n));
+        while (reader_running){
+          std::streamsize avail = reader.available();
+          if (avail > 0) {
+            std::streamsize toRead = std::min(avail, static_cast<std::streamsize>(sizeof(buffer)));
+            LOG("bef read avail="+to_string(avail));
+            std::streamsize n = reader.read(buffer, toRead);
+            LOG("aft read n="+to_string(n));
+            if (n <= 0) break;
+            auto r=decoder.feed(buffer, static_cast<size_t>(n));
+            LOG("decoder.feed(buf,"+to_string(n)+")="+r.to_str()+";buff="+string(buffer,n));
+          } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          }
         }
+        //char buffer[4096];
+        //while (reader_running) {
+        //  LOG("bef read");
+        //  std::cin.read(buffer, sizeof(buffer));
+        //  std::streamsize n = std::cin.gcount();
+        //  LOG("gcount="+to_string(n));
+        //  if (n <= 0) break; // EOF или ошибка
+        //  auto r=decoder.feed(buffer, static_cast<size_t>(n));
+        //  LOG("decoder.feed(buf,"+to_string(n)+")="+r.to_str()+";buff="+string(buffer,n));
+        //}
       });
 
       for (int i = 0; i < players.size(); ++i) {
