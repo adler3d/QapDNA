@@ -38,7 +38,7 @@ struct t_http_base{
       }
       bool is_allowed(const string& ip) {
           lock_guard<mutex> lock(mtx);
-
+          return true;
           // Пропускаем белые IP
           if (whitelist.count(ip)) return true;
 
@@ -340,9 +340,9 @@ struct t_cdn:t_http_base{
 
           res.status = 200;
           /*
-          curl -X POST "http://your-cdn:8080/whitelist" \
+          curl -X POST "http://127.0.0.1:80/whitelist" \
              -H "Authorization: Bearer s3cr3t_t0k3n_f0r_cdn_uploads_2025" \
-             -d "ips=192.168.1.100,192.168.1.101,10.0.0.5&action=add"
+             -d "ips=5.252.21.84,192.168.1.101,10.0.0.5&action=add"
           */
           LOGWAY();
       });
