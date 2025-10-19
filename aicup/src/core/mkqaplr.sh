@@ -3,4 +3,4 @@ git pull
 g++ -ggdb -DQAP_UNIX -O0 QapLR.cpp -oQapLR
 mv QapLR ../../src/core
 popd
-ll QapLR
+ls -lht QapLR
