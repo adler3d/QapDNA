@@ -252,8 +252,8 @@ struct t_node:t_process,t_node_cache{
           stdin_fd = stdin_pipe[1];
           stdout_fd = stdout_pipe[0];
 
-          stdin_file = fdopen(stdin_fd, "w");
-          stdout_file = fdopen(stdout_fd, "r");
+          stdin_file = fdopen(stdin_fd, "wb");
+          stdout_file = fdopen(stdout_fd, "rb");
           if (!stdin_file || !stdout_file) {
               stop();
               return false;
@@ -295,7 +295,7 @@ struct t_node:t_process,t_node_cache{
           if (stdin_file) {
               auto rv=fwrite(frame.data(), 1, frame.size(), stdin_file);
               auto frv=fflush(stdin_file);
-              LOG("t_qaplr::write_zchan rv="+to_string(rv)+" frv="+to_string(frv));
+              LOG("t_qaplr::write_zchan rv="+to_string(rv)+" frv="+to_string(frv)+" stdin_file="+to_string((ssize_t)stdin_file));
           }else LOG("t_qaplr::stdin_file is zero");
       }
 

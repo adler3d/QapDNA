@@ -242,7 +242,7 @@ struct GameQueue {
     cv.wait(lock, [this] { return stopping || !games.empty(); });
     if (stopping || games.empty()) return nullopt;
 
-    auto game = move(games.front());
+    auto game = std::move(games.front());
     games.pop();
     return game;
   }
