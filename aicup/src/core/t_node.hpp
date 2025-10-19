@@ -203,7 +203,17 @@ struct t_node:t_process,t_node_cache{
               pid = -1;
           }
       }
-
+      void mark_dead() {
+          if (stdin_file) {
+              fclose(stdin_file);
+              stdin_file = nullptr;
+          }
+          if (stdout_file) {
+              fclose(stdout_file);
+              stdout_file = nullptr;
+          }
+          pid = -1; // опционально
+      }
       bool start(const t_game_decl& gd) {
           int stdin_pipe[2], stdout_pipe[2];
           if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0) {
@@ -272,27 +282,29 @@ struct t_node:t_process,t_node_cache{
       void start_reading() {
           pnode->loop_v2.add(stdout_fd, [this](int& fd) {
               char buf[4096];
-              ssize_t n = ::read(fd, buf, sizeof(buf));
+              ssize_t n = qap_read(fd, buf, sizeof(buf));
               LOG("t_qaplr::socket::read n="+to_string(n)+" fd="+to_string(fd));
               if (n > 0) {
                   decoder.feed(buf, n);
               } else if (n == 0) {
                   // EOF — дочерний процесс закрыл stdout → завершился
                   pnode->loop_v2.remove(fd);
-                  ::close(fd);
-                  pnode->on_qaplr_finished(*pgame);  // ← ВАЖНО!
+                  qap_close(fd);
+                  mark_dead();
+                  pnode->on_qaplr_finished(*pgame);
               } else {
                   // Ошибка чтения
                   pnode->loop_v2.remove(fd);
-                  ::close(fd);
+                  qap_close(fd);
+                  mark_dead();
                   pnode->on_qaplr_finished(*pgame);
               }
           });
       }
 
       void write_zchan(const string& z, const string& payload) {
-          string frame = qap_zchan_write(z, payload);
           if (stdin_file) {
+              string frame = qap_zchan_write(z, payload);
               auto rv=fwrite(frame.data(), 1, frame.size(), stdin_file);
               auto frv=fflush(stdin_file);
               LOG("t_qaplr::write_zchan rv="+to_string(rv)+" frv="+to_string(frv)+" stdin_file="+to_string((ssize_t)stdin_file));

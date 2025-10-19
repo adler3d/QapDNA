@@ -1292,6 +1292,7 @@ void execl(...){return;}
 int pipe(...){return {};}
 static constexpr int STDIN_FILENO=0;
 static constexpr int STDOUT_FILENO=0;
+static constexpr int SIGPIPE=0;
 #define dup2(...)0
 #define fdopen(...)0
 #define qap_read(...)0
@@ -1409,7 +1410,9 @@ void setup_main(t_main&m){
   m.ai2cid.push_back(2);
   qap_add_back(m.carr).set(3,"Admin","admin@example.com","admin");
 }
+#include <signal.h>
 int main(int argc,char*argv[]){
+  signal(SIGPIPE, SIG_IGN);
   srand(time(0));
   if(bool prod=true){
     string mode="all";
