@@ -4762,8 +4762,10 @@ int QapLR_main(int argc,char*argv[]){
 
         char buffer[4096];
         while (reader_running) {
+          LOG("bef read");
           std::cin.read(buffer, sizeof(buffer));
           std::streamsize n = std::cin.gcount();
+          LOG("gcount="+to_string(n));
           if (n <= 0) break; // EOF или ошибка
           auto r=decoder.feed(buffer, static_cast<size_t>(n));
           LOG("decoder.feed(buf,"+to_string(n)+")="+r.to_str()+";buff="+string(buffer,n));

@@ -665,7 +665,7 @@ struct t_main : t_process,t_http_base {
     //lock_guard<mutex> lock(n2i_mtx);node2ipport[node(client_id)] = ip + ":31456";
     lock_guard<mutex> lock(cid2i_mtx);
     cid2i[client_id]={ip,client_id,/*sock,*/qap_time()};
-    string ut=sha256(qap_time()+"2025.08.25 18:44:20.685"+to_string(rand()<<16+rand()));
+    string ut=sha256(qap_time()+"2025.08.25 18:44:20.685"+to_string((rand()<<16)+rand()));
     server.send_to_client(client_id,qap_zchan_write("hi",ut));
   }
   void on_client_disconnected(int client_id) {
