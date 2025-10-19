@@ -12,7 +12,7 @@ var two_log=console.log;
 var emitter_on_data_decoder=(emitter,cb)=>{
   var rd=Buffer.from([]);
   emitter.on('data',data=>{
-    //two_log('Received raw data, length=' + data.length+" value="+(data+"").substr(0,128));
+    two_log('Received raw data, length=' + data.length+" value="+(data+"").substr(0,128));
     rd=Buffer.concat([rd,data]);
     for(;;){
       var e=rd.indexOf("\0");
@@ -27,8 +27,8 @@ var emitter_on_data_decoder=(emitter,cb)=>{
       var bz=rd.slice(en,en+zpos-en);var z=bz.toString("binary");
       var bmsg=rd.slice(zn,zn+len);var msg=bmsg.toString("binary");
       rd=rd.slice(zn+len);
-      //two_log('rd=' + rd.length+" value="+(rd+"").substr(0,128));
-      //two_log('z=' + z+" msg="+(msg+"").substr(0,128));
+      two_log('rd=' + rd.length+" value="+(rd+"").substr(0,128));
+      two_log('z=' + z+" msg="+(msg+"").substr(0,128));
       cb(z,msg,bz,bmsg);
     }
   });
