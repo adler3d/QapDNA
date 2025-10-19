@@ -7,12 +7,28 @@ const AI_BIN_NAME = './ai.bin';
 const TMP_DIR = '.'///tmpfs'; // можно на /tmpfs
 const SOCKET_PATH = process.env.SOCKET_PATH || '/tmp/dokcon.sock';
 
-var log=console.log;
+var log=function(...args){
+  console.log.apply(console, [qap_time(), ...args]);
+};
+
+function qap_time() {
+  const now = new Date();
+  const utc = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
+  const moscowTime = new Date(utc.getTime() + 3 * 60 * 60000);
+  const year = moscowTime.getFullYear();
+  const month = String(moscowTime.getMonth() + 1).padStart(2, '0');
+  const day = String(moscowTime.getDate()).padStart(2, '0');
+  const hours = String(moscowTime.getHours()).padStart(2, '0');
+  const minutes = String(moscowTime.getMinutes()).padStart(2, '0');
+  const seconds = String(moscowTime.getSeconds()).padStart(2, '0');
+  const milliseconds = String(moscowTime.getMilliseconds()).padStart(3, '0');
+  return `${year}.${month}.${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
+}
 
 var emitter_on_data_decoder=(emitter,cb)=>{
   var rd=Buffer.from([]);
   emitter.on('data',data=>{
-    log('Received raw data, length=' + data.length+" value="+(data+"").substr(0,128));
+    log('Received raw data, length=' + data.length+" value="+JSON.stringify(data.substr(0,128)));
     rd=Buffer.concat([rd,data]);
     for(;;){
       var e=rd.indexOf("\0");
@@ -27,8 +43,8 @@ var emitter_on_data_decoder=(emitter,cb)=>{
       var bz=rd.slice(en,en+zpos-en);var z=bz.toString("binary");
       var bmsg=rd.slice(zn,zn+len);var msg=bmsg.toString("binary");
       rd=rd.slice(zn+len);
-      log('rd=' + rd.length+" value="+(rd+"").substr(0,128));
-      log('z=' + z+" msg="+(msg+"").substr(0,128));
+      log('rd=' + rd.length+" value="+JSON.stringify(rd.substr(0,128)));
+      log('z=' + z+" msg="+JSON.stringify(msg.substr(0,128)));
       cb(z,msg,bz,bmsg);
     }
   });
