@@ -4803,7 +4803,7 @@ int QapLR_main(int argc,char*argv[]){
       session.send_vpow_to_all();
       session.clock.Start();
 
-      while (/*!session.end*/true) {
+      while (!session.end) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2500));
         LOG("decoder.buf.len="+to_string(decoder.buffer.size()));
       }
@@ -4812,6 +4812,10 @@ int QapLR_main(int argc,char*argv[]){
       reader_running = false;
       if (stdin_reader.joinable()) {
         stdin_reader.join();
+      }
+      for(;;){
+        std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+        LOG("infinity waiting loop");
       }
       return 0;
     }
