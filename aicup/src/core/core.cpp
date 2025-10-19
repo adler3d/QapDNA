@@ -947,9 +947,9 @@ struct t_main : t_process,t_http_base {
         {
           auto t=qap_time();
           lock_guard<mutex> lock(coder2lgt_mtx);
-          if (last_game_time.count(author) && (qap_time_diff(last_game_time[author],t)) < 10*1000/*5 * 60*1000*/) {
+          if(0)if (last_game_time.count(author) && (qap_time_diff(last_game_time[author],t)) < 10*1000/*5 * 60*1000*/) {
             res.status = 429;
-            //res.set_content("Rate limit: one game per 10 sec", "text/plain");
+            res.set_content("Rate limit: one game per 10 sec", "text/plain");
             //res.set_content("Rate limit: one game per 5 minutes", "text/plain");
             return;
           }
