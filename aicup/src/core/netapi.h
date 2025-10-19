@@ -260,11 +260,14 @@ public:
   }
 
   bool try_write(const std::string& z, const std::string& payload) {
-    std::lock_guard<std::mutex> lock(reconnect_mtx);
-    std::lock_guard<std::mutex> sock_lock(sock_mutex);
+    std::unique_lock<std::mutex> lock1(reconnect_mtx, std::defer_lock);
+    std::unique_lock<std::mutex> lock2(sock_mutex, std::defer_lock);
+    std::lock(lock1, lock2); // захватываем сразу оба мьютекса, избегая deadlock
+
     if (sock == INVALID_SOCKET) {
       return false;
     }
+
     std::string frame = qap_zchan_write(z, payload);
     int sent = send(sock, frame.data(), static_cast<int>(frame.size()), 0);
     return sent == (int)frame.size();
