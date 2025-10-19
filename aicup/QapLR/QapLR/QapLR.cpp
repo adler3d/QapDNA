@@ -9,6 +9,8 @@
   #include <windows.h>
   #include <intrin.h>
 #endif
+#include <string>
+void LOG(const std::string&str);
 #include "../../src/core/netapi.h"
 #include "stdio_zchan_reader.inl"
 #include <stdlib.h>
@@ -41,6 +43,7 @@ typedef std::chrono::duration<double, std::milli> dms;
 double dmsc(dms diff){return diff.count();}
 using namespace std;
 #include "qap_time.inl"
+void LOG(const string&str){cerr<<"["<<qap_time()<<"] "<<(str)<<endl;}
 #include "thirdparty/sweepline/sweepline.hpp"
 #define QAP_DEBUG
 #ifdef _WIN32
