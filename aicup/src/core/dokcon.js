@@ -7,28 +7,28 @@ const AI_BIN_NAME = './ai.bin';
 const TMP_DIR = '.'///tmpfs'; // можно на /tmpfs
 const SOCKET_PATH = process.env.SOCKET_PATH || '/tmp/dokcon.sock';
 
-var two_log=console.log;
+var log=console.log;
 
 var emitter_on_data_decoder=(emitter,cb)=>{
   var rd=Buffer.from([]);
   emitter.on('data',data=>{
-    two_log('Received raw data, length=' + data.length+" value="+(data+"").substr(0,128));
+    log('Received raw data, length=' + data.length+" value="+(data+"").substr(0,128));
     rd=Buffer.concat([rd,data]);
     for(;;){
       var e=rd.indexOf("\0");
-      if(e<0)return;
+      if(e<0)return log('e<0 e=',e);
       var en=e+1;
       var zpos=rd.indexOf('\0',en);
-      if(zpos<0)return;
+      if(zpos<0)return log('zpos<0 zpos=',e);
       var zn=zpos+1;
       var blen=rd.slice(0,e);
       var len=parseInt(blen.toString("binary"),10);
-      if(rd.length<zn+len)return;
+      if(rd.length<zn+len)return log('rd.length<zn+len ',{rdlen:rd.length,zn,len});
       var bz=rd.slice(en,en+zpos-en);var z=bz.toString("binary");
       var bmsg=rd.slice(zn,zn+len);var msg=bmsg.toString("binary");
       rd=rd.slice(zn+len);
-      two_log('rd=' + rd.length+" value="+(rd+"").substr(0,128));
-      two_log('z=' + z+" msg="+(msg+"").substr(0,128));
+      log('rd=' + rd.length+" value="+(rd+"").substr(0,128));
+      log('z=' + z+" msg="+(msg+"").substr(0,128));
       cb(z,msg,bz,bmsg);
     }
   });
@@ -44,28 +44,28 @@ var stream_write_encoder=(stream,z)=>data=>{
 };
 
 async function handleConnection(socket) {
-  two_log('Client connected');
+  log('Client connected');
   let aiProcess = null;
   socket.setNoDelay(true);
   stream_write_encoder(socket,'hi from dokcon.js')('2025.10.18 12:01:08.493');
-  two_log('after hi');
+  log('after hi');
   socket.on('close', () => {
     if (aiProcess) {
-      two_log('Killing AI process due to socket close');
+      log('Killing AI process due to socket close');
       aiProcess.kill();
       aiProcess = null;
     }
   });
-  two_log('a bit later');
+  log('a bit later');
   socket.on('error', err => {
-    two_log('Socket error:', err);
+    log('Socket error:', err);
     if (aiProcess) {
       aiProcess.kill();
       aiProcess = null;
     }
   });
   
-  two_log('a bit later 2');
+  log('a bit later 2');
   emitter_on_data_decoder(socket, async (z, msg, bz, bmsg) => {
     switch (z) {
       case 'ai_stdin':
@@ -78,28 +78,28 @@ async function handleConnection(socket) {
           break;
 
       case 'ai_binary':
-        two_log(`Saving binary of length ${bmsg.length}`);
+        log(`Saving binary of length ${bmsg.length}`);
         const filePath = path.join(TMP_DIR, AI_BIN_NAME);
         try {
-          two_log('otpravlenZ');
+          log('otpravlenZ');
           await fs.promises.writeFile(filePath, bmsg, { mode: 0o755 });
-          two_log('otpravlen0');
+          log('otpravlen0');
           stream_write_encoder(socket, 'log')('Binary saved');
-          two_log('otpravlen1');
+          log('otpravlen1');
           stream_write_encoder(socket, 'ai_binary_ack')(bmsg.length+"");
-          two_log('otpravlen2');
+          log('otpravlen2');
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 1');
-          two_log('otpravlen3');
+          log('otpravlen3');
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 2');
-          two_log('otpravlen4');
+          log('otpravlen4');
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 3');
-          two_log('otpravlen5');
+          log('otpravlen5');
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 4');
-          two_log('otpravlen6');
+          log('otpravlen6');
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 5');
-          two_log('otpravlen7');
+          log('otpravlen7');
         } catch (err) {
-          two_log('FAILED TO WRITE BINARY:', err);
+          log('FAILED TO WRITE BINARY:', err);
           stream_write_encoder(socket, 'log')(`Write error: ${err.message}`);
         }
         break;
@@ -114,8 +114,8 @@ async function handleConnection(socket) {
           stream_write_encoder(socket, 'log')('Binary not found');
           break;
         }
-        two_log('Starting AI process');
-        two_log(aiBin);
+        log('Starting AI process');
+        log(aiBin);
         aiProcess = spawn(aiBin,[],{stdio:['pipe','pipe','pipe'],windowsHide:true});
 
         // Перенаправляем stdout/stderr через стрим-протокол
@@ -139,7 +139,7 @@ async function handleConnection(socket) {
 
       default:
         stream_write_encoder(socket, 'log')(`Unknown channel: ${z}`);
-        two_log(`Unknown channel: ${z}`);
+        log(`Unknown channel: ${z}`);
     }
   });
 }
@@ -149,14 +149,14 @@ function startServer(useUnixSocket) {
     if (fs.existsSync(SOCKET_PATH)) fs.unlinkSync(SOCKET_PATH);
     const server = net.createServer(handleConnection);
     server.listen(SOCKET_PATH, () => {
-      two_log(`Server listening on Unix socket ${SOCKET_PATH}`);
+      log(`Server listening on Unix socket ${SOCKET_PATH}`);
     });
     fs.chmodSync(SOCKET_PATH, 0o777);
   } else {
     const PORT = 4000;
     const server = net.createServer(handleConnection);
     server.listen(PORT, () => {
-      two_log(`Server listening on TCP port ${PORT}`);
+      log(`Server listening on TCP port ${PORT}`);
     });
   }
 }
@@ -196,7 +196,7 @@ async function runClient(host, port, binaryFilePath) {
 
 
         if (z === 'ai_stderr') {
-          two_log('AI stderr:', JSON.stringify(msg)); // видим сырые фрагменты
+          log('AI stderr:', JSON.stringify(msg)); // видим сырые фрагменты
           err_buffer += msg;
 
           // Разбиваем по \n (т.к. endl → \r\n, но \r не мешает)
@@ -276,14 +276,14 @@ async function runClientUnix(socketPath, binaryFilePath) {
         }
 
         if (z === 'ai_stderr') {
-          two_log('AI stderr:', msg);
+          log('AI stderr:', msg);
         }
 
         // Опционально: завершить, если AI вышел
         if (z === 'log' && msg.includes('exited')) {
           client.end();
         }
-        two_log("msg from z='"+z+"'");
+        log("msg from z='"+z+"'");
       });
 
       client.on('close', () => {
@@ -292,13 +292,13 @@ async function runClientUnix(socketPath, binaryFilePath) {
       });
 
       client.on('error', (err) => {
-        two_log('Socket error:', err.message);
+        log('Socket error:', err.message);
         reject(err);
       });
     });
 
     client.on('error', (err) => {
-      two_log('Failed to connect to Unix socket:', err.message);
+      log('Failed to connect to Unix socket:', err.message);
       reject(err);
     });
   });
@@ -314,11 +314,11 @@ if (process.argv[2] === 'server_unix') {
   const host = process.argv[3];
   const port = parseInt(process.argv[4]);
   const file = process.argv[5];
-  runClient(host, port, file).catch(two_log);
+  runClient(host, port, file).catch(log);
 } else if (process.argv[2] === 'client_unix' && process.argv[3] && process.argv[4]) {
   const socketPath = process.argv[3];
   const binaryFilePath = process.argv[4];
-  runClientUnix(socketPath, binaryFilePath).catch(two_log);
+  runClientUnix(socketPath, binaryFilePath).catch(log);
 } else {
   console.log('Usage: node dokcon.js [server_unix|server_tcp|client_tcp <host> <port> <file>]');
   //node dokcon.js client_tcp 127.0.0.1 4000 ai.exe
