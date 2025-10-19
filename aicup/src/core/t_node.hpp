@@ -400,7 +400,7 @@ struct t_node:t_process,t_node_cache{
 
       void write(string data) {
         lock_guard<mutex> lock(mtx);
-        q.push(move(data));
+        q.push(std::move(data));
         cv.notify_one();
       }
 
@@ -651,7 +651,7 @@ struct t_node:t_process,t_node_cache{
     thread t([&](){
       LOG("t_node::kill conid="+conid);
       string cmd="docker kill "+conid;
-      //(void)system(cmd.c_str());
+      (void)system(cmd.c_str());
     });
     t.detach();
   }

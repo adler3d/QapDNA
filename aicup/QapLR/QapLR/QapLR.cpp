@@ -4725,6 +4725,7 @@ int QapLR_main(int argc,char*argv[]){
           } else if (z.size() >= 1 && z[0] == 'p' && std::all_of(z.begin() + 1, z.end(), ::isdigit)) {
             // Обработка игровых данных от игрока
             int player_index = std::stoi(z.substr(1));
+            std::cerr << "Player " << player_index << " payload.len= (" << payload.size() << ")\n";
             if (qap_check_id(players,player_index)) {
               auto& p = players[player_index];
               if (p.broken) return;
@@ -4743,6 +4744,7 @@ int QapLR_main(int argc,char*argv[]){
                 if (p.recv_buffer.size() < packet_size) break;
 
                 std::string cmd(p.recv_buffer.data() + sizeof(uint32_t), len);
+                std::cerr << "Player " << player_index << " cmd.len= (" << cmd.size() << ")\n";
                 session.submit_command(player_index, cmd);
                 session.update();
 
