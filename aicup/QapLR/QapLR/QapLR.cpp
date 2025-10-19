@@ -4710,8 +4710,8 @@ int QapLR_main(int argc,char*argv[]){
 
       // --- Zchan reader из stdin ---
       std::atomic<bool> reader_running{true};
+      emitter_on_data_decoder decoder;
       std::thread stdin_reader([&]() {
-        emitter_on_data_decoder decoder;
         decoder.cb = [&](const std::string& z, const std::string& payload) {
           if (z.size() >= 5 && z.substr(0, 5) == "drop/") {
             // Обработка отключения игрока по сигналу от t_node (TL/ML и т.п.)
@@ -4787,7 +4787,8 @@ int QapLR_main(int argc,char*argv[]){
       session.clock.Start();
 
       while (!session.end) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+        LOG("decoder.buf.len="+to_string(decoder.buffer.size()));
       }
       zchan_write("result",session.gen_result());
       zchan_write("finished",qap_time());
