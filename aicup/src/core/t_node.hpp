@@ -624,7 +624,7 @@ struct t_node:t_process,t_node_cache{
     t_cdn_game mk_cg(){
       t_cdn_game out;
       out.slot2player.resize(gd.arr.size());
-      (t_finished_game&)out=mk_fg();
+      out.fg=mk_fg();
       for(int i=0;i<gd.arr.size();i++){
         auto&p=out.slot2player[i];auto&a=*slot2api[i];
         p.tick2ms=a.time_log;

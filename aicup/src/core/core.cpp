@@ -949,7 +949,7 @@ struct t_main : t_process,t_http_base {
           lock_guard<mutex> lock(coder2lgt_mtx);
           if (last_game_time.count(author) && (qap_time_diff(last_game_time[author],t)) < 10*1000/*5 * 60*1000*/) {
             res.status = 429;
-            res.set_content("Rate limit: one game per 10 sec", "text/plain");
+            //res.set_content("Rate limit: one game per 10 sec", "text/plain");
             //res.set_content("Rate limit: one game per 5 minutes", "text/plain");
             return;
           }
@@ -1061,7 +1061,8 @@ struct t_main : t_process,t_http_base {
         z++;
         auto s=g.fg.slot2score.size()?g.fg.slot2score[z]:0.0;
         auto ms=g.fg.slot2ms.size()?g.fg.slot2ms[z]:0.0;
-        jp.push_back({{"coder",p.coder},{"score",s},{"ms",ms},{"v",g.gd.arr[z].v}});
+        auto st=g.fg.slot2status.size()?g.fg.slot2status[z]:"ok";
+        jp.push_back({{"coder",p.coder},{"score",s},{"ms",ms},{"v",g.gd.arr[z].v},{"status",st}});
       }
     };
     srv.Get("/games/latest", [this,game2json](const httplib::Request& req, httplib::Response& res) {
