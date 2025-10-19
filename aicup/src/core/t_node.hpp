@@ -328,7 +328,7 @@ struct t_node:t_process,t_node_cache{
                   int player_id = stoi(z.substr(5));
                   if (qap_check_id(player_id, pgame->slot2api)) {
                       // Отправляем seed в контейнер — БЕЗ запуска TL!
-                      pgame->slot2api[player_id]->write_stdin_raw(
+                      pgame->slot2api[player_id]->write_stdin(
                           payload//qap_zchan_write("seed", payload)
                       );
                       LOG("seed delivered");
@@ -337,7 +337,7 @@ struct t_node:t_process,t_node_cache{
                   // Это данные для игрока — пересылаем в докер
                   int player_id = stoi(z.substr(1));
                   if (qap_check_id(player_id, pgame->slot2api)) {
-                      pgame->slot2api[player_id]->write_stdin_raw(
+                      pgame->slot2api[player_id]->write_stdin(
                           payload//qap_zchan_write("vpow", payload)  // или "cmd", но лучше "vpow"
                       );
                       // Запускаем таймер TL
@@ -418,9 +418,12 @@ struct t_node:t_process,t_node_cache{
       writer = make_unique<t_writer>(&socket);
     }
 
-    void write_stdin_raw(const string& data) {
+    void write_stdin_raw(const string&data){
       if (writer)return writer->write(data);
       LOG("t_node::t_docker_api_v2::write_stdin_raw::to early, writer==nulptr!");
+    }
+    void write_ai_stdin(const string&data){
+      writer->write(qap_zchan_write("ai_stdin",data));
     }
     ~t_docker_api_v2() {
       socket.qap_close();
@@ -645,7 +648,7 @@ struct t_node:t_process,t_node_cache{
     thread t([&](){
       LOG("t_node::kill conid="+conid);
       string cmd="docker kill "+conid;
-      (void)system(cmd.c_str());
+      //(void)system(cmd.c_str());
     });
     t.detach();
   }

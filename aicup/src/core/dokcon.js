@@ -67,14 +67,16 @@ async function handleConnection(socket) {
   
   two_log('a bit later 2');
   emitter_on_data_decoder(socket, async (z, msg, bz, bmsg) => {
-    two_log('something happen...');
-    if (aiProcess) {
-      // Пересылаем в stdin AI
-      aiProcess.stdin.write(bmsg); // бинарно!
-      return;
-    }
-    two_log('something happen?');
     switch (z) {
+      case 'ai_stdin':
+          if (aiProcess) {
+            // Пересылаем в stdin AI
+            aiProcess.stdin.write(bmsg); // бинарно!
+            stream_write_encoder(socket, 'log')('ai_stdin.length='+bmsg.length);
+            return;
+          }else stream_write_encoder(socket, 'log')('i got ai_stdin but aiProcess is not started!');
+          break;
+
       case 'ai_binary':
         two_log(`Saving binary of length ${bmsg.length}`);
         const filePath = path.join(TMP_DIR, AI_BIN_NAME);
