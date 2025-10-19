@@ -565,6 +565,7 @@ struct t_main : t_process,t_http_base {
           g.status="finished";
           g.finished_at=qap_time();
           sch.on_game_finished(node(client_id),g.gd.arr.size());
+          LOG("game finished "+to_string(gid));
           //update_elo(result);
         }
         if(z=="game_uploaded:"+UPLOAD_TOKEN){
@@ -574,6 +575,7 @@ struct t_main : t_process,t_http_base {
           if(gid<0||gid>=garr.size()){LOG("t_main::wrong game_id form "+to_string(client_id));return;}
           auto&g=garr[gid];
           g.status="uploaded";
+          LOG("game uploaded "+to_string(gid));
         }
         if(z=="game_aborted:"+UPLOAD_TOKEN){
           auto a=split(payload,",");
@@ -586,6 +588,7 @@ struct t_main : t_process,t_http_base {
           g.status="aborted by "+a[1];
           g.finished_at=qap_time();
           sch.on_game_aborted(node(client_id),g.gd.arr.size());
+          LOG("game aborted "+to_string(gid));
         }
         if(z=="node_up:"+UPLOAD_TOKEN){
           auto a=split(payload,",");

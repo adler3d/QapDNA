@@ -140,13 +140,10 @@ class SocketWithDecoder {
 
   SOCKET sock = INVALID_SOCKET;
   std::atomic<bool> stopping{false};
-  std::mutex reconnect_mtx;  // защита сокета и reconnect процедур
+  std::mutex reconnect_mtx;  // защита от параллельного reconnect
   emitter_on_data_decoder decoder;
 
   std::thread reader_thread;
-
-  // Новый mutex для защиты сокета и статуса потока в reader
-  std::mutex sock_mutex;
 
   bool connect() {
     auto [host, port] = parse_endpoint(endpoint);
@@ -173,72 +170,52 @@ class SocketWithDecoder {
     }
 
     freeaddrinfo(res);
-
-    {
-      std::lock_guard<std::mutex> lock(sock_mutex);
-      sock = s;
-      stopping = false;
-    }
-
+    sock = s;
     return true;
   }
 
   void start_reader() {
     reader_thread = std::thread([this]() {
       char temp[4096];
-      while (true) {
-        {
-          std::lock_guard<std::mutex> lock(sock_mutex);
-          if (stopping || sock == INVALID_SOCKET) break;
-        }
-
-        int n = 0;
-        {
-          std::lock_guard<std::mutex> lock(sock_mutex);
-          n = recv(sock, temp, sizeof(temp), 0);
-        }
-
+      while (!stopping) {
+        int n = recv(sock, temp, sizeof(temp), 0);
         if (n <= 0) {
-          // Сокет закрыт или ошибка — завершаем чтение
+          // Сокет закрыт или ошибка
           break;
         }
-
         decoder.feed(temp, n);
       }
 
-      {
-        std::lock_guard<std::mutex> lock(sock_mutex);
-        if (sock != INVALID_SOCKET) {
-          ::closesocket(sock);
-          sock = INVALID_SOCKET;
-        }
+      // Завершаем работу
+      if (sock != INVALID_SOCKET) {
+        ::closesocket(sock);
+        sock = INVALID_SOCKET;
       }
     });
   }
 
   void stop_reader() {
-    stopping.store(true, std::memory_order_release);
     if (reader_thread.joinable()) {
+      stopping = true;
       reader_thread.join();
+      stopping = false;
     }
-    stopping.store(false, std::memory_order_release);
   }
 
 public:
-  SocketWithDecoder(const std::string& ep, std::function<void(const std::string&, const std::string&)>&& cb, bool withoutconnect)
-      : endpoint(ep)
-      , message_cb(std::move(cb)) {
+  SocketWithDecoder(const std::string& ep, std::function<void(const std::string&, const std::string&)>&& cb,bool withoutconnect)
+    : endpoint(ep)
+    , message_cb(std::move(cb))
+  {
     decoder.cb = [this](const std::string& z, const std::string& payload) {
       message_cb(z, payload);
     };
 
-    if (!withoutconnect) {
-      begin();
-    }
+    if(!withoutconnect)begin();
   }
 
-  void begin() {
-    if (!connect()) return;
+  void begin(){
+    if(!connect())return;
     start_reader();
   }
 
@@ -247,36 +224,44 @@ public:
   }
 
   void close() {
-    {
-      std::lock_guard<std::mutex> lock(sock_mutex);
-      stopping = true;
-      if (sock != INVALID_SOCKET) {
-        shutdown(sock, SD_BOTH);
-        ::closesocket(sock);
-        sock = INVALID_SOCKET;
-      }
+    stopping = true;
+    if (sock != INVALID_SOCKET) {
+      shutdown(sock, SD_BOTH);
+      ::closesocket(sock);
+      sock = INVALID_SOCKET;
     }
     stop_reader();
   }
 
-  bool try_write(const std::string& z, const std::string& payload) {
-    std::unique_lock<std::mutex> lock1(reconnect_mtx, std::defer_lock);
-    std::unique_lock<std::mutex> lock2(sock_mutex, std::defer_lock);
-    std::lock(lock1, lock2); // захватываем сразу оба мьютекса, избегая deadlock
+  std::string send_buffer;
 
-    if (sock == INVALID_SOCKET) {
-      return false;
-    }
+  bool try_write(const std::string& z, const std::string& payload) {
+    std::lock_guard<std::mutex> lock(reconnect_mtx);
+    if (sock == INVALID_SOCKET) return false;
 
     std::string frame = qap_zchan_write(z, payload);
-    int sent = send(sock, frame.data(), static_cast<int>(frame.size()), 0);
-    return sent == (int)frame.size();
+    send_buffer += frame;
+
+    while (!send_buffer.empty()) {
+      int sent = send(sock, send_buffer.data(), (int)send_buffer.size(), 0);
+      if (sent == SOCKET_ERROR) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          // Буфер переполнен, выйдем и попробуем позже
+          break;
+        }
+        // Другая ошибка — сбрасываем буфер, падение
+        send_buffer.clear();
+        return false;
+      }
+      send_buffer.erase(0, sent);
+    }
+
+    return send_buffer.empty();
   }
 
   void reconnect() {
     std::lock_guard<std::mutex> lock(reconnect_mtx);
     close();
-
     if (connect()) {
       start_reader();
     }
