@@ -669,7 +669,7 @@ struct t_node:t_process,t_node_cache{
     t.detach();
   }
   struct t_container_monitor{
-    static void _with_notify(t_runned_game&g,int pid){
+    static void kill_with_notify(t_runned_game&g,int pid){
       auto&conid=g.slot2api[pid]->conid;
       t_node::kill(conid);
       if(g.qaplr){
