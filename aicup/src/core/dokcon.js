@@ -116,7 +116,7 @@ async function handleConnection(socket) {
         }
         log('Starting AI process');
         log(aiBin);
-        aiProcess = spawn(aiBin,[],{stdio:['pipe','pipe','pipe'],windowsHide:true});
+        aiProcess = spawn("./"+aiBin,[],{stdio:['pipe','pipe','pipe'],windowsHide:true});
 
         // Перенаправляем stdout/stderr через стрим-протокол
         aiProcess.stdout.on('data', stream_write_encoder(socket, 'ai_stdout'));
