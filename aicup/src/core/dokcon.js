@@ -82,7 +82,7 @@ async function handleConnection(socket) {
         const filePath = path.join(TMP_DIR, AI_BIN_NAME);
         try {
           log('otpravlenZ');
-          await fs.promises.writeFile(filePath, bmsg, { mode: 0o755 });
+          fs.writeFileSync(filePath, bmsg, { mode: 0o755 });
           log('otpravlen0');
           stream_write_encoder(socket, 'log')('Binary saved');
           log('otpravlen1');
