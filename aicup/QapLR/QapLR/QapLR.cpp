@@ -4803,7 +4803,7 @@ int QapLR_main(int argc,char*argv[]){
       session.send_vpow_to_all();
       session.clock.Start();
 
-      while (!session.end) {
+      while (/*!session.end*/true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2500));
         LOG("decoder.buf.len="+to_string(decoder.buffer.size()));
       }

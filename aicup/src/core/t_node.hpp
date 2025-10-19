@@ -327,7 +327,7 @@ struct t_node:t_process,t_node_cache{
                   if (isdigit(z[8])) {
                       int player_id = stoi(z.substr(8));
                       if (qap_check_id(player_id, pgame->slot2api)) {
-                          pnode->container_monitor.kill(*pgame, player_id);
+                          pnode->container_monitor.kill_raw(*pgame, player_id);
                           pgame->slot2status[player_id].PF = true;
                       }
                   }
@@ -572,7 +572,7 @@ struct t_node:t_process,t_node_cache{
             // Ошибка: oversized или битый пакет
             if (qap_check_id(player_id, slot2api)) {
               slot2api[player_id]->on_stderr("[t_node] oversized or invalid packet\n");
-              pnode->container_monitor.kill(*this, player_id);
+              pnode->container_monitor.kill_raw(*this, player_id);
               slot2status[player_id].PF = true;
             }
             return;
@@ -669,12 +669,16 @@ struct t_node:t_process,t_node_cache{
     t.detach();
   }
   struct t_container_monitor{
-    static void kill(t_runned_game&g,int pid){
+    static void _with_notify(t_runned_game&g,int pid){
       auto&conid=g.slot2api[pid]->conid;
       t_node::kill(conid);
       if(g.qaplr){
         g.qaplr->write_zchan("drop/"+to_string(pid),"");
       }
+    }
+    static void kill_raw(t_runned_game&g,int pid){
+      auto&conid=g.slot2api[pid]->conid;
+      t_node::kill(conid);
     }
     struct t_task{
       t_runned_game*pgame=nullptr;
@@ -694,7 +698,7 @@ struct t_node:t_process,t_node_cache{
         auto&gd=pgame->gd;
         auto TL=pgame->tick?gd.TL:gd.TL0;
         if(ms<=TL)return false;
-        kill(*pgame,player_id);
+        kill_with_notify(*pgame,player_id);
         pgame->slot2status[player_id].TL=true;
         deaded=true;
         return true;
@@ -866,7 +870,7 @@ struct t_node:t_process,t_node_cache{
     LOG("t_node::QapLR finished for game " + to_string(g.gd.game_id));
     for (int i = 0; i < (int)g.slot2api.size(); ++i) {
       if (g.slot2status[i].ok()) {
-          container_monitor.kill(g, i);
+          container_monitor.kill_raw(g, i);
       }
     }
     container_monitor.clear(g.gd.game_id);
