@@ -293,9 +293,10 @@ struct t_node:t_process,t_node_cache{
       void write_zchan(const string& z, const string& payload) {
           string frame = qap_zchan_write(z, payload);
           if (stdin_file) {
-              fwrite(frame.data(), 1, frame.size(), stdin_file);
-              fflush(stdin_file);
-          }
+              auto rv=fwrite(frame.data(), 1, frame.size(), stdin_file);
+              auto frv=fflush(stdin_file);
+              LOG("t_qaplr::write_zchan rv="+to_string(rv)+" frv="+to_string(frv));
+          }else LOG("t_qaplr::stdin_file is zero");
       }
 
       t_qaplr_process() {
