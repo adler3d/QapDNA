@@ -433,7 +433,7 @@ struct t_node:t_process,t_node_cache{
     }
     t_docker_api_v2() {
       decoder.cb = [this](const string& z, const string& msg) {
-        LOG("t_node::t_docker_api_v2::cb::z='"+z+"' len="+to_string(msg.size())+"msg='"+msg+"' sock="+to_string(socket.sock));
+        LOG("t_node::t_docker_api_v2::cb::z='"+z+"' len="+to_string(msg.size())+" msg='"+msg+"' sock="+to_string(socket.sock));
         if(z=="hi from dokcon.js"){
           write_stdin_raw(qap_zchan_write("ai_binary",binary));
           write_stdin_raw(qap_zchan_write("ai_start","2025.10.18 12:55:05.686"));
@@ -553,7 +553,9 @@ struct t_node:t_process,t_node_cache{
       for (int i = 0; i < gd.arr.size(); ++i) {
         int player_id = i;
         slot2decoder[i].on_packet = [this, player_id](const string& cmd) {
+          LOG("slot2decoder["+to_string(player_id)+"]:: cmd.len"+to_string(cmd.size()));
           if (cmd.empty()) {
+            LOG("slot2decoder["+to_string(player_id)+"]:: cmd oversized or empty");
             // Ошибка: oversized или битый пакет
             if (qap_check_id(player_id, slot2api)) {
               slot2api[player_id]->on_stderr("[t_node] oversized or invalid packet\n");
@@ -579,6 +581,7 @@ struct t_node:t_process,t_node_cache{
           // 3. Пересылаем в QapLR
           if (qaplr) {
             qaplr->write_zchan("p"+to_string(player_id),mk_len_packed(cmd));
+            LOG("slot2decoder["+to_string(player_id)+"]:: passed to QapLR");
           }
         };
       }
