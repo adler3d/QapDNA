@@ -66,6 +66,7 @@ public:
 #ifndef _WIN32
 #include <sys/select.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 
 class UnixInputReader : public IInputReader {
 public:
