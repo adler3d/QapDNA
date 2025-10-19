@@ -200,6 +200,7 @@ struct t_node:t_process,t_node_cache{
           if (stdout_file) { fclose(stdout_file); stdout_file = nullptr; }
           qap_close(stdin_fd);
           qap_close(stdout_fd);
+          pnode->loop_v2.remove(stdout_fd);
           if (pid > 0) {
               kill_by_pid(pid);
               pid = -1;
