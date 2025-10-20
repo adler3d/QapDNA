@@ -59,7 +59,7 @@ public:
   {
     for(int i=0;i<count;i++)c[i]=mem[pos++];//FIXME: тут можно юзать memcpy
   };
-  void write(char*c,int count)
+  void write(const char*c,int count)
   {
     //mem.reserve(max(mem.capacity(),mem.size()+count));
     int n=mem.size();
@@ -73,20 +73,20 @@ class QapIO{
 public:
   QapIO(){}
 public:
-  virtual void SavePOD(void*p,int count)=0;
+  virtual void SavePOD(const void*p,int count)=0;
   virtual void LoadPOD(void*p,int count)=0;
   virtual bool TryLoad(int count)=0;
   virtual void Crash()=0;
-  virtual bool IsCrashed()=0;
-  virtual bool IsSizeIO()=0;
-  virtual int GetSize()=0;
+  virtual bool IsCrashed()const=0;
+  virtual bool IsSizeIO()const=0;
+  virtual int GetSize()const=0;
   virtual void WriteTo(QapIO&ref)=0;
 public:
   #define LIST(F)F(int)F(unsigned int)F(char)F(unsigned char)F(bool)F(int64)F(uint64)F(float)F(real)F(short)F(unsigned short)F(vec2i)F(vec2d)F(vec2f)
   #define F(TYPE)void load(TYPE&ref){if(!TryLoad(sizeof(ref))){Crash();return;}LoadPOD(&ref,sizeof(ref));}
   LIST(F)
   #undef F
-  #define F(TYPE)void save(TYPE&ref){SavePOD(&ref,sizeof(ref));}
+  #define F(TYPE)void save(const TYPE&ref){SavePOD(&ref,sizeof(ref));}
   LIST(F)
   #undef F
   #undef LIST
@@ -100,7 +100,7 @@ public:
     ref.resize(size);
     LoadPOD(&ref[0],size);
   }
-  void save(std::string&ref)
+  void save(const std::string&ref)
   {
     int size=ref.size();
     save(size);
@@ -130,7 +130,7 @@ public:
     }
   }
   template<class TYPE>
-  void save(std::vector<TYPE>&ref)
+  void save(const std::vector<TYPE>&ref)
   {
     int size=ref.size();
     save(size);
@@ -140,7 +140,7 @@ public:
     }
   }
   template<class TYPE>
-  void save_as_pod(std::vector<TYPE>&ref)
+  void save_as_pod(const std::vector<TYPE>&ref)
   {
     int size=ref.size();
     save(size);
@@ -149,7 +149,7 @@ public:
       SavePOD(&ref[i],sizeof(TYPE));
     }
   }
-  void write_raw_string(string&s){if(s.empty())return;SavePOD((void*)&s[0],s.size());}
+  void write_raw_string(const string&s){if(s.empty())return;SavePOD((void*)&s[0],s.size());}
 };
 //-------------------------------------------//
 class TDataIO:public QapIO{
@@ -164,7 +164,7 @@ public:
   //void operator=(TDataIO&)=delete;
   //void operator=(TDataIO&&)=delete;
 public:
-  void SavePOD(void*p,int count)
+  void SavePOD(const void*p,int count)
   {
     this->IO.write((char*)p,count);
   }
@@ -188,15 +188,15 @@ public:
     IO.pos=IO.mem.size();
     crashed=true;
   }
-  bool IsCrashed()
+  bool IsCrashed()const
   {
     return crashed;
   }
-  bool IsSizeIO()
+  bool IsSizeIO()const
   {
     return false;
   }
-  int GetSize()
+  int GetSize()const
   {
     return IO.mem.size();
   }
@@ -227,16 +227,13 @@ public:
   bool crashed;
 public:
   TSizeIO():size(0),crashed(false),QapIO(){}
-  void SavePOD(void*p,int count){size+=count;}
-  void LoadPOD(void*p,int count){QapNoWay();Crash();}
-  bool TryLoad(int count){QapNoWay();Crash();return false;}
-  void Crash(){crashed=true;}
-  bool IsCrashed(){return crashed;}
-  bool IsSizeIO(){return true;}
-  int GetSize()
-  {
-    return size;
-  }
+  void SavePOD(const void*p,int count)override{size+=count;}
+  void LoadPOD(void*p,int count)override{QapNoWay();Crash();}
+  bool TryLoad(int count)override{QapNoWay();Crash();return false;}
+  void Crash()override{crashed=true;}
+  bool IsCrashed()const override{return crashed;}
+  bool IsSizeIO()const override{return true;}
+  int GetSize()const override{return size;}
   void WriteTo(QapIO&ref)
   {
     if(!ref.IsSizeIO()){QapNoWay();Crash();return;}
@@ -332,7 +329,7 @@ template<typename TYPE,bool is_proxy>
 struct ProxySys$$;
 template<class TYPE>
 struct Sys$${
-  static void Save(TDataIO&IO,TYPE&ref)
+  static void Save(TDataIO&IO,const TYPE&ref)
   {
     ProxySys$$<TYPE,detail::has_ProxySys$$<TYPE>::value>::Save(IO,ref);
   }
@@ -342,7 +339,7 @@ struct Sys$${
   }
 };
 
-template<class TYPE>void QapSave(TDataIO&IO,TYPE*){
+template<class TYPE>void QapSave(TDataIO&IO,const TYPE*){
   #ifdef _WIN32
   static_assert(false,"fail");
   #else
@@ -357,13 +354,13 @@ template<class TYPE>void QapLoad(TDataIO&IO,TYPE*){
   #endif
 }
 
-template<class TYPE>void QapSave(TDataIO&IO,TYPE&ref){Sys$$<TYPE>::Save(IO,ref);}
+template<class TYPE>void QapSave(TDataIO&IO,const TYPE&ref){Sys$$<TYPE>::Save(IO,ref);}
 template<class TYPE>void QapLoad(TDataIO&IO,TYPE&ref){Sys$$<TYPE>::Load(IO,ref);}
-template<class TYPE>string QapSaveToStr(TYPE&ref){TDataIO IO;QapSave(IO,ref);return IO.IO.mem;}
+template<class TYPE>string QapSaveToStr(const TYPE&ref){TDataIO IO;QapSave(IO,ref);return IO.IO.mem;}
 template<class TYPE>bool QapLoadFromStr(TYPE&ref,const string&data){TDataIO IO; IO.IO.mem=data;QapLoad(IO,ref);return !IO.crashed;}
 
 
-template<class TYPE>string QapSaveToStrWithSizeOfType(TYPE&ref)
+template<class TYPE>string QapSaveToStrWithSizeOfType(const TYPE&ref)
 {
   int size_of_type=sizeof(TYPE);
   TDataIO IO;QapSave(IO,size_of_type);QapSave(IO,ref);return IO.IO.mem;
@@ -376,7 +373,7 @@ template<class TYPE>void QapLoadFromStrWithSizeOfType(TYPE&ref,const string&data
 template<typename TYPE>
 struct ProxySys$$<TYPE,true>
 {
-  static void Save(TDataIO&IO,TYPE&ref){
+  static void Save(TDataIO&IO,const TYPE&ref){
     TYPE::ProxySys$$::Save(IO,ref);
   }
   static void Load(TDataIO&IO,TYPE&ref){
@@ -409,7 +406,7 @@ struct Sys$$<QapKeyboard::TKeyState>{
 #define SYS_RAW_POD_TYPE(QapKeyboard)\
   template<>\
   struct Sys$$<QapKeyboard>{\
-    static void Save(TDataIO&IO,QapKeyboard&ref)\
+    static void Save(TDataIO&IO,const QapKeyboard&ref)\
     {\
       IO.SavePOD(&ref,sizeof(ref));\
     }\
@@ -428,7 +425,7 @@ LIST(SYS_RAW_POD_TYPE)
 
 template<class TYPE>
 struct Sys$$<vector<TYPE>>{
-  static void Save(TDataIO&IO,vector<TYPE>&ref)
+  static void Save(TDataIO&IO,const vector<TYPE>&ref)
   {
     int size=ref.size();
     IO.save(size);
@@ -451,11 +448,37 @@ struct Sys$$<vector<TYPE>>{
   }
 };
 
+template<class FIRST,class SECOND>
+struct Sys$$<map<FIRST,SECOND>>{
+  static void Save(TDataIO&IO,const map<FIRST,SECOND>&ref)
+  {
+    int size=ref.size();
+    IO.save(size);
+    if(!size)return;
+    for(auto&ex:ref){
+      Sys$$<FIRST>::Save(IO,ex.first);
+      Sys$$<SECOND>::Save(IO,ex.second);
+    }
+  }
+  static void Load(TDataIO&IO,map<FIRST,SECOND>&ref)
+  {
+    int size=0;
+    IO.load(size);
+    if(size<0||!IO.TryLoad(size)){IO.Crash();return;}
+    ref.clear();
+    for(int i=0;i<size;i++){
+      FIRST key;
+      Sys$$<FIRST>::Load(IO,key);
+      Sys$$<SECOND>::Load(IO,ref[key]);
+    }
+  }
+};
+
 //-->
 #define SYS_SIMPLE_TYPE(string)\
   template<>\
   struct Sys$$<string>{\
-    static void Save(TDataIO&IO,string&ref)\
+    static void Save(TDataIO&IO,const string&ref)\
     {\
       IO.save(ref);\
     }\

@@ -479,7 +479,27 @@ public:
     //  }
     //}
     UpdateOffcentricScope(kb);
+    //MapSerializeTest();
   }
+  /*struct t_ball_map{
+    typedef map<string,double> t_map;
+    #define DEF_PRO_COPYABLE()
+    #define DEF_PRO_CLASSNAME()t_ball_map
+    #define DEF_PRO_VARIABLE(ADD)\
+    ADD(vec2d,pos,{})\
+    ADD(vec2d,vel,{})\
+    ADD(t_map,map,{})\
+    //===
+    #include "defprovar.inl"
+    //===
+  };
+  void MapSerializeTest(){
+    t_ball_map bm,am;
+    bm.map["a"]=15.25;bm.map["b"]=10.5;
+    auto s=QapSaveToStr(bm);
+    QapLoadFromStr(am,s);
+    int gg=1;
+  }*/
 public:
   bool step_by_step=false;
 };
