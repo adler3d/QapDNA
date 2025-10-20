@@ -310,7 +310,7 @@ struct t_node:t_process,t_node_cache{
               string frame = qap_zchan_write(z, payload);
               auto rv=fwrite(frame.data(), 1, frame.size(), stdin_file);
               auto frv=fflush(stdin_file);
-              LOG("t_qaplr::write_zchan rv="+to_string(rv)+" frv="+to_string(frv)+" stdin_file="+to_string((ssize_t)stdin_file));
+              //LOG("t_qaplr::write_zchan rv="+to_string(rv)+" frv="+to_string(frv)+" stdin_file="+to_string((ssize_t)stdin_file));
           }else LOG("t_qaplr::stdin_file is zero");
       }
 
