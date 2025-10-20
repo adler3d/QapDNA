@@ -569,7 +569,7 @@ struct t_node:t_process,t_node_cache{
       for (int i = 0; i < gd.arr.size(); ++i) {
         int player_id = i;
         slot2decoder[i].on_packet = [this, player_id](const string& cmd) {
-          LOG("slot2decoder["+to_string(player_id)+"]:: cmd.len="+to_string(cmd.size()));
+          //LOG("slot2decoder["+to_string(player_id)+"]:: cmd.len="+to_string(cmd.size()));
           if (cmd.empty()) {
             LOG("slot2decoder["+to_string(player_id)+"]:: cmd oversized or empty");
             // Ошибка: oversized или битый пакет
@@ -597,7 +597,7 @@ struct t_node:t_process,t_node_cache{
           // 3. Пересылаем в QapLR
           if (qaplr) {
             qaplr->write_zchan("p"+to_string(player_id),mk_len_packed(cmd));
-            LOG("slot2decoder["+to_string(player_id)+"]:: passed to QapLR");
+            //LOG("slot2decoder["+to_string(player_id)+"]:: passed to QapLR");
           }
         };
       }
