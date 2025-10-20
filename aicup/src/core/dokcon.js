@@ -28,7 +28,7 @@ var func=x=>JSON.stringify(x.toString('binary'));
 var emitter_on_data_decoder=(emitter,cb)=>{
   var rd=Buffer.from([]);
   emitter.on('data',data=>{
-    log('Received raw data, length=' + data.length+" value="+func(data.slice(0,128)));
+    //log('Received raw data, length=' + data.length+" value="+func(data.slice(0,128)));
     rd=Buffer.concat([rd,data]);
     for(;;){
       var e=rd.indexOf("\0");
@@ -43,8 +43,8 @@ var emitter_on_data_decoder=(emitter,cb)=>{
       var bz=rd.slice(en,en+zpos-en);var z=bz.toString("binary");
       var bmsg=rd.slice(zn,zn+len);var msg=bmsg.toString("binary");
       rd=rd.slice(zn+len);
-      log('rd=' + rd.length+" value="+func(rd.slice(0,128)));
-      log('z=' + z+" msg="+func(msg.slice(0,128)));
+      //log('rd=' + rd.length+" value="+func(rd.slice(0,128)));
+      //log('z=' + z+" msg="+func(msg.slice(0,128)));
       cb(z,msg,bz,bmsg);
     }
   });
@@ -64,7 +64,7 @@ async function handleConnection(socket) {
   let aiProcess = null;
   socket.setNoDelay(true);
   stream_write_encoder(socket,'hi from dokcon.js')('2025.10.18 12:01:08.493');
-  log('after hi');
+  //log('after hi');
   socket.on('close', () => {
     if (aiProcess) {
       log('Killing AI process due to socket close');
@@ -72,7 +72,7 @@ async function handleConnection(socket) {
       aiProcess = null;
     }
   });
-  log('a bit later');
+  //log('a bit later');
   socket.on('error', err => {
     log('Socket error:', err);
     if (aiProcess) {
@@ -81,7 +81,7 @@ async function handleConnection(socket) {
     }
   });
   
-  log('a bit later 2');
+  //log('a bit later 2');
   emitter_on_data_decoder(socket, async (z, msg, bz, bmsg) => {
     switch (z) {
       case 'ai_stdin':
@@ -102,7 +102,7 @@ async function handleConnection(socket) {
           log('otpravlen0');
           stream_write_encoder(socket, 'log')('Binary saved');
           log('otpravlen1');
-          stream_write_encoder(socket, 'ai_binary_ack')(bmsg.length+"");
+          stream_write_encoder(socket, 'ai_binary_ack')(bmsg.length+"");/*
           log('otpravlen2');
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 1');
           log('otpravlen3');
@@ -113,7 +113,7 @@ async function handleConnection(socket) {
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 4');
           log('otpravlen6');
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 5');
-          log('otpravlen7');
+          log('otpravlen7');*/
         } catch (err) {
           log('FAILED TO WRITE BINARY:', err);
           stream_write_encoder(socket, 'log')(`Write error: ${err.message}`);
