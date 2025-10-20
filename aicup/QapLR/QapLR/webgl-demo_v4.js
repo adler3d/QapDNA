@@ -778,7 +778,7 @@ function isPowerOf2(value) {
 }
 
 //Module.onRuntimeInitialized=()=>start();
-var g_start_int=setInterval(()=>{
+/*var g_start_int=setInterval(()=>{
   if((typeof start !== 'undefined')&&
      (typeof Module !== 'undefined')&&
      ('ccall' in Module)&&
@@ -787,4 +787,4 @@ var g_start_int=setInterval(()=>{
     document.body.style="width:100%; height:100%;";
     clearInterval(g_start_int);start();
   };
-},1000);
+},1000);*/
