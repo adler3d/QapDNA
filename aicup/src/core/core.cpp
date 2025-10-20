@@ -526,8 +526,8 @@ struct t_cdn_game{
   //===
   #include "defprovar.inl"
   //===
-  string serialize(){return QapSaveToStr(*this);}
-  int size(){return serialize().size();}// TODO: need return serialize().size() but optimized!
+  string serialize()const{return QapSaveToStr(*this);}
+  int size()const{return serialize().size();}// TODO: need return serialize().size() but optimized!
 };
 struct t_game{
   #define DEF_PRO_COPYABLE()

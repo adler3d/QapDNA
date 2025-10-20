@@ -14,7 +14,7 @@ void DoReset()
       #ifdef DEF_PRO_TEMPLATE_DATAIO
         template<class TDataIO>
       #endif //DEF_PRO_TEMPLATE_DATAIO
-      static void Save(TDataIO&IO,DEF_PRO_CLASSNAME()&ref)
+      static void Save(TDataIO&IO,const DEF_PRO_CLASSNAME()&ref)
       {
         #define F(TYPE,NAME,VALUE)Sys$$<TYPE>::Save(IO,ref.NAME);
         DEF_PRO_VARIABLE(F);
