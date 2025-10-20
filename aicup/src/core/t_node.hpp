@@ -703,7 +703,7 @@ struct t_node:t_process,t_node_cache{
   t_node_cache cache;
   bool download_binary(const std::string &cdn_url, std::string &out_binary) {
     // Попытка загрузки из кеша
-    if (cache.cached_download(cdn_url, out_binary)) {
+    if (cache.load_from_cache(cdn_url, out_binary)) {
       return true;
     }
 
