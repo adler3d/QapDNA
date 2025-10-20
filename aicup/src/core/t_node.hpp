@@ -1,94 +1,118 @@
 ﻿const string t_node_cache_dir="/t_node_cache/bins/";
-struct t_node_cache{
-  struct t_lru_cache{
-    string log_file="/t_node_cache/lru.log";
-    const size_t mb=1024*1024;
-    size_t max_size=5*1024*mb;
-    size_t current_size=0;
-    map<string,time_t> access_time;//hash2at
+struct t_node_cache {
+  struct t_lru_cache {
+    string log_file = "/t_node_cache/lru.log";
+    const size_t mb = 1024 * 1024;
+    size_t max_size = 5 * 1024 * mb;
+    size_t current_size = 0;
+    map<string, time_t> access_time; // hash2at
     mutex mtx;
-    static string get_hash(const string&url){return sha256(url);}
-    static string get_path(const string&hash){return t_node_cache_dir+hash+".bin";}
-    void touch(const string&hash){
+
+    static string get_hash(const string& url) { return sha256(url); }
+    static string get_path(const string& hash) { return t_node_cache_dir + hash + ".bin"; }
+
+    void touch(const string& hash) {
       lock_guard<mutex> lock(mtx);
-      access_time[hash]=time(0);
-      ofstream log(log_file,ios::app);
-      if(!log)return;
-      log<<access_time[hash]<<" "<<hash<<"\n";
+      access_time[hash] = time(0);
+      ofstream log(log_file, ios::app);
+      if (!log) return;
+      log << access_time[hash] << " " << hash << "\n";
     }
-    void cleanup(){
+
+    void cleanup() {
       lock_guard<mutex> lock(mtx);
-      vector<tuple<time_t,string,string>> files;
-      for(auto&[hash,t]:access_time){
-        string path=get_path(hash);
+      vector<tuple<time_t, string, string>> files;
+      for (auto& [hash, t] : access_time) {
+        string path = get_path(hash);
         struct stat buf;
-        if(stat(path.c_str(),&buf)!=0)continue;
-        files.push_back({t,path,hash});
+        if (stat(path.c_str(), &buf) != 0) continue;
+        files.push_back({ t, path, hash });
       }
-      sort(files.begin(),files.end());
-      size_t freed=0;
-      for(auto&[t,path,hash]:files){
+      sort(files.begin(), files.end());
+      size_t freed = 0;
+      for (auto& [t, path, hash] : files) {
         struct stat buf;
-        if(stat(path.c_str(),&buf)!=0)continue;
+        if (stat(path.c_str(), &buf) != 0) continue;
         unlink(path.c_str());
         access_time.erase(hash);
-        freed+=buf.st_size;
-        if(freed>=1024*mb)break;
+        freed += buf.st_size;
+        current_size = current_size > buf.st_size ? current_size - buf.st_size : 0; // Обновляем current_size
+        if (freed >= 1024 * mb) break;
       }
     }
-    bool ensure_space(size_t needed){
-      if(current_size+needed<=max_size){
+
+    bool ensure_space(size_t needed) {
+      if (current_size + needed <= max_size) {
         return true;
       }
       cleanup();
-      return (current_size+needed)<=max_size;
+      return (current_size + needed) <= max_size;
     }
   };
+
   t_lru_cache lru;
-  static string get_cache_path(const string&fn){
-    return t_node_cache_dir+sha256(fn)+".bin";
+  static string get_cache_path(const string& fn) {
+    return t_node_cache_dir + sha256(fn) + ".bin";
   }
-  bool load_from_cache(const string&fn,string&out){
-    string path=get_cache_path(fn);
-    out=file_get_contents(path);
-    return true;
-  }
-  bool save_to_cache(const string&fn,const string&mem) {
-    string path=get_cache_path(fn);
-    (void)system(("mkdir -p "+t_node_cache_dir).c_str());
-    file_put_contents(path,mem);
-    return true;
-  }
-  bool cached_download(const string&fn,string&mem){
-    auto path=get_cache_path(fn);
-    if(load_from_cache(fn,mem)){
-      lru.touch(lru.get_hash(fn));
-      return true;
-    }
+
+  bool load_from_cache(const string& fn, string& out) {
+    string path = get_cache_path(fn);
     struct stat buf;
-    if(stat(path.c_str(),&buf)==0){
-      unlink(path.c_str());
-    }
-    string tmp_file="/tmp/dl_"+to_string(rand())+to_string(rand())+to_string(rand());
-    string cmd="curl -s -f -o "+tmp_file+" "+fn;
-    int result=system(cmd.c_str());
-    if(result!=0){
-      unlink(tmp_file.c_str());
-      LOG("CURL CANT LOAD BINARY FROM "+fn);
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || stat(path.c_str(), &buf) != 0) {
       return false;
     }
-    mem=file_get_contents(tmp_file);
-    unlink(tmp_file.c_str());
-    save_to_cache(fn,mem);
+    out = file_get_contents(path);
+    lru.touch(lru.get_hash(fn));
     {
       lock_guard<mutex> lock(lru.mtx);
-      if(!lru.ensure_space(mem.size())){
-        LOG("NOT UNOUGHT SPACE IN FS FOR "+fn);
-        return false;
-      }
-      lru.current_size+=mem.size();
+      lru.current_size += buf.st_size;
+    }
+    return true;
+  }
+
+  bool save_to_cache(const string& fn, const string& mem) {
+    size_t needed = mem.size();
+    if (!lru.ensure_space(needed)) {
+      LOG("NOT ENOUGH SPACE IN CACHE FS TO SAVE " + fn);
+      return false;
+    }
+    string path = get_cache_path(fn);
+    (void)system(("mkdir -p " + t_node_cache_dir).c_str());
+    file_put_contents(path, mem);
+    {
+      lock_guard<mutex> lock(lru.mtx);
+      lru.current_size += needed;
     }
     lru.touch(lru.get_hash(fn));
+    return true;
+  }
+
+  bool cached_download(const string& fn, string& mem) {
+    if (load_from_cache(fn, mem)) {
+      return true;
+    }
+
+    string path = get_cache_path(fn);
+    struct stat buf;
+    if (stat(path.c_str(), &buf) == 0) {
+      unlink(path.c_str());
+    }
+
+    string tmp_file = "/tmp/dl_" + to_string(rand()) + to_string(rand()) + to_string(rand());
+    string cmd = "curl -s -f -o " + tmp_file + " " + fn;
+    int result = system(cmd.c_str());
+    if (result != 0) {
+      unlink(tmp_file.c_str());
+      LOG("CURL CANT LOAD BINARY FROM " + fn);
+      return false;
+    }
+    mem = file_get_contents(tmp_file);
+    unlink(tmp_file.c_str());
+
+    if (!save_to_cache(fn, mem)) {
+      LOG("FAILED TO SAVE TO CACHE " + fn);
+    }
     return true;
   }
 };
@@ -664,8 +688,7 @@ struct t_node:t_process,t_node_cache{
       return out;
     }
   };
-  static constexpr int buff_size=1024*64;
-  bool download_binary(const string& cdn_url, string& out_binary) {
+  bool download_binary_old(const string& cdn_url, string& out_binary) {
     string tmp_file = "/tmp/ai_bin_" + sha256(cdn_url);
     string cmd = "curl -s -f -o " + tmp_file + " " + cdn_url;
     int result = system(cmd.c_str());
@@ -675,6 +698,64 @@ struct t_node:t_process,t_node_cache{
     }
     out_binary=file_get_contents(tmp_file);
     unlink(tmp_file.c_str());
+    return true;
+  }
+  t_node_cache cache;
+  bool download_binary(const std::string &cdn_url, std::string &out_binary) {
+    // Попытка загрузки из кеша
+    if (cache.cached_download(cdn_url, out_binary)) {
+      return true;
+    }
+
+    // Разбор URL (в простом варианте предполагаем, что cdn_url начинается с http:// или https://)
+    std::string url = cdn_url;
+    std::string scheme, host, path;
+    if (url.compare(0, 7, "http://") == 0) {
+      scheme = "http";
+      url.erase(0, 7);
+    } else if (url.compare(0, 8, "https://") == 0) {
+      scheme = "https";
+      url.erase(0, 8);
+    } else {
+      LOG("download_binary: Unsupported URL scheme: " + cdn_url);
+      return false;
+    }
+
+    size_t slash_pos = url.find('/');
+    if (slash_pos == std::string::npos) {
+      host = url;
+      path = "/";
+    } else {
+      host = url.substr(0, slash_pos);
+      path = url.substr(slash_pos);
+    }
+
+    // Создаём httplib клиент в зависимости от схемы
+    #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    std::unique_ptr<httplib::Client> cli;
+    if(scheme == "https") {
+      cli = std::make_unique<httplib::SSLClient>(host.c_str());
+    } else {
+      cli = std::make_unique<httplib::Client>(host.c_str());
+    }
+    #else
+    std::unique_ptr<httplib::Client> cli = std::make_unique<httplib::Client>(host.c_str());
+    #endif
+
+    // Запрос GET
+    auto res = cli->Get(path.c_str());
+    if (!res || res->status != 200) {
+      LOG("download_binary: HTTP GET failed for " + cdn_url + (res ? (" status="+std::to_string(res->status)) : ""));
+      return false;
+    }
+
+    out_binary = res->body;
+
+    // Сохраняем в кеш
+    if (!cache.save_to_cache(cdn_url, out_binary)) {
+      LOG("download_binary: failed to save to cache " + cdn_url);
+    }
+
     return true;
   }
   static void kill(const string&conid){
