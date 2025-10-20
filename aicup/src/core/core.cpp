@@ -863,7 +863,7 @@ struct t_main : t_process,t_http_base {
       }
     });
     srv.Post("/source/new",[this](const httplib::Request& req, httplib::Response& res) {
-      RATE_LIMITER(25);
+      //RATE_LIMITER(25);
       try {
         if(req.body.size()>=1024*512){res.status=409;res.set_content("max request size is 512KB","text/plain");return;}
         auto j = json::parse(req.body);
