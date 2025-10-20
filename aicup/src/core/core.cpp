@@ -440,7 +440,7 @@ struct t_coder_rec{
     string prod_time;
     string status;
     int size=0;
-    bool ok()const{return status.substr(0,3)=="ok:";}
+    bool ok()const{return status.find("ok:{\"success\":true,\"")==0;}
   };
   string last_ip;
   int id;
@@ -735,30 +735,6 @@ struct t_main : t_process,t_http_base {
     };
     return std::move(out);
   }
-  struct t_new_src_resp{
-    string v,time;
-    string err;
-  };
-  struct t_new_coder_resp{
-    string err;
-    string id;
-    string time;
-  };
-  //t_new_coder_resp new_coder(const string&coder,const string&email){
-  //  t_new_coder_resp out;
-  //  lock_guard<mutex> lock(carr_mtx);
-  //  if(coder2rec(coder)){out.err="name";return out;}
-  //  if(email2rec(email)){out.err="email";return out;}
-  //  out.id=to_string(carr.size());
-  //  out.time=qap_time();
-  //  auto&b=qap_add_back(carr);
-  //  b.id=out.id;
-  //  b.time=out.time;
-  //  b.name=coder;
-  //  b.email=email;
-  //  b.sarr_mtx=make_unique<mutex>();
-  //  b.token=sha256(b.time+b.name+b.email+to_string((rand()<<16)+rand())+"2025.08.23 15:10:42.466");// TODO: add more randomness
-  //}
   struct t_sch_api:i_sch_api{
     t_main*pmain=nullptr;
     bool assign_game(const t_game_decl&game,const string&node)override{
