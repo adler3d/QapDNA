@@ -886,7 +886,7 @@ struct t_main : t_process,t_http_base {
           if(!p){res.status=404;res.set_content("not found","text/plain");return;}
           if(p->token!=token){res.status=403;res.set_content("unauthorized","text/plain");return;}
           p->last_ip=req.remote_addr;
-          if(!p->allowed_next_src_upload()){res.status=429;res.set_content("rate limit exceeded","text/plain");return;}
+          //if(!p->allowed_next_src_upload()){res.status=429;res.set_content("rate limit exceeded","text/plain");return;}
         }
         compq.push_job(std::move(new_source_job(coder,src)));
         res.status = 200;
