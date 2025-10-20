@@ -286,7 +286,7 @@ struct t_node:t_process,t_node_cache{
           pnode->loop_v2.add(stdout_fd, [this](int& fd) {
               char buf[4096];
               ssize_t n = qap_read(fd, buf, sizeof(buf));
-              LOG("t_qaplr::socket::read n="+to_string(n)+" fd="+to_string(fd));
+              //LOG("t_qaplr::socket::read n="+to_string(n)+" fd="+to_string(fd));
               if (n > 0) {
                   decoder.feed(buf, n);
               } else if (n == 0) {
@@ -399,7 +399,7 @@ struct t_node:t_process,t_node_cache{
             size_t sent = 0;
             while (sent < data.size() && !stop) {
               ssize_t n = send(sock->sock, ptr + sent, data.size() - sent, MSG_NOSIGNAL);
-              LOG("t_node::t_writer::send n="+to_string(n)+" sock="+to_string(sock->sock)+" next_total="+to_string(total+n));
+              //LOG("t_node::t_writer::send n="+to_string(n)+" sock="+to_string(sock->sock)+" next_total="+to_string(total+n));
               if (n <= 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                   this_thread::sleep_for(1ms);
@@ -449,7 +449,7 @@ struct t_node:t_process,t_node_cache{
     }
     t_docker_api_v2() {
       decoder.cb = [this](const string& z, const string& msg) {
-        LOG("t_node::t_docker_api_v2::cb::z='"+z+"' len="+to_string(msg.size())+" msg='"+msg+"' sock="+to_string(socket.sock));
+        //LOG("t_node::t_docker_api_v2::cb::z='"+z+"' len="+to_string(msg.size())+" msg='"+msg+"' sock="+to_string(socket.sock));
         if(z=="hi from dokcon.js"){
           write_stdin_raw(qap_zchan_write("ai_binary",binary));
           write_stdin_raw(qap_zchan_write("ai_start","2025.10.18 12:55:05.686"));

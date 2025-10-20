@@ -4728,7 +4728,7 @@ int QapLR_main(int argc,char*argv[]){
           } else if (z.size() >= 1 && z[0] == 'p' && std::all_of(z.begin() + 1, z.end(), ::isdigit)) {
             // Обработка игровых данных от игрока
             int player_index = std::stoi(z.substr(1));
-            std::cerr << "Player " << player_index << " payload.len= (" << payload.size() << ")\n";
+            //std::cerr << "Player " << player_index << " payload.len= (" << payload.size() << ")\n";
             if (qap_check_id(players,player_index)) {
               auto& p = players[player_index];
               if (p.broken) return;
@@ -4747,7 +4747,7 @@ int QapLR_main(int argc,char*argv[]){
                 if (p.recv_buffer.size() < packet_size) break;
 
                 std::string cmd(p.recv_buffer.data() + sizeof(uint32_t), len);
-                std::cerr << "Player " << player_index << " cmd.len= (" << cmd.size() << ")\n";
+                //std::cerr << "Player " << player_index << " cmd.len= (" << cmd.size() << ")\n";
                 session.submit_command(player_index, cmd);
                 session.update();
 
@@ -4765,12 +4765,12 @@ int QapLR_main(int argc,char*argv[]){
           std::streamsize avail = reader.available();
           if (avail > 0) {
             std::streamsize toRead = std::min(avail, static_cast<std::streamsize>(sizeof(buffer)));
-            LOG("bef read avail="+to_string(avail));
+            //LOG("bef read avail="+to_string(avail));
             std::streamsize n = reader.read(buffer, toRead);
-            LOG("aft read n="+to_string(n));
+            //LOG("aft read n="+to_string(n));
             if (n <= 0) break;
             auto r=decoder.feed(buffer, static_cast<size_t>(n));
-            LOG("decoder.feed(buf,"+to_string(n)+")="+r.to_str()+";buff="+string(buffer,n));
+            //LOG("decoder.feed(buf,"+to_string(n)+")="+r.to_str()+";buff="+string(buffer,n));
           } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
           }
@@ -4805,7 +4805,7 @@ int QapLR_main(int argc,char*argv[]){
 
       while (!session.end) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2500));
-        LOG("decoder.buf.len="+to_string(decoder.buffer.size()));
+        //LOG("decoder.buf.len="+to_string(decoder.buffer.size()));
       }
       zchan_write("result",session.gen_result());
       zchan_write("finished",qap_time());
