@@ -234,7 +234,7 @@ public:
   bool IsCrashed()const override{return crashed;}
   bool IsSizeIO()const override{return true;}
   int GetSize()const override{return size;}
-  void WriteTo(QapIO&ref)
+  void WriteTo(QapIO&ref)override
   {
     if(!ref.IsSizeIO()){QapNoWay();Crash();return;}
     ref.SavePOD(nullptr,size);
