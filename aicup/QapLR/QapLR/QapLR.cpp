@@ -3849,7 +3849,7 @@ void init(){
   Game.Init();
 }
 extern "C" {
-  int qap_main(char*phost){
+  int EMSCRIPTEN_KEEPALIVE qap_main(char*phost){
     g_host=phost;
     EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+window.innerWidth+'" height="'+window.innerHeight+'"></canvas>';});
     //EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+d.Width+'" height="'+d.height+'"></canvas>';});
