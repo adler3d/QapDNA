@@ -372,6 +372,7 @@ struct t_node:t_process,t_node_cache{
     string err;
     string conid;
     vector<double> time_log;
+    string container_socket_dir;
     string socket_path_in_container="/tmp/dokcon.sock";
     string socket_path_on_host;
     emitter_on_data_decoder decoder;
@@ -441,10 +442,22 @@ struct t_node:t_process,t_node_cache{
     void write_ai_stdin(const string&data){
       writer->write(qap_zchan_write("ai_stdin",data));
     }
+    static bool remove_directory_recursive(const std::filesystem::path& dir_path)
+    {
+        std::error_code ec;
+        std::uintmax_t count = std::filesystem::remove_all(dir_path, ec);
+        if (ec)
+        {
+            // Ошибка при удалении
+            return false;
+        }
+        return count > 0;
+    }
     ~t_docker_api_v2() {
       socket.qap_close();
       if (!socket_path_on_host.empty()) {
           unlink(socket_path_on_host.c_str());
+          remove_directory_recursive(container_socket_dir);
       }
     }
     t_docker_api_v2() {
@@ -740,11 +753,16 @@ struct t_node:t_process,t_node_cache{
   t_container_monitor container_monitor;
   bool spawn_docker(const string& cdn_url, t_docker_api_v2& api, int game_id, int player_id, t_runned_game& g) {
     api.conid = "game_" + to_string(game_id) + "_p" + to_string(player_id) + "_" + to_string(unsigned(rand()<<16)+rand());
-    //api.socket_path_on_host = "/tmp/dokcon_" + api.conid + ".sock";
-    string socketDir = "/tmp/dokcon_sockets";
-    api.socket_path_on_host=socketDir+"/dokcon_"+api.conid+".sock";
-    api.socket_path_in_container="/tmp/dokcon_"+api.conid+".sock";
+
+    // Создаём уникальную папку для сокетов этого контейнера
+    string baseSocketDir = "/tmp/dokcon_sockets";
+    api.container_socket_dir=baseSocketDir + "/" + api.conid;
+    (void)system(("mkdir -p " + api.container_socket_dir).c_str());
+    api.socket_path_on_host = api.container_socket_dir + "/dokcon_" + api.conid + ".sock";
+    api.socket_path_in_container = "/tmp/dokcon_" + api.conid + ".sock";
+
     unlink(api.socket_path_on_host.c_str());
+
     string binary;
     if (!download_binary(cdn_url, binary)) {
       api.on_stderr("download failed\n");
@@ -752,28 +770,26 @@ struct t_node:t_process,t_node_cache{
       return false;
     }
     g.slot2bin[player_id] = binary;
-    (void)system(("mkdir -p " + socketDir).c_str());
+
     string cmd = "docker run -d --rm --memory=512m --memory-swap=512m --network=none --cpus=\"1.0\" "
-                 "-e SOCKET_PATH="+api.socket_path_in_container+" "
+                 "-e SOCKET_PATH=" + api.socket_path_in_container + " "
                  "--name " + api.conid + " "
-                 "--mount type=bind,src="+socketDir+",dst=/tmp "
-               //"--mount type=bind,src=" + api.socket_path_on_host + ",dst=/tmp/dokcon.sock "
+                 "--mount type=bind,src=" + api.container_socket_dir + ",dst=/tmp "
                  "--mount type=tmpfs,tmpfs-size=64m,destination=/tmpfs "
                  "universal-runner:latest";
-    LOG("spawn_docker::say\n"+cmd);
+
+    LOG("spawn_docker::say\n" + cmd);
     int result = system(cmd.c_str());
     if (result != 0) {
-      LOG("spawn_docker::docker run failed: " + to_string(result)+" for "+cdn_url);
+      LOG("spawn_docker::docker run failed: " + to_string(result) + " for " + cdn_url);
       api.on_stderr("docker run failed: " + to_string(result) + "\n");
       return false;
     }
     auto*api_ptr=&api;api.binary=binary;
     bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr](){
       api_ptr->init_writer();
-      //api_ptr->write_stdin_raw(qap_zchan_write("true","please delivered this to dokcon.js"));
       LOG("loop_v2.connect_to_container_socket::done::bef::start_reading");
       api_ptr->start_reading();
-      //api_ptr->write_stdin_raw(qap_zchan_write("false","please don't delivered this to dokcon.js"));
     });
 
     return ok;
