@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>MarketGame</title>
+    <title>QapLR_v0</title>
     <style>
       .emscripten { padding-right: 0; margin-left: auto; margin-right: auto; display: block; }
       textarea.emscripten { font-family: monospace; width: 80%; }
@@ -45,14 +45,6 @@
       }
 
     </style>
-    <title>QapLR</title>
-    <script>
-      var Module = {
-        onRuntimeInitialized: function() {
-           start(); // не работает :(
-        }
-      };
-    </script>
     <script
       src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"
       integrity="sha512-zhHQR0/H5SEBL3Wn6yYSaTTZej12z0hVZKOv3TwCUXT1z5qeqGcXJLLrbERYRScEDDpYIJhPC1fk31gqR783iQ=="
@@ -101,6 +93,9 @@
       }, false);
 
       var Module = {
+        onRuntimeInitialized: function() {
+           start(); // не работает :(
+        },
         print(...args) {
           // These replacements are necessary if you render to raw HTML
           //text = text.replace(/&/g, "&amp;");
