@@ -4636,7 +4636,7 @@ int QapLR_main(int argc,char*argv[]){
       //QapLoadFromStr(session.replay,s);
       g_args.gui_mode=true;
       session.init();//auto w=session.world->clone();int i=-1;session.ws2.push_back(w->clone());
-      for(auto&ex:session.replay){
+      for(auto&ex:replay.tick2cmds){
         //i++;if(i>30)break;
         for(int i=0;i<ex.size();i++){
           string outerr;
