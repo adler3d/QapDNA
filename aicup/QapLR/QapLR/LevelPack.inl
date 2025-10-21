@@ -138,6 +138,7 @@ public:
     string BEG="^7";
     string SEP=" ^2: ^8";
     #define GOO(TEXT,VALUE)TE.AddText(string(BEG)+string(TEXT)+string(SEP)+string(VALUE));
+    GOO("time",qap_time());
     GOO("frame",IToS(frame));
     GOO("playback_speed",FToS(playback_speed));
     GOO("curr_t",FToS(!session.world?0:session.world->get_tick()*1.0/Sys.UPS));

@@ -3851,7 +3851,7 @@ void init(){
 extern "C" {
   int EMSCRIPTEN_KEEPALIVE qap_main(char*phost){
     g_host=phost;
-    EM_ASM({console.log("QapLRv0.01");});
+    EM_ASM({console.log("QapLRv0.02");});
     EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+window.innerWidth+'" height="'+window.innerHeight+'"></canvas>';});
     //EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+d.Width+'" height="'+d.height+'"></canvas>';});
     Sys.SM.W=EM_ASM_INT({return window.innerWidth;});
@@ -3859,9 +3859,12 @@ extern "C" {
     srand(time(NULL));
     EM_ASM(main(););
     init();
+    char*argv[]={"./QapLR -i replay.bin"};int argc=lenof(argv);
+    //QapLR_main(argc,argv);
     return 0;
   }
 }
+//git pull&&emcc -o QapLR.html QapLR.cpp -s ASSERTIONS -s EXPORTED_FUNCTIONS='["_qap_main","_render","_update","_qap_on_load_img","_qap_on_load_url"]' --shell-file html_template/shell_minimal.html -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' -s INITIAL_MEMORY=2147483648 -s ALLOW_MEMORY_GROWTH=1 -gsource-map -O0
 #endif
 #else
 class TD3DGameBoxBuilder
@@ -4625,7 +4628,7 @@ int QapLR_main(int argc,char*argv[]){
       session.init();//auto w=session.world->clone();int i=-1;session.ws2.push_back(w->clone());
       for(auto&ex:session.replay){
         //i++;if(i>30)break;
-        for(int i=0;i<g_args.num_players;i++){
+        for(int i=0;i<ex.size();i++){
           string outerr;
           session.world->use(i,ex[i],outerr);
         }
