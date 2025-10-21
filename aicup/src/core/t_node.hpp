@@ -842,6 +842,7 @@ struct t_node:t_process,t_node_cache{
         return t.pgame == pgame && t.player_id == player_id;
       });
       tasks.push_back({pgame,player_id,clock.MS()});
+      LOG("t_node::t_cm::add pid="+to_string(player_id));
     }
     void clear(int game_id){
       lock_guard<mutex> lock(tasks_mtx);
