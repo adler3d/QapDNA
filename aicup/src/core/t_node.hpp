@@ -398,6 +398,7 @@ struct t_node:t_process,t_node_cache{
     t_node* pnode = nullptr;
 
     t_unix_socket socket;
+    bool deaded=false;
     string err;
     string conid;
     vector<double> time_log;
@@ -611,6 +612,7 @@ struct t_node:t_process,t_node_cache{
       for (int i = 0; i < gd.arr.size(); ++i) {
         int player_id = i;
         slot2decoder[i].on_packet = [this, player_id](const string& cmd) {
+          if(slot2api[player_id]->deaded)return;
           //LOG("slot2decoder["+to_string(player_id)+"]:: cmd.len="+to_string(cmd.size()));
           if (cmd.empty()) {
             LOG("slot2decoder["+to_string(player_id)+"]:: cmd oversized or empty");
@@ -631,7 +633,6 @@ struct t_node:t_process,t_node_cache{
             PF = true;
             return;
           }
-
           if (tick2cmds.size() <= tick) tick2cmds.resize(tick + 1,vector<string>(gd.arr.size()));
           tick2cmds[tick][player_id] = cmd;
 
@@ -795,6 +796,7 @@ struct t_node:t_process,t_node_cache{
   struct t_container_monitor{
     static void kill_with_notify(t_runned_game&g,int pid){
       auto&conid=g.slot2api[pid]->conid;
+      g.slot2api[pid]->deaded=true;
       t_node::kill(conid);
       if(g.qaplr){
         g.qaplr->write_zchan("drop/"+to_string(pid),"");
@@ -802,6 +804,7 @@ struct t_node:t_process,t_node_cache{
     }
     static void kill_raw(t_runned_game&g,int pid){
       auto&conid=g.slot2api[pid]->conid;
+      g.slot2api[pid]->deaded=true;
       t_node::kill(conid);
     }
     struct t_task{
