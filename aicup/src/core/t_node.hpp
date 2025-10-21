@@ -647,7 +647,10 @@ struct t_node:t_process,t_node_cache{
                 break;
               }
             }
-            if(!any_pending)tick++;
+            if(!any_pending){
+              tick++;
+              LOG("game_id="+to_string(gd.game_id)+"; tick="+to_string(tick));
+            }
           }
           if (qaplr) {
             qaplr->write_zchan("p"+to_string(player_id),mk_len_packed(cmd));
