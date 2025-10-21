@@ -1161,7 +1161,7 @@ struct t_node:t_process,t_node_cache{
           });
         }
         for(int i=0;i<tarr.size();i++)tarr[i]->join();
-        LOG("fd_thread.len="+to_string(tarr.size()));
+        if(tarr.size())LOG("fd_thread.len="+to_string(tarr.size()));
       }
     }
   };
