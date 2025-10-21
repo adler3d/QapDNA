@@ -122,7 +122,8 @@ struct t_cdn_game_stream{
       }
     }
     TDataIO IO;
-    IO.save(tick2slot2elem.size());
+    int32_t ticks=tick2slot2elem.size();
+    IO.save(ticks);
     for(auto&slot2elem:tick2slot2elem){
       QapAssert(slot2elem.size()==ref.gd.arr.size());// because of this we don't write ref.gd.arr.size() here
       for(auto&elem:slot2elem){
