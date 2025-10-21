@@ -692,8 +692,6 @@ struct t_node:t_process,t_node_cache{
         auto&p=out.slot2player[i];auto&a=*slot2api[i];
         p.tick2ms=a.time_log;
         p.err=a.err;
-        p.coder=gd.arr[i].coder;
-        p.v=gd.arr[i].cdn_bin_file;
       }
       out.tick2cmds=tick2cmds;
       LOG("t_node::t_rg::mk_cg::tick2cmds.size()="+to_string(tick2cmds.size()));
