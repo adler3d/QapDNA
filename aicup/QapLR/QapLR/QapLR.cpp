@@ -3851,7 +3851,7 @@ void init(){
 extern "C" {
   int EMSCRIPTEN_KEEPALIVE qap_main(char*phost){
     g_host=phost;
-    EM_ASM({console.log("QapLRv0.1");});
+    EM_ASM({console.log("QapLRv0.01");});
     EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+window.innerWidth+'" height="'+window.innerHeight+'"></canvas>';});
     //EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+d.Width+'" height="'+d.height+'"></canvas>';});
     Sys.SM.W=EM_ASM_INT({return window.innerWidth;});

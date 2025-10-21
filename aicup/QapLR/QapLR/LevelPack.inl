@@ -140,10 +140,10 @@ public:
     #define GOO(TEXT,VALUE)TE.AddText(string(BEG)+string(TEXT)+string(SEP)+string(VALUE));
     GOO("frame",IToS(frame));
     GOO("playback_speed",FToS(playback_speed));
-    GOO("curr_t",FToS(session.world->get_tick()*1.0/Sys.UPS));
+    GOO("curr_t",FToS(!session.world?0:session.world->get_tick()*1.0/Sys.UPS));
     GOO("seed",IToS(g_args.seed_initial));
     TE.AddText("^7---");
-    vector<int> is_alive;session.world->is_alive(is_alive);
+    vector<int> is_alive;if(session.world)session.world->is_alive(is_alive);
     for(int i=0;i<g_args.num_players;i++){
       string color="^7waiting";
       if(session.carr[i])color=session.connected[i]?(is_alive[i]?"^3online":"^2deaded"):"^4offline";
