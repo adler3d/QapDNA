@@ -88,7 +88,7 @@ async function handleConnection(socket) {
           if (aiProcess) {
             // Пересылаем в stdin AI
             aiProcess.stdin.write(bmsg); // бинарно!
-            stream_write_encoder(socket, 'log')('ai_stdin.length='+bmsg.length);
+            //stream_write_encoder(socket, 'log')('ai_stdin.length='+bmsg.length);
             return;
           }else stream_write_encoder(socket, 'log')('i got ai_stdin but aiProcess is not started!');
           break;
@@ -100,8 +100,8 @@ async function handleConnection(socket) {
           log('otpravlenZ');
           fs.writeFileSync(filePath, bmsg, { mode: 0o755 });
           log('otpravlen0');
-          stream_write_encoder(socket, 'log')('Binary saved');
-          log('otpravlen1');
+          //stream_write_encoder(socket, 'log')('Binary saved');
+          //log('otpravlen1');
           stream_write_encoder(socket, 'ai_binary_ack')(bmsg.length+"");/*
           log('otpravlen2');
           stream_write_encoder(socket, 'log')('ai_binary_ack otpravlen 1');

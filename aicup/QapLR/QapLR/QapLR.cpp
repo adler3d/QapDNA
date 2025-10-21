@@ -3078,6 +3078,7 @@ struct GameSession {
 #include "inetdownloader.hpp"
 #endif
 #include "by_ai/mapgen.cpp"
+#include "../../src/core/aicup_structs.inl"
 string g_host="185.92.223.117";
 QapClock g_clock;
 class TGame{
@@ -3851,7 +3852,7 @@ void init(){
 extern "C" {
   int EMSCRIPTEN_KEEPALIVE qap_main(char*phost){
     g_host=phost;
-    EM_ASM({console.log("QapLRv0.02");});
+    EM_ASM({console.log("QapLRv0.03");});
     EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+window.innerWidth+'" height="'+window.innerHeight+'"></canvas>';});
     //EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+d.Width+'" height="'+d.height+'"></canvas>';});
     Sys.SM.W=EM_ASM_INT({return window.innerWidth;});
@@ -3859,7 +3860,7 @@ extern "C" {
     srand(time(NULL));
     EM_ASM(main(););
     init();
-    const char*argv[]={"./QapLR -i replay.bin"};int argc=lenof(argv);
+    const char*argv[]={"./QapLR -i replay0.t_cdn_game_v0"};int argc=lenof(argv);
     //QapLR_main(argc,argv);
     return 0;
   }
@@ -4623,7 +4624,13 @@ int QapLR_main(int argc,char*argv[]){
 
     if(args.replay_in_file){
       auto s=file_get_contents(*args.replay_in_file);
-      QapLoadFromStr(session.replay,s);
+      t_cdn_game replay;
+      QapLoadFromStr(replay,s);
+      g_args.num_players=replay.gd.arr.size();
+      g_args.seed_initial=replay.gd.seed_initial;
+      g_args.seed_strategies=replay.gd.seed_strategies;
+      g_args.world_name=replay.gd.world;
+      //QapLoadFromStr(session.replay,s);
       g_args.gui_mode=true;
       session.init();//auto w=session.world->clone();int i=-1;session.ws2.push_back(w->clone());
       for(auto&ex:session.replay){
@@ -4763,7 +4770,7 @@ int QapLR_main(int argc,char*argv[]){
           }
           // Игнорируем неизвестные zchan
         };
-            InputReader reader;
+        InputReader reader;
         char buffer[4096];
         while (reader_running){
           std::streamsize avail = reader.available();

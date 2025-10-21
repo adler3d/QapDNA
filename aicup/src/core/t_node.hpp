@@ -496,7 +496,7 @@ struct t_node:t_process,t_node_cache{
         } else if (z == "ai_stderr") {
           on_stderr(string_view(msg));
         } else if (z == "log") {
-          on_stderr("[CTRL] " + msg + "\n");
+          //LOG("[CTRL] " + msg + "\n");
         } else if(z=="ai_binary_ack"){
           LOG("t_node::ai_binary_ack");
           pgame->on_container_ready(player_id);
@@ -671,6 +671,7 @@ struct t_node:t_process,t_node_cache{
         p.v=gd.arr[i].cdn_bin_file;
       }
       out.tick2cmds=tick2cmds;
+      LOG("t_node::t_rg::mk_cg::tick2cmds.size()="+to_string(tick2cmds.size()));
       return out;
     }
     t_finished_game mk_fg(){
@@ -684,8 +685,6 @@ struct t_node:t_process,t_node_cache{
         double ms=0;auto&a=*slot2api[i];for(auto&t:a.time_log)ms+=t;
         out.slot2ms.push_back(ms);
       }
-      out.tick=tick;
-      //out.reason="ok";
       return out;
     }
   };
