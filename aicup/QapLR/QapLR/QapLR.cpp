@@ -3859,7 +3859,7 @@ extern "C" {
     srand(time(NULL));
     EM_ASM(main(););
     init();
-    char*argv[]={"./QapLR -i replay.bin"};int argc=lenof(argv);
+    const char*argv[]={"./QapLR -i replay.bin"};int argc=lenof(argv);
     //QapLR_main(argc,argv);
     return 0;
   }
