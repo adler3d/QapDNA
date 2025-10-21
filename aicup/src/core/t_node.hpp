@@ -354,6 +354,7 @@ struct t_node:t_process,t_node_cache{
                   if (isdigit(z[8])) {
                       int player_id = stoi(z.substr(8));
                       if (qap_check_id(player_id, pgame->slot2api)) {
+                          LOG("t_node::"+z);
                           pnode->container_monitor.kill_raw(*pgame, player_id);
                           pgame->slot2status[player_id].PF = true;
                       }
@@ -383,6 +384,8 @@ struct t_node:t_process,t_node_cache{
                       // Запускаем таймер TL
                       pnode->container_monitor.add(pgame, player_id);
                   }
+              }else if(z=="new_tick"){
+                  LOG("new_tick="+payload);
               }
           };
       }
@@ -818,6 +821,7 @@ struct t_node:t_process,t_node_cache{
         auto&gd=pgame->gd;
         auto TL=pgame->tick?gd.TL:gd.TL0;
         if(ms<=TL)return false;
+        LOG("kill_if_TL::kill_with_notify ms="+to_string(ms));
         kill_with_notify(*pgame,player_id);
         pgame->slot2status[player_id].TL=true;
         deaded=true;

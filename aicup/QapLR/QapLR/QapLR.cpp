@@ -2847,7 +2847,7 @@ struct GameSession {
     };
     TickState current_tick;
     vector<TickState> history;
-    vector<vector<string>> replay;
+    //vector<vector<string>> replay;
     QapClock clock;
     mutable mutex mtx;
     vector<bool> connected;
@@ -2858,9 +2858,11 @@ struct GameSession {
       virtual void send(const string&msg)=0;
       virtual void send_seed(const string&msg){send(msg);}
       virtual void send_vpow(const string&msg){send(msg);}
+      virtual void send_tick(int tick){}
       virtual void err(const string&msg)=0;
       virtual void off()=0;
     };
+    i_connection*pcon=nullptr;
     vector<i_connection*> carr;
     void set_connected(int player_id, bool state) {
         if(end)return;
@@ -2932,6 +2934,7 @@ struct GameSession {
         current_tick.received.assign(n, false);
         current_tick.commands.assign(n, "");
         current_tick.error_msgs.assign(n, "");
+        if(pcon)pcon->send_tick(current_tick.tick);
     }
 
     bool try_step() {
@@ -4693,6 +4696,7 @@ int QapLR_main(int argc,char*argv[]){
         t_player*p=nullptr;
         void send(const string&msg)override{if(p)zchan_write("p"+to_string(p->client_id),msg);};
         void send_seed(const string&msg)override{if(p)zchan_write("seed/"+to_string(p->client_id),msg);};
+        void send_tick(int tick)override{zchan_write("new_tick",to_string(tick));};
         void err(const string&msg)override{if(p)zchan_write("err"+to_string(p->client_id),msg);};
         void off()override{
           if(!p)return;
@@ -4718,7 +4722,7 @@ int QapLR_main(int argc,char*argv[]){
     if (args.remote){
       if (debug) cerr << "debug/repeat ignored?\n";
       std::cerr << "Remote protocol over stdin/stdout enabled\n";
-
+      t_player::t_conn2 con;session.pcon=&con;
       // --- Zchan reader из stdin ---
       std::atomic<bool> reader_running{true};
       emitter_on_data_decoder decoder;
