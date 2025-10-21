@@ -398,7 +398,7 @@ struct t_node:t_process,t_node_cache{
     t_node* pnode = nullptr;
 
     t_unix_socket socket;
-    bool deaded=false;
+    atomic_bool deaded=false;
     string err;
     string conid;
     vector<double> time_log;
@@ -1110,6 +1110,7 @@ struct t_node:t_process,t_node_cache{
         int n = poll(pfds.data(), pfds.size(), 1);  // 1ms таймаут — нормально
         if (n <= 0) continue;
 
+        vector<int> arr;
         {
           lock_guard<mutex> lock(mtx);
           for (auto& pfd : pfds) {
@@ -1130,12 +1131,37 @@ struct t_node:t_process,t_node_cache{
               // data ready
               for (auto& f : fds) {
                 if (f.fd == pfd.fd) {
-                  f.on_ready(f.fd);
+                  //f.on_ready(f.fd);
+                  //std::thread([q=f.fd,w=f.on_ready]{
+                  //  q.on_ready(f.fd);
+                  arr.push_back(f.fd);
                 }
               }
+
             }
           }
         }
+        if(arr.size()==1){
+          for (auto& f : fds) {
+            if (f.fd == arr[0]) {
+              f.on_ready(f.fd);
+            }
+          }
+          continue;
+        }
+        vector<unique_ptr<thread>> tarr(arr.size());
+        for(int i=0;i<arr.size();i++){
+          int&fd=arr[i];
+          tarr[i]=make_unique<thread>([&](){
+            for (auto& f : fds) {
+              if (f.fd == fd) {
+                f.on_ready(f.fd);
+              }
+            }
+          });
+        }
+        for(int i=0;i<tarr.size();i++)tarr[i]->join();
+        LOG("fd_thread.len="+to_string(tarr.size()));
       }
     }
   };
