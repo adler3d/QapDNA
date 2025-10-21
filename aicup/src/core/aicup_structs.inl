@@ -21,7 +21,7 @@ struct t_game_decl{
   ADD(int,game_id,{})\
   ADD(int,maxtick,20000)\
   ADD(int,stderr_max,1024*64)\
-  ADD(double,TL,20.0)\
+  ADD(double,TL,50.0)\
   ADD(double,TL0,1000.0)\
   //===
   #include "defprovar.inl"
