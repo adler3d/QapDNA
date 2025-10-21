@@ -658,7 +658,7 @@ struct t_node:t_process,t_node_cache{
           }
           if (qaplr) {
             qaplr->write_zchan("p"+to_string(player_id),mk_len_packed(cmd));
-            //LOG("slot2decoder["+to_string(player_id)+"]:: passed to QapLR");
+            LOG("slot2decoder["+to_string(player_id)+"]:: passed to QapLR");
           }
         };
       }
