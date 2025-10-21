@@ -496,7 +496,7 @@ struct t_node:t_process,t_node_cache{
         } else if (z == "ai_stderr") {
           on_stderr(string_view(msg));
         } else if (z == "log") {
-          //LOG("[CTRL] " + msg + "\n");
+          //on_stderr("[CTRL] " + msg + "\n");
         } else if(z=="ai_binary_ack"){
           LOG("t_node::ai_binary_ack");
           pgame->on_container_ready(player_id);
@@ -610,28 +610,45 @@ struct t_node:t_process,t_node_cache{
           if (cmd.empty()) {
             LOG("slot2decoder["+to_string(player_id)+"]:: cmd oversized or empty");
             // Ошибка: oversized или битый пакет
-            if (qap_check_id(player_id, slot2api)) {
-              slot2api[player_id]->on_stderr("[t_node] oversized or invalid packet\n");
-              pnode->container_monitor.kill_raw(*this, player_id);
-              slot2status[player_id].PF = true;
+            if (!qap_check_id(player_id, slot2api))return;
+            slot2api[player_id]->on_stderr("[t_node] oversized or invalid packet\n");
+            {
+              lock_guard<mutex> lock(pnode->container_monitor.tasks_mtx);
+              for (auto& task : pnode->container_monitor.tasks) {
+                if (task.pgame == this && task.player_id == player_id && !task.done) {
+                  task.on_done(pnode->container_monitor.clock,true);
+                  break;
+                }
+              }
             }
+            auto&PF=slot2status[player_id].PF;
+            if(!PF)pnode->container_monitor.kill_raw(*this, player_id);
+            PF = true;
             return;
           }
 
-          // Команда получена полностью!
-          // 1. Сохраняем для replay
           if (tick2cmds.size() <= tick) tick2cmds.resize(tick + 1,vector<string>(gd.arr.size()));
           tick2cmds[tick][player_id] = cmd;
 
-          // 2. Останавливаем таймер TL
-          for (auto& task : pnode->container_monitor.tasks) {
-            if (task.pgame == this && task.player_id == player_id && !task.done) {
-              task.on_done(pnode->container_monitor.clock);
-              break;
+          {
+            lock_guard<mutex> lock(pnode->container_monitor.tasks_mtx);
+            bool was_done = false;
+            for (auto& task : pnode->container_monitor.tasks) {
+              if (task.pgame == this && task.player_id == player_id && !task.done) {
+                task.on_done(pnode->container_monitor.clock);
+                was_done = true;
+                break;
+              }
             }
+            bool any_pending = false;
+            for (const auto& task : pnode->container_monitor.tasks) {
+              if (task.pgame == this && !task.done) {
+                any_pending = true;
+                break;
+              }
+            }
+            if(!any_pending)tick++;
           }
-          
-          // 3. Пересылаем в QapLR
           if (qaplr) {
             qaplr->write_zchan("p"+to_string(player_id),mk_len_packed(cmd));
             //LOG("slot2decoder["+to_string(player_id)+"]:: passed to QapLR");
@@ -685,6 +702,8 @@ struct t_node:t_process,t_node_cache{
         double ms=0;auto&a=*slot2api[i];for(auto&t:a.time_log)ms+=t;
         out.slot2ms.push_back(ms);
       }
+      out.tick=tick2cmds.size();
+      //out.reason="ok";
       return out;
     }
   };
@@ -785,7 +804,7 @@ struct t_node:t_process,t_node_cache{
       double ms;
       bool done=false;
       bool deaded=false;
-      void on_done(QapClock&clock){
+      void on_done(QapClock&clock,bool fail=false){
         done=true;
         ms=clock.MS()-started_at;
         get().time_log.push_back(ms);

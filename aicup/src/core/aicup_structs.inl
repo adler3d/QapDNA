@@ -45,6 +45,8 @@ struct t_finished_game{
   ADD(vector<double>,slot2ms,{})\
   ADD(vector<double>,slot2score,{})\
   ADD(vector<string>,slot2status,{})\
+  ADD(int,tick,0)\
+  ADD(int,size,0)\
   //===
   #include "defprovar.inl"
   //===
