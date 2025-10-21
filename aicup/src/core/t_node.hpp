@@ -386,6 +386,8 @@ struct t_node:t_process,t_node_cache{
                   }
               }else if(z=="new_tick"){
                   LOG("new_tick="+payload);
+                  auto a=split(payload,",");
+                  pgame->tick=stoi(a[0]);
               }
           };
       }
@@ -651,7 +653,6 @@ struct t_node:t_process,t_node_cache{
               }
             }
             if(!any_pending&&was_done){
-              tick++;
               LOG("game_id="+to_string(gd.game_id)+"; tick="+to_string(tick));
             }
           }
@@ -821,7 +822,7 @@ struct t_node:t_process,t_node_cache{
         auto&gd=pgame->gd;
         auto TL=pgame->tick?gd.TL:gd.TL0;
         if(ms<=TL)return false;
-        LOG("kill_if_TL::kill_with_notify ms="+to_string(ms)+" at tick "+to_string(pgame->tick));
+        LOG("kill_if_TL::kill_with_notify ms="+to_string(ms)+" at tick "+to_string(pgame->tick)+" pid="+to_string(player_id));
         kill_with_notify(*pgame,player_id);
         pgame->slot2status[player_id].TL=true;
         deaded=true;

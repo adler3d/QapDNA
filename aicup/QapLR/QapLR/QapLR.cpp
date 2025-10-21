@@ -2873,7 +2873,7 @@ struct GameSession {
       virtual void send(const string&msg)=0;
       virtual void send_seed(const string&msg){send(msg);}
       virtual void send_vpow(const string&msg){send(msg);}
-      virtual void send_tick(int tick){}
+      virtual void send_tick(int tick,double ms){}
       virtual void err(const string&msg)=0;
       virtual void off()=0;
     };
@@ -2949,7 +2949,6 @@ struct GameSession {
         current_tick.received.assign(n, false);
         current_tick.commands.assign(n, "");
         current_tick.error_msgs.assign(n, "");
-        if(pcon)pcon->send_tick(current_tick.tick);
     }
 
     bool try_step() {
@@ -3014,6 +3013,7 @@ struct GameSession {
     }
     void send_vpow_to_all(){
       if(end)return;
+      auto beg=clock.MS();
       vector<string> messages;
       vector<bool> should_send;
       vector<bool> should_off;
@@ -3037,6 +3037,7 @@ struct GameSession {
           }
         }
       }
+      if(pcon)pcon->send_tick(current_tick.tick,clock.MS()-beg);
       for (int i = 0; i < g_args.num_players; i++) {
         if (should_send[i]) {
           carr[i]->send(messages[i]);
@@ -4728,7 +4729,7 @@ int QapLR_main(int argc,char*argv[]){
         t_player*p=nullptr;
         void send(const string&msg)override{if(p)zchan_write("p"+to_string(p->client_id),msg);};
         void send_seed(const string&msg)override{if(p)zchan_write("seed/"+to_string(p->client_id),msg);};
-        void send_tick(int tick)override{zchan_write("new_tick",to_string(tick));};
+        void send_tick(int tick,double ms)override{zchan_write("new_tick",to_string(tick)+","+to_string(ms));};
         void err(const string&msg)override{if(p)zchan_write("err"+to_string(p->client_id),msg);};
         void off()override{
           if(!p)return;
