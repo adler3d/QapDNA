@@ -650,7 +650,7 @@ struct t_node:t_process,t_node_cache{
                 break;
               }
             }
-            if(!any_pending){
+            if(!any_pending&&was_done){
               tick++;
               LOG("game_id="+to_string(gd.game_id)+"; tick="+to_string(tick));
             }
