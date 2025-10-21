@@ -99,16 +99,13 @@ struct t_cdn_game_stream{
   //===
   string serialize()const{return QapSaveToStr(*this);}
   int size()const{return serialize().size();}
-  void save_to(t_cdn_game&ref){
-
-  }
+  void save_to(t_cdn_game&ref){QapNoWay();}
   void load_from(const t_cdn_game&ref){
     t_gdfgs2e gfs;
     gfs.gd=ref.gd;
     gfs.fg=ref.fg;
     gfs.slot2err=ref.slot2err;
     gdfgs2e=QapSaveToStr(gfs);
-    vector<vector<t_cdn_game::t_elem>> tick2slot2elem;
     int max_ticks=0;
     for(const auto& tick2elem:ref.slot2tick2elem){
       if(tick2elem.size()>max_ticks)max_ticks=tick2elem.size();
@@ -141,15 +138,76 @@ struct t_cdn_game_stream{
 //  void feed(const string&fragment){/*implement this*/}
 //};
 struct t_cdn_game_builder {
+  bool feed_to_version() {
+    // Проверяем и считываем фиксированную версию из буфера
+    // Предположим, версия сериализована как строка с размером
+    if (!read_string(buffer, parse_pos, version_str))
+      return true; // ждем дополнений
+    // Тут можно проверить version_str, например сравнить с "t_cdn_game_stream_v0"
+    // Пока просто не передаем в out, но можно сохранить в поле
+    return false;
+  }
+
+  bool feed_to_gdfgs2e() {
+    // Предположим, сериализация gdfgs2e тоже как строка с размером
+    if (!read_string(buffer, parse_pos, gdfgs2e_str))
+      return true;
+    // Десериализуем gdfgs2e из строки
+    t_cdn_game_stream::t_gdfgs2e gdfgs2e_obj;
+    bool ok = QapLoadFromStr(gdfgs2e_obj, gdfgs2e_str);
+    if (!ok)
+      throw std::runtime_error("Failed to deserialize gdfgs2e");
+    out.gd = gdfgs2e_obj.gd;
+    out.fg = gdfgs2e_obj.fg;
+    out.slot2err = std::move(gdfgs2e_obj.slot2err);
+    slot_count = static_cast<int32_t>(out.gd.arr.size());
+    return false;
+  }
+
+  bool feed(const std::string& fragment) {
+    buffer.append(fragment);
+
+    while (true) {
+      switch (state) {
+      case State::Version:
+        if (feed_to_version())
+          return true; // ждём продолжения
+        state = State::GDFGS2E;
+        break;
+      case State::GDFGS2E:
+        if (feed_to_gdfgs2e())
+          return true;
+        state = State::Slot2Tick2Elem;
+        break;
+      case State::Slot2Tick2Elem:
+        if (feed_to_s2t2e(fragment)) // feed для slot2tick2elem
+          return true;
+        state = State::Done;
+        break;
+      case State::Done:
+        return false; // загрузка полная
+      }
+    }
+  }
   t_cdn_game& out;
-  std::string buffer;    // накопление данных
-  size_t parse_pos = 0;  // позиция чтения в буфере
+
+  std::string buffer;
+  size_t parse_pos = 0;
+
+  enum class State {
+    Version,
+    GDFGS2E,
+    Slot2Tick2Elem,
+    Done
+  } state = State::Version;
+
+  std::string version_str;
+  std::string gdfgs2e_str;
 
   int32_t tick_count = -1;
   int32_t current_tick = 0;
   int32_t current_slot = 0;
-  std::vector<int32_t> slot_counts;
-  std::vector<std::vector<t_cdn_game::t_elem>> parsed_data;
+  int32_t slot_count = -1;
 
   static bool read_int32(const std::string& s, size_t& pos, int32_t& val) {
     if (pos + 4 > s.size()) return false;
@@ -177,32 +235,49 @@ struct t_cdn_game_builder {
     return true;
   }
 
-  bool feed(const std::string& fragment) {
+  bool feed_to_s2t2e(const std::string& fragment) {
     buffer.append(fragment);
 
-    // Читаем tick_count, если не прочитан
     if (tick_count == -1) {
-      if (!read_int32(buffer, parse_pos, tick_count)) {
-        return true; // ждём больше данных
-      }
-      parsed_data.resize(tick_count);
+      if (!read_int32(buffer, parse_pos, tick_count)) return true; // ждём данных
+      slot_count = static_cast<int32_t>(out.gd.arr.size());
     }
 
-    // Читаем размеры внутренних векторов slot_counts
-    while ((int)slot_counts.size() < tick_count) {
-      int32_t slot_count = 0;
-      if (!read_int32(buffer, parse_pos, slot_count)) {
-        return true; // ждём больше данных
-      }
-      slot_counts.push_back(slot_count);
-      parsed_data[slot_counts.size()-1].resize(slot_count);
+    // Добавляем новые слоты в out.slot2tick2elem при необходимости
+    while ((int)out.slot2tick2elem.size() <= current_slot) {
+      out.slot2tick2elem.emplace_back(); // создаём новую строку (слот)
+    }
+    // Добавляем тики во внутренний вектор слота по необходимости
+    while ((int)out.slot2tick2elem[current_slot].size() <= current_tick) {
+      out.slot2tick2elem[current_slot].emplace_back(); // по одному элементу (тик)
     }
 
-    // Следующие этапы - чтение элементов по current_tick и current_slot пока хватает данных...
+    // Читаем элементы пока хватает данных
+    while (current_tick < tick_count) {
+      while (current_slot < slot_count) {
+        // Проверяем опять размер вектора на текущий слот и тик
+        if ((int)out.slot2tick2elem.size() <= current_slot) {
+          out.slot2tick2elem.emplace_back();
+        }
+        if ((int)out.slot2tick2elem[current_slot].size() <= current_tick) {
+          out.slot2tick2elem[current_slot].emplace_back();
+        }
+        t_cdn_game::t_elem& elem = out.slot2tick2elem[current_slot][current_tick];
+        if (!deserialize_elem(buffer, parse_pos, elem)) {
+          return true; // ждем следующих данных
+        }
+        ++current_slot;
 
-    // Тут будет продолжение кода
+        // При переходе к следующему тикту сбрасываем слот
+        if (current_slot == slot_count) {
+          current_slot = 0;
+          ++current_tick;
+        }
+      }
+    }
 
-    return true; // пока структура не завершена
+    // Всё успешно прочитано
+    return false;
   }
 };
 

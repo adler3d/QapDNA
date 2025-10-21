@@ -685,15 +685,26 @@ struct t_node:t_process,t_node_cache{
     }
     t_cdn_game mk_cg(){
       t_cdn_game out;
-      out.slot2player.resize(gd.arr.size());
+      out.slot2tick2elem.resize(gd.arr.size());
+      out.slot2err.resize(gd.arr.size());
       out.fg=mk_fg();
       out.gd=gd;
       for(int i=0;i<gd.arr.size();i++){
-        auto&p=out.slot2player[i];auto&a=*slot2api[i];
-        p.tick2ms=a.time_log;
-        p.err=a.err;
+        auto&a=*slot2api[i];
+        out.slot2err[i]=a.err;
+        auto&tick2elem=out.slot2tick2elem[i];
+        auto tls=a.time_log.size();auto t2cs=tick2cmds.size();
+        if(tls!=t2cs){
+          LOG("t_node::in game "+to_string(gd.game_id)+" player "+to_string(i)+" has tls!=t2cs;"+to_string(tls)+"!="+to_string(t2cs));
+        }
+        auto m=max(tls,t2cs);
+        tick2elem.resize(m);
+        for(int tick=0;tick<m;tick++){
+          auto&e=tick2elem[tick];
+          e.ms=tick<tls?a.time_log[tick]:-0.001;
+          e.cmd=tick<t2cs?tick2cmds[tick][i]:"";
+        }
       }
-      out.tick2cmds=tick2cmds;
       LOG("t_node::t_rg::mk_cg::tick2cmds.size()="+to_string(tick2cmds.size()));
       return out;
     }
