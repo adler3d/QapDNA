@@ -547,7 +547,7 @@ struct t_node:t_process,t_node_cache{
   };
   struct t_runned_game{
     t_game_decl gd;
-    int tick=0;
+    atomic_int tick=0;
     //pid_t runner_pid = 0;
     //string runner_socket_path;
     //unique_ptr<t_docker_api_v2> runner;
@@ -821,7 +821,7 @@ struct t_node:t_process,t_node_cache{
         auto&gd=pgame->gd;
         auto TL=pgame->tick?gd.TL:gd.TL0;
         if(ms<=TL)return false;
-        LOG("kill_if_TL::kill_with_notify ms="+to_string(ms));
+        LOG("kill_if_TL::kill_with_notify ms="+to_string(ms)+" at tick "+to_string(pgame->tick));
         kill_with_notify(*pgame,player_id);
         pgame->slot2status[player_id].TL=true;
         deaded=true;

@@ -216,18 +216,23 @@ static bool file_put_contents(const string&fn,const string&mem){
   return true;
 }
 #else
-static bool file_put_contents(const string&FN,const string&mem){std::fstream f(FN,std::ios::binary|std::ios::out|std::ios::trunc);f<<mem;return true;}
-static string file_get_contents_slow(const string&fn){std::ifstream file(fn,std::ios::binary);return std::string((std::istreambuf_iterator<char>(file)),(std::istreambuf_iterator<char>()));}
-static std::string file_get_contents(const std::string&fn){
-  std::ifstream file(fn,std::ios::binary|std::ios::ate);
-  if(!file.is_open()){return {};}
-  std::streamsize size=file.tellg();
-  file.seekg(0,std::ios::beg);
-  std::string buffer(size,'\0');
-  if(file.read(&buffer[0],size)){return buffer;}
-  return {};
+static bool file_put_contents(const std::string&FN,const std::string&mem){
+  std::ofstream file(FN,std::ios::binary|std::ios::trunc);
+  if(!file.is_open())return false;
+  file.write(mem.data(),static_cast<std::streamsize>(mem.size()));
+  return file.good();
 }
-
+static std::string file_get_contents(const std::string&fn){
+  std::ifstream file(fn,std::ios::binary);
+  if(!file.is_open())return{};
+  file.seekg(0,std::ios::end);
+  std::streamsize size=file.tellg();
+  if(size<0)return{};
+  file.seekg(0,std::ios::beg);
+  std::string buffer(static_cast<size_t>(size),'\0');
+  if(!file.read(&buffer[0],size))return{};
+  return buffer;
+}
 #endif
 
 template<class TYPE>

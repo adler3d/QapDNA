@@ -217,8 +217,23 @@ static bool file_put_contents(const string&fn,const string&mem){
   return true;
 }
 #else
-static bool file_put_contents(const string&FN,const string&mem){std::fstream f(FN,std::ios::out|std::ios::trunc);f<<mem;return true;}
-static string file_get_contents(const string&fn){std::ifstream file(fn);return std::string((std::istreambuf_iterator<char>(file)),(std::istreambuf_iterator<char>()));}
+static bool file_put_contents(const std::string&FN,const std::string&mem){
+  std::ofstream file(FN,std::ios::binary|std::ios::trunc);
+  if(!file.is_open())return false;
+  file.write(mem.data(),static_cast<std::streamsize>(mem.size()));
+  return file.good();
+}
+static std::string file_get_contents(const std::string&fn){
+  std::ifstream file(fn,std::ios::binary);
+  if(!file.is_open())return{};
+  file.seekg(0,std::ios::end);
+  std::streamsize size=file.tellg();
+  if(size<0)return{};
+  file.seekg(0,std::ios::beg);
+  std::string buffer(static_cast<size_t>(size),'\0');
+  if(!file.read(&buffer[0],size))return{};
+  return buffer;
+}
 #endif
 
 template<class TYPE>
@@ -4626,9 +4641,16 @@ int QapLR_main(int argc,char*argv[]){
     }
 
     if(args.replay_in_file){
+      CrutchIO IO;IO.LoadFile(*args.replay_in_file);
       auto s=file_get_contents(*args.replay_in_file);
+      s=IO.mem;
       t_cdn_game replay;
       QapLoadFromStr(replay,s);
+      auto out=QapSaveToStr(replay);
+      if(out!=s){
+        file_put_contents("15.out",out);
+        int fail=1;
+      }
       g_args.num_players=replay.gd.arr.size();
       g_args.seed_initial=replay.gd.seed_initial;
       g_args.seed_strategies=replay.gd.seed_strategies;
@@ -4636,11 +4658,21 @@ int QapLR_main(int argc,char*argv[]){
       //QapLoadFromStr(session.replay,s);
       g_args.gui_mode=true;
       session.init();//auto w=session.world->clone();int i=-1;session.ws2.push_back(w->clone());
-      for(auto&ex:replay.tick2cmds){
+      auto&arr=replay.tick2cmds;
+      for(int tick=0;tick<arr.size();tick++){
+        auto&ex=arr[tick];
         //i++;if(i>30)break;
+        int n=0;
         for(int i=0;i<ex.size();i++){
           string outerr;
           session.world->use(i,ex[i],outerr);
+          if(outerr.size()){
+            int gg=1;
+            n++;
+          }
+        }
+        if(n==ex.size()){
+          int fail=1;
         }
         session.world->step();
         session.ws.push_back(session.world->clone());
