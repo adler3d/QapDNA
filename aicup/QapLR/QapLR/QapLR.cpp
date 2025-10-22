@@ -3291,8 +3291,8 @@ public:
   QapDev qDev;
   QapFont NormFont;
   QapFont BlurFont;
-  QapTex*th_rt_tex{};
-  QapTex*th_rt_tex_full{};
+  //QapTex*th_rt_tex{};
+  //QapTex*th_rt_tex_full{};
 public:
   TGame(){}
 public:
@@ -3326,7 +3326,7 @@ public:
     delete sm;
     return FrameX;
   }
-  string GFX_DIR="GFX/v4/";
+  string GFX_DIR="";//"GFX/v4/";
   void LoadFrames(bool need_save_atlas=0,bool need_rewrite_tex=0)
   {
     #ifndef QAP_UNIX
@@ -3392,16 +3392,16 @@ public:
     if(1)
     {
       #ifndef QAP_UNIX
-      LoadTexture(GFX_DIR+"market_car_v2_512.png",[&](const string&fn,int ptr,int w,int h){
-        QapTexMem*pMem=new QapTexMem(fn+"_"+to_string(w),w,h,(QapColor*)ptr);
-        th_rt_tex=GenTextureMipMap(qDev,pMem);
-      });
-      //th_rt_tex=GenTextureMipMap(ptm);
-      
-      LoadTexture(GFX_DIR+"market_car_v2_full_512.png",[&](const string&fn,int ptr,int w,int h){
-        QapTexMem*pMem=new QapTexMem(fn+"_"+to_string(w),w,h,(QapColor*)ptr);
-        th_rt_tex_full=GenTextureMipMap(qDev,pMem);
-      });
+      //LoadTexture(GFX_DIR+"market_car_v2_512.png",[&](const string&fn,int ptr,int w,int h){
+      //  QapTexMem*pMem=new QapTexMem(fn+"_"+to_string(w),w,h,(QapColor*)ptr);
+      //  th_rt_tex=GenTextureMipMap(qDev,pMem);
+      //});
+      ////th_rt_tex=GenTextureMipMap(ptm);
+      //
+      //LoadTexture(GFX_DIR+"market_car_v2_full_512.png",[&](const string&fn,int ptr,int w,int h){
+      //  QapTexMem*pMem=new QapTexMem(fn+"_"+to_string(w),w,h,(QapColor*)ptr);
+      //  th_rt_tex_full=GenTextureMipMap(qDev,pMem);
+      //});
       //ptm=LoadTexture("GFX\\market_car_v2_full.png");
       //th_rt_tex_full=GenTextureMipMap(ptm);
       #endif
@@ -3633,12 +3633,12 @@ public:
     Present();
     return;*/
     if(user_name_scene)return InputUserNameRender();
-    if(bool need_draw_tank_hodun_rt=true)if(th_rt_tex)if(!Menu->InGame()){
-      qDev.BindTex(0,th_rt_tex);
-      qDev.SetColor(0xffffffff);
-      qDev.DrawQuad(-512,0,th_rt_tex->W,th_rt_tex->H,0);
-      qDev.BindTex(0,0);
-    }
+    //if(bool need_draw_tank_hodun_rt=true)if(th_rt_tex)if(!Menu->InGame()){
+    //  qDev.BindTex(0,th_rt_tex);
+    //  qDev.SetColor(0xffffffff);
+    //  qDev.DrawQuad(-512,0,th_rt_tex->W,th_rt_tex->H,0);
+    //  qDev.BindTex(0,0);
+    //}
     if(RenderScene_debug)QAP_EM_LOG("before kb.A");
     if(kb.Down['A']&&!Menu->InGame()){
       if(1){
@@ -3871,7 +3871,7 @@ void init(){
 extern "C" {
   int EMSCRIPTEN_KEEPALIVE qap_main(char*phost){
     g_host=phost;
-    EM_ASM({console.log("QapLRv0.04");});
+    EM_ASM({console.log("QapLRv0.05");});
     EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+window.innerWidth+'" height="'+window.innerHeight+'"></canvas>';});
     //EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+d.Width+'" height="'+d.height+'"></canvas>';});
     Sys.SM.W=EM_ASM_INT({return window.innerWidth;});

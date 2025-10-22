@@ -226,7 +226,7 @@ function initFont_v2(font,dest,pW,pH){
     HEAPU32[d+i]=p[i];
   }
 }
-function drawScene(gl,prog,buffers,squareRotation,texture) {
+function drawScene(gl,prog,buffers,squareRotation) {
   let c=210/255;
   gl.clearColor(c,c,c,1.0);
   gl.clear(gl.COLOR_BUFFER_BIT);
@@ -284,7 +284,7 @@ function drawScene(gl,prog,buffers,squareRotation,texture) {
   );
   gl.uniform1f(prog.uniformLocations.use_tex,1.0);
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D,texture);
+  gl.bindTexture(gl.TEXTURE_2D,null);
   gl.uniform1i(prog.uniformLocations.uSampler,0);
 
   qDev.prog=prog;
@@ -300,7 +300,7 @@ function main() {
   const canvas = document.querySelector("#glcanvas");
   const gl = canvas.getContext("webgl",{ alpha: false,premultipliedAlpha: false,antialias: true});
   const ext = gl.getExtension("OES_element_index_uint");
-  if (gl===null||ext==null) {
+  if (gl===null||ext===null) {
     alert(
       "Unable to initialize WebGL. Your browser or machine may not support it."
     );
@@ -364,7 +364,7 @@ function main() {
 
   qDev.gl=gl;
 
-  const texture=loadTexture(gl,"cubetexture.png");
+  //const texture=loadTexture(gl,"cubetexture.png");
   //gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
 
   let then = 0;
@@ -373,7 +373,7 @@ function main() {
     now *= 0.001;
     deltaTime = now - then;
     then = now;
-    drawScene(gl,prog,null,squareRotation,texture);
+    drawScene(gl,prog,null,squareRotation);
     for(;;){
       if(performance.now()-g_lastUpdate>=UPDATE_INTERVAL){
         Module.ccall('update','int',["int"],[0]);
