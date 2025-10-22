@@ -397,15 +397,21 @@ public:
   void genmap(){
     MapGenerator::Options opts;
     AdlerCraftMap=AdlerCraft_mapgen.generateMap(opts);
+    
+    #ifndef _WIN32
+    #ifndef QAP_UNIX
+    EM_ASM(console.log('AdlerCraftMap.size()=='+$0),int(AdlerCraftMap.size()));
+    #endif
+    #endif
   }
   void RenderMap(QapDev&qDev){
     //genmap();
     if(AdlerCraftMap.empty())return;
-          #ifndef _WIN32
-      #ifndef QAP_UNIX
-      EM_ASM(console.log('RenderMap'));
-      #endif
-      #endif
+    #ifndef _WIN32
+    #ifndef QAP_UNIX
+    EM_ASM(console.log('RenderMap'));
+    #endif
+    #endif
     QapDev::BatchScope Scope(qDev);
     t_offcentric_scope scope(qDev,cam_pos,cam_dir,scale,cam_offcentric);
     vec2d mpos=kb.MousePos;
