@@ -3863,6 +3863,7 @@ extern "C" {
     Game.Update();
     return 0;
   }
+  int EMSCRIPTEN_KEEPALIVE qap_malloc(int n){return malloc(n);}
 }
 void init(){
   qDev.Init(1024*64,1024*64*3);
@@ -3871,7 +3872,7 @@ void init(){
 extern "C" {
   int EMSCRIPTEN_KEEPALIVE qap_main(char*phost){
     g_host=phost;
-    EM_ASM({console.log("QapLRv0.05");});
+    EM_ASM({console.log("QapLRv0.06");});
     EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+window.innerWidth+'" height="'+window.innerHeight+'"></canvas>';});
     //EM_ASM({let d=document.body;d.innerHTML='<canvas id="glcanvas" width="'+d.Width+'" height="'+d.height+'"></canvas>';});
     Sys.SM.W=EM_ASM_INT({return window.innerWidth;});
