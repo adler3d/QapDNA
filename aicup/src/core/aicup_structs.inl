@@ -76,6 +76,36 @@ struct t_cdn_game{
   string serialize()const{return QapSaveToStr(*this);}
   int size()const{return serialize().size();}// TODO: need return serialize().size() but optimized!
 };
+bool compare_slot2tick2elem(
+  const std::vector<std::vector<t_cdn_game::t_elem>>& a,
+  const std::vector<std::vector<t_cdn_game::t_elem>>& b)
+{
+  if (a.size() != b.size()) {
+    std::cout << "Mismatch: different number of slots. a.size()=" << a.size() << ", b.size()=" << b.size() << "\n";
+    return false;
+  }
+  for (size_t slot = 0; slot < a.size(); ++slot) {
+    if (a[slot].size() != b[slot].size()) {
+      std::cout << "Mismatch at slot " << slot << ": different number of ticks. a[slot].size()=" << a[slot].size() << ", b[slot].size()=" << b[slot].size() << "\n";
+      return false;
+    }
+    for (size_t tick = 0; tick < a[slot].size(); ++tick) {
+      const auto& elem_a = a[slot][tick];
+      const auto& elem_b = b[slot][tick];
+      // Сравниваем поля elem: например cmd и ms
+      if (elem_a.cmd != elem_b.cmd) {
+        std::cout << "Mismatch at slot " << slot << ", tick " << tick << ": cmd differs. a=\"" << elem_a.cmd << "\", b=\"" << elem_b.cmd << "\"\n";
+        return false;
+      }
+      if (elem_a.ms != elem_b.ms) {
+        std::cout << "Mismatch at slot " << slot << ", tick " << tick << ": ms differs. a=" << elem_a.ms << ", b=" << elem_b.ms << "\n";
+        return false;
+      }
+    }
+  }
+  std::cout << "No mismatches found, structures are equal.\n";
+  return true;
+}
 struct t_cdn_game_stream{
   struct t_gdfgs2e{
     #define DEF_PRO_COPYABLE()
@@ -130,7 +160,7 @@ struct t_cdn_game_stream{
         QapSave(IO,elem);
       }
     }
-    this->tick2slot2elem=QapSaveToStr(IO.IO.mem);
+    this->tick2slot2elem=IO.IO.mem;
   }
 };
 //struct t_cdn_game_builder{
@@ -150,18 +180,38 @@ struct t_cdn_game_builder {
   }
 
   bool feed_to_gdfgs2e() {
-    // Предположим, сериализация gdfgs2e тоже как строка с размером
-    if (!read_string(buffer, parse_pos, gdfgs2e_str))
-      return true;
-    // Десериализуем gdfgs2e из строки
+    // Сначала читаем длину сериализованной строки (4 байта int32)
+    if (gdfgs2e_size == -1) {
+      if (!read_int32(buffer, parse_pos, gdfgs2e_size)) {
+        return true; // Нет данных длины, ждем
+      }
+    }
+
+    // Далее ждем накопления всей строки нужного размера
+    if ((int)(buffer.size() - parse_pos) < gdfgs2e_size) {
+      return true; // Ждем полного накопления
+    }
+
+    // Копируем полную сериализованную строку
+    gdfgs2e_str.assign(buffer.data() + parse_pos, gdfgs2e_size);
+    parse_pos += gdfgs2e_size;
+
+    // Вызываем десериализацию один раз, когда строка полностью накоплена
     t_cdn_game_stream::t_gdfgs2e gdfgs2e_obj;
     bool ok = QapLoadFromStr(gdfgs2e_obj, gdfgs2e_str);
-    if (!ok)
+    if (!ok) {
       throw std::runtime_error("Failed to deserialize gdfgs2e");
+    }
+
     out.gd = gdfgs2e_obj.gd;
     out.fg = gdfgs2e_obj.fg;
     out.slot2err = std::move(gdfgs2e_obj.slot2err);
     slot_count = static_cast<int32_t>(out.gd.arr.size());
+
+    // Сброс состояния для следующего этапа
+    gdfgs2e_size = -1;
+    gdfgs2e_str.clear();
+
     return false;
   }
 
@@ -204,6 +254,7 @@ struct t_cdn_game_builder {
 
   std::string version_str;
   std::string gdfgs2e_str;
+  int32_t gdfgs2e_size = -1;
 
   int32_t tick_count = -1;
   int32_t current_tick = 0;
@@ -222,22 +273,80 @@ struct t_cdn_game_builder {
     pos += 4;
     return true;
   }
+  static bool read_int32_check(const std::string& s, size_t pos, int32_t& val) {
+    if (pos + 4 > s.size()) return false;
+    memcpy(&val, s.data() + pos, 4);
+    return true;
+  }
+
   static bool read_string(const std::string& s, size_t& pos, std::string& val) {
-    int32_t sz;
-    if (!read_int32(s, pos, sz)) return false;
-    if (pos + sz > s.size()) return false;
+    // Сначала проверяем, можно ли прочитать длину, не сдвигая pos
+    int32_t sz = 0;
+    if (!read_int32_check(s, pos, sz))
+        return false;
+
+    // Проверяем, достаточно ли данных для полного содержимого
+    if (pos + 4 + sz > s.size())
+        return false;
+
+    // Только теперь сдвигаем pos
+    pos += 4;
     val.assign(s.data() + pos, sz);
     pos += sz;
     return true;
   }
-  static bool deserialize_elem(const std::string& s, size_t& pos, t_cdn_game::t_elem& elem) {
-    if (!read_string(s, pos, elem.cmd)) return false;
-    if (!read_float(s, pos, elem.ms)) return false;
-    return true;
-  }
+  struct ElemDeserializer {
+    enum State { ReadCmdLength, ReadCmdData, ReadMs, Done } state = ReadCmdLength;
+    int32_t cmd_length = 0;
+    size_t bytes_read_for_cmd = 0;
+    std::string cmd_buffer;
+    float ms = 0.0f;
 
+    // Парсим из буфера начиная с pos; pos сдвигается только после успешного чтения данных
+    bool feed(const std::string& buffer, size_t& pos, t_cdn_game::t_elem& out_elem) {
+      while (true) {
+        switch (state) {
+          case ReadCmdLength:
+            if (pos + 4 > buffer.size()) return false;
+            memcpy(&cmd_length, buffer.data() + pos, 4);
+            pos += 4;
+            cmd_buffer.clear();
+            bytes_read_for_cmd = 0;
+            state = ReadCmdData;
+            break;
+          case ReadCmdData: {
+            size_t available = buffer.size() - pos;
+            size_t need = cmd_length - bytes_read_for_cmd;
+            size_t to_read = (available < need) ? available : need;
+            cmd_buffer.append(buffer.data() + pos, to_read);
+            pos += to_read;
+            bytes_read_for_cmd += to_read;
+            if (bytes_read_for_cmd < (size_t)cmd_length) return false;
+            state = ReadMs;
+            break;
+          }
+          case ReadMs:
+            if (pos + 4 > buffer.size()) return false;
+            memcpy(&ms, buffer.data() + pos, 4);
+            pos += 4;
+            state = Done;
+            break;
+          case Done:
+            out_elem.cmd = std::move(cmd_buffer);
+            out_elem.ms = ms;
+            state = ReadCmdLength;
+            return true;
+        }
+      }
+    }
+  };
+  int s2t2e_size=-1;
+  ElemDeserializer elem_deserializer;
   bool feed_to_s2t2e(const std::string& fragment) {
-    buffer.append(fragment);
+    //buffer.append(fragment);
+    if (s2t2e_size == -1) {
+      if (!read_int32(buffer, parse_pos, s2t2e_size)) return true; // ждём данных
+    }
 
     if (tick_count == -1) {
       if (!read_int32(buffer, parse_pos, tick_count)) return true; // ждём данных
@@ -264,8 +373,8 @@ struct t_cdn_game_builder {
           out.slot2tick2elem[current_slot].emplace_back();
         }
         t_cdn_game::t_elem& elem = out.slot2tick2elem[current_slot][current_tick];
-        if (!deserialize_elem(buffer, parse_pos, elem)) {
-          return true; // ждем следующих данных
+        if (!elem_deserializer.feed(buffer, parse_pos, elem)) {
+          return true; // недостаёт данных, ждём
         }
         ++current_slot;
 

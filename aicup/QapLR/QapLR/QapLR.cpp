@@ -4645,8 +4645,25 @@ int QapLR_main(int argc,char*argv[]){
       CrutchIO IO;IO.LoadFile(*args.replay_in_file);
       auto s=file_get_contents(*args.replay_in_file);
       s=IO.mem;
-      t_cdn_game replay;
+      t_cdn_game replay,r2;
       QapLoadFromStr(replay,s);
+      t_cdn_game_stream cgs,cgs2;
+      cgs.load_from(replay);cgs.version=replay.version;
+      auto cgs_str=cgs.serialize();
+      t_cdn_game_builder b{r2};
+      for(int i=0;i<cgs_str.size();i++)
+        b.feed(cgs_str.substr(i,1));
+      for(auto&t2e:r2.slot2tick2elem)t2e.pop_back();
+      cgs2.load_from(r2);
+      auto s2=cgs2.serialize();
+      //vector<vector<t_cdn_game::t_elem>> ta,tb;
+      //QapLoadFromStr(ta,cgs.tick2slot2elem);
+      //QapLoadFromStr(tb,cgs2.tick2slot2elem);
+      if(s2!=cgs_str){
+        int fail=1;
+      }
+      auto cr=compare_slot2tick2elem(r2.slot2tick2elem,replay.slot2tick2elem);
+      s=QapSaveToStr(r2);
       auto out=QapSaveToStr(replay);
       if(out!=s){
         file_put_contents("15.out",out);
@@ -4659,6 +4676,7 @@ int QapLR_main(int argc,char*argv[]){
       //QapLoadFromStr(session.replay,s);
       g_args.gui_mode=true;
       session.init();//auto w=session.world->clone();int i=-1;session.ws2.push_back(w->clone());
+#if(0)
       auto&arr=replay.tick2cmds;
       for(int tick=0;tick<arr.size();tick++){
         auto&ex=arr[tick];
@@ -4678,6 +4696,7 @@ int QapLR_main(int argc,char*argv[]){
         session.world->step();
         session.ws.push_back(session.world->clone());
       }
+#endif
       //auto replay2=session.replay;replay2={};
       //auto mem=file_get_contents("replay14.cmds");
       //QapLoadFromStr(replay2,mem);int j=-1;
