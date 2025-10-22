@@ -415,7 +415,7 @@ struct t_coder_rec{
     bool ok()const{return status.find("ok:{\"success\":true,\"")==0;}
   };
   string last_ip;
-  int id;
+  int64_t id;
   string sysname;
   string visname;
   string token;
@@ -423,7 +423,7 @@ struct t_coder_rec{
   string time;
   unique_ptr<mutex> sarr_mtx;
   vector<t_source> sarr;
-  int total_games=0;
+  int64_t total_games=0;
   double elo=1500;
   bool allowed_next_src_upload()const{
     lock_guard<mutex> lock(*sarr_mtx);
@@ -725,6 +725,7 @@ struct t_main : t_process,t_http_base {
         if(!isValidName(name)){res.status=409;res.set_content("some char in name is not allowed! allowed=gen_dips(\"azAZ09\")+\"_.\"","text/plain");return;}
         {
           lock_guard<mutex> lock(carr_mtx);
+          int users_on_ip=0;
           for (const auto& c : carr) {
             if (c.sysname == sysname) {
               res.status = 409;
@@ -736,11 +737,12 @@ struct t_main : t_process,t_http_base {
               res.set_content("Duplicate coder email", "text/plain");
               return;
             }
-            if (c.last_ip == req.remote_addr) {
-              res.status = 409;
-              res.set_content("No way - ban by IP unordered", "text/plain");
-              return;
-            }
+            if (c.last_ip == req.remote_addr)users_on_ip++;
+          }
+          if(users_on_ip>2){
+            res.status = 409;
+            res.set_content("No way - ban by IP unordered", "text/plain");
+            return;
           }
           t_coder_rec b;
           b.last_ip=req.remote_addr;
