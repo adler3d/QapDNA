@@ -568,6 +568,12 @@ function start(){
     let keyname=null;
     if(event.key in g_keys)keyname=event.key;
     else if(event.code && (event.code in g_code2key))keyname=g_code2key[event.code];
+    switch(event.key) {
+      case '+': keyname = 'Add'; break;
+      case '-': keyname = 'Subtract'; break;
+      case '*': keyname = 'Multiply'; break;
+      case '/': keyname = 'Divide'; break;
+    }
     if(keyname){
       let k=g_keys[keyname];
       k.down=true;
@@ -583,6 +589,12 @@ function start(){
     let keyname=null;
     if(event.key in g_keys)keyname=event.key;
     else if(event.code && (event.code in g_code2key))keyname=g_code2key[event.code];
+    switch(event.key) {
+      case '+': keyname = 'Add'; break;
+      case '-': keyname = 'Subtract'; break;
+      case '*': keyname = 'Multiply'; break;
+      case '/': keyname = 'Divide'; break;
+    }
     if(keyname){
       let k=g_keys[keyname];
       k.down=false;
