@@ -991,7 +991,7 @@ struct t_node:t_process,t_node_cache{
     for(auto&ex:tarr)ex.join();
     int i=-1;
     for(auto&ex:oks)if(!ex){
-      i++;
+      i++;auto&v2=*g.slot2api[i];
       LOG("t_node::game("+to_string(gd.game_id)+") aborted due to spawn_docker error:"+v2.conid);
       swd->try_write("game_aborted:"+UPLOAD_TOKEN,to_string(gd.game_id)+","+to_string(i));
       lock_guard<mutex> lock(rgarr_mutex);
