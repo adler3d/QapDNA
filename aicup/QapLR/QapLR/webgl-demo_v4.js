@@ -603,6 +603,7 @@ function start(){
     k.changed=true;
     k.k.map(k=>g_kb_down[k]=1);
     k.k.map(k=>g_kb_changed[k]=1);
+    prevent_event(e);
   });
   document.addEventListener("mouseup",(e)=>{
     if(e.button>2)return;
@@ -611,11 +612,17 @@ function start(){
     k.changed=true;
     k.k.map(k=>g_kb_down[k]=0);
     k.k.map(k=>g_kb_changed[k]=1);
+    prevent_event(e);
   });
+  document.addEventListener('contextmenu',prevent_event);
   let host=0?"185.92.223.117":document.location.host+"";
   console.log({host});
   Module.ccall('qap_main','int',["string"],[host]);
 }
+var prevent_event=event=>{
+  event.preventDefault();
+  event.stopPropagation();
+};
 const fetchFile=async dataURL=>{
   return await fetch(dataURL).then(response=>response.text())
 }
