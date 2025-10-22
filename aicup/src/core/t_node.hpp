@@ -985,6 +985,7 @@ struct t_node:t_process,t_node_cache{
         QapCleanIf(rgarr,[&](auto&ref){return ref->gd.game_id==gd.game_id;});
         return false;
       }
+      return true;
     });
     for(auto&ex:tarr)ex.join();
     game_n++;
@@ -1049,7 +1050,7 @@ struct t_node:t_process,t_node_cache{
       fds2.push_back({fd, std::move(on_ready)/*, on_error*/});
       LOG("t_event_loop_v2::add fd="+to_string(fd));
     }
-    void wait_for_socket(const std::string& socket_path, int max_wait_ms=1024, int poll_interval_ms=16) {
+    void wait_for_socket(const std::string& socket_path, int max_wait_ms=1024*2, int poll_interval_ms=16) {
         namespace fs = std::filesystem;
         int waited = 0;
         while (!fs::exists(socket_path) && waited < max_wait_ms) {
