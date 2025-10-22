@@ -878,7 +878,7 @@ function processChunk(chunk) {
 
 function start_replay(){
   // Вызов функции потоковой загрузки
-  streamProcessReplay('http://5.129.196.254:12346/replay/0').catch(console.error);
+  streamProcessReplay('http://5.129.196.254:12346/stream/0').catch(console.error);
 }
 
 
