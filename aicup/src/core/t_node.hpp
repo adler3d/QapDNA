@@ -975,7 +975,6 @@ struct t_node:t_process,t_node_cache{
         QapCleanIf(rgarr,[&](auto&ref){return ref->gd.game_id==gd.game_id;});
         return false;
       }
-      return true;
     }
     game_n++;
     return true;
