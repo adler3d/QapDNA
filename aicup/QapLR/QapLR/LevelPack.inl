@@ -406,10 +406,15 @@ public:
   }
   void RenderMap(QapDev&qDev){
     //genmap();
+    #ifndef _WIN32
+    #ifndef QAP_UNIX
+    EM_ASM(console.log('RenderMap::AdlerCraftMap.size()=='+$0),int(AdlerCraftMap.size()));
+    #endif
+    #endif
     if(AdlerCraftMap.empty())return;
     #ifndef _WIN32
     #ifndef QAP_UNIX
-    EM_ASM(console.log('RenderMap'));
+    EM_ASM(console.log('RenderMap::aft'));
     #endif
     #endif
     QapDev::BatchScope Scope(qDev);
