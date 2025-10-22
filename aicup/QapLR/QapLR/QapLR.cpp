@@ -3863,7 +3863,7 @@ extern "C" {
     Game.Update();
     return 0;
   }
-  int EMSCRIPTEN_KEEPALIVE qap_malloc(int n){return malloc(n);}
+  int EMSCRIPTEN_KEEPALIVE qap_malloc(int n){return (int)malloc(n);}
 }
 void init(){
   qDev.Init(1024*64,1024*64*3);
