@@ -639,9 +639,9 @@ function start(){
   document.addEventListener('contextmenu',prevent_event);
   window.addEventListener('wheel', function(e) {
     if (e.deltaY > 0) {
-      g_zDelta=e.deltaY;
+      g_zDelta=e.deltaY;console.log(g_zDelta);
     } else {
-      g_zDelta=e.deltaY;
+      g_zDelta=e.deltaY;console.log(g_zDelta);
     }
     return prevent_event(e);
   }, {passive:false});
