@@ -645,7 +645,40 @@ function start(){
     }
     return prevent_event(e);
   }, {passive:false});
-
+  function handleStart(event) {
+    event.preventDefault();
+    for (const changedTouch of event.changedTouches) {
+      g_mpos.x=changedTouch.pageX;
+      g_mpos.y=changedTouch.pageY;
+    }
+    let k=g_keys[mid2key[0]];
+    k.down=true;
+    k.changed=true;
+    k.k.map(k=>g_kb_down[k]=1);
+    k.k.map(k=>g_kb_changed[k]=1);
+  }
+  document.addEventListener("touchstart", handleStart);
+  function handleMove(event) {
+    event.preventDefault();
+    for (const changedTouch of event.changedTouches) {
+      g_mpos.x=changedTouch.pageX;
+      g_mpos.y=changedTouch.pageY;
+    }
+  }
+  document.addEventListener("touchmove", handleMove);
+  function handleEnd(event) {
+    event.preventDefault();
+    for (const changedTouch of event.changedTouches) {
+      g_mpos.x=changedTouch.pageX;
+      g_mpos.y=changedTouch.pageY;
+    }
+    let k=g_keys[mid2key[0]];
+    k.down=false;
+    k.changed=true;
+    k.k.map(k=>g_kb_down[k]=0);
+    k.k.map(k=>g_kb_changed[k]=1);
+  }
+  document.addEventListener("touchend", handleEnd);
   let host=0?"185.92.223.117":document.location.host+"";
   console.log({host});
   Module.ccall('qap_main','int',["string"],[host]);
