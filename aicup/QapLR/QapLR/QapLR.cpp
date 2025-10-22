@@ -4642,43 +4642,11 @@ int QapLR_main(int argc,char*argv[]){
     }
 
     if(args.replay_in_file){
-      CrutchIO IO;IO.LoadFile(*args.replay_in_file);
       auto s=file_get_contents(*args.replay_in_file);
-      s=IO.mem;
-      t_cdn_game replay,r2;
-      QapLoadFromStr(replay,s);
-      t_cdn_game_stream cgs,cgs2;
-      cgs.load_from(replay);cgs.version=replay.version;
-      auto cgs_str=cgs.serialize();
-      t_cdn_game_builder b{r2};
-      for(int i=0;i<cgs_str.size();i++)
-        b.feed(cgs_str.substr(i,1));
-      //for(auto&t2e:r2.slot2tick2elem)t2e.pop_back();
-      cgs2.load_from(r2);cgs2.version=replay.version;
-      auto s2=cgs2.serialize();
-      //vector<vector<t_cdn_game::t_elem>> ta,tb;
-      //QapLoadFromStr(ta,cgs.tick2slot2elem);
-      //QapLoadFromStr(tb,cgs2.tick2slot2elem);
-      if(s2!=cgs_str){
-        int fail=1;
-      }
-      auto cr=compare_slot2tick2elem(r2.slot2tick2elem,replay.slot2tick2elem);
-      s=QapSaveToStr(r2);
-      auto out=QapSaveToStr(replay);
-      if(out!=s){
-        file_put_contents("15.out",out);
-        int fail=1;
-      }
-      for(int i=0;i<100;i++){
-        t_cdn_game g;
-        t_cdn_game_builder b{g};
-        test_random_fragments(b,cgs_str);
-        cgs2.load_from(r2);cgs2.version=replay.version;
-        auto s2=cgs2.serialize();
-        if(s2!=cgs_str){
-          int fail=1;
-        }
-      }
+      t_cdn_game replay;
+      //QapLoadFromStr(replay,s);
+      t_cdn_game_builder b{replay};
+      b.feed(s);
       g_args.num_players=replay.gd.arr.size();
       g_args.seed_initial=replay.gd.seed_initial;
       g_args.seed_strategies=replay.gd.seed_strategies;

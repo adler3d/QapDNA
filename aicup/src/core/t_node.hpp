@@ -925,9 +925,9 @@ struct t_node:t_process,t_node_cache{
       function<void(const string& error)> on_done
   ) {
     thread([path, data, token, on_done = std::move(on_done)]() {
-      string error;auto DATA=data;
+      string error;auto cgs=to_cgs_str(data);
       try {
-        auto s=http_put_with_auth(path, DATA.serialize(),token);
+        auto s=http_put_with_auth(path,cgs,token);
         if(s!=200)error="HTTP error "+to_string(s);
       } catch (const exception& e) {
         error = string("Exception in http_put_with_auth:") + e.what();
