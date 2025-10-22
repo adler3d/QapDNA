@@ -966,6 +966,7 @@ struct t_node:t_process,t_node_cache{
       return false;
     }*/
     vector<thread> tarr;tarr.reserve(gd.arr.size());g.slot2api.reserve(gd.arr.size());
+    vector<size_t> oks(gd.arr.size());
     for(int i=0;i<gd.arr.size();i++)tarr.emplace_back([&,i]{
       auto&ex=gd.arr[i];
       auto&b2=qap_add_back(g.slot2api);
@@ -974,20 +975,29 @@ struct t_node:t_process,t_node_cache{
       v2.pnode=this;
       v2.player_id=i;
       v2.pgame=&g;
-      bool ok=spawn_docker(CDN_URL+"/"+ex.cdn_bin_file,v2,gd.game_id,i,g);
-      if(!ok){
-        for(auto&api:g.slot2api){
-          kill(api->conid);
-        }
-        LOG("t_node::game("+to_string(gd.game_id)+") aborted due to spawn_docker error:"+v2.conid);
-        swd->try_write("game_aborted:"+UPLOAD_TOKEN,to_string(gd.game_id)+","+to_string(i));
-        lock_guard<mutex> lock(rgarr_mutex);
-        QapCleanIf(rgarr,[&](auto&ref){return ref->gd.game_id==gd.game_id;});
-        return false;
-      }
-      return true;
+      oks[i]=spawn_docker(CDN_URL+"/"+ex.cdn_bin_file,v2,gd.game_id,i,g);
+      //if(!ok){
+      //  //for(auto&api:g.slot2api){
+      //  //  kill(api->conid);
+      //  //}
+      //  LOG("t_node::game("+to_string(gd.game_id)+") aborted due to spawn_docker error:"+v2.conid);
+      //  swd->try_write("game_aborted:"+UPLOAD_TOKEN,to_string(gd.game_id)+","+to_string(i));
+      //  lock_guard<mutex> lock(rgarr_mutex);
+      //  QapCleanIf(rgarr,[&](auto&ref){return ref->gd.game_id==gd.game_id;});
+      //  return false;
+      //}
+      //return true;
     });
     for(auto&ex:tarr)ex.join();
+    int i=-1;
+    for(auto&ex:oks)if(!ex){
+      i++;
+      LOG("t_node::game("+to_string(gd.game_id)+") aborted due to spawn_docker error:"+v2.conid);
+      swd->try_write("game_aborted:"+UPLOAD_TOKEN,to_string(gd.game_id)+","+to_string(i));
+      lock_guard<mutex> lock(rgarr_mutex);
+      QapCleanIf(rgarr,[&](auto&ref){return ref->gd.game_id==gd.game_id;});
+      return false;
+    }
     game_n++;
     return true;
   }
