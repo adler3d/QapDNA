@@ -3932,6 +3932,7 @@ extern "C" {
     EM_ASM(main(););
     init();
     const char*argv[]={"./QapLR -i replay0.t_cdn_game_v0"};int argc=lenof(argv);
+    EM_ASM({start_replay();});
     //QapLR_main(argc,argv);
     return 0;
   }
