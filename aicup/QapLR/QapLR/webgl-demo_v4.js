@@ -866,7 +866,7 @@ async function streamProcessReplay(url) {
 // Функция, которая копирует текущий chunk данных в память wasm и вызывает метод обработки
 function processChunk(chunk) {
   const ptr = Module._malloc(chunk.length);
-  Module.HEAPU8.set(chunk, ptr);
+  /*Module.*/HEAPU8.set(chunk, ptr);
 
   // Предположим, у вас в wasm есть функция:
   // void process_replay_chunk(uint8_t* data, int length);
