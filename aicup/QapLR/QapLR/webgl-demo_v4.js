@@ -643,7 +643,7 @@ function start(){
     } else {
       g_zDelta=e.deltaY;
     }
-    return cancelEvent(e);
+    return prevent_event(e);
   }, {passive:false});
 
   let host=0?"185.92.223.117":document.location.host+"";
@@ -653,6 +653,9 @@ function start(){
 var prevent_event=event=>{
   event.preventDefault();
   event.stopPropagation();
+  event.cancelBubble=true;
+  event.returnValue=false;
+  return false;
 };
 const fetchFile=async dataURL=>{
   return await fetch(dataURL).then(response=>response.text())
