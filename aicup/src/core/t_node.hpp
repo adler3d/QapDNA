@@ -965,8 +965,8 @@ struct t_node:t_process,t_node_cache{
       });
       return false;
     }*/
-    
-    for(int i=0;i<gd.arr.size();i++)thread([&,i]{
+    vector<thread> tarr;tarr.reserve(gd.arr.size());
+    for(int i=0;i<gd.arr.size();i++)tarr.emplace_back([&,i]{
       auto&ex=gd.arr[i];
       auto&b2=qap_add_back(g.slot2api);
       b2=make_unique<t_docker_api_v2>();
@@ -985,7 +985,8 @@ struct t_node:t_process,t_node_cache{
         QapCleanIf(rgarr,[&](auto&ref){return ref->gd.game_id==gd.game_id;});
         return false;
       }
-    }).detach();
+    });
+    for(auto&ex:tarr)ex.join();
     game_n++;
     return true;
   }
