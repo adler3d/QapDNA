@@ -391,6 +391,45 @@ struct t_cdn:t_http_base{
           }
       );
 
+      svr.Get(R"(/stream/(\d+))", [](const httplib::Request &req, httplib::Response &res) {
+        std::string replay_id = req.matches[1];
+        auto file_path = CDN_DATA_DIR + "replay/" + replay_id + ".bin";
+        auto file = std::make_shared<std::ifstream>(file_path, std::ios::binary);
+        if (!file->is_open()) {
+          res.status = 404;
+          res.set_content("File not found", "text/plain");
+          return;
+        }
+
+        // Узнаем размер файла
+        file->seekg(0, std::ios::end);
+        size_t file_size = file->tellg();
+        file->seekg(0, std::ios::beg);
+
+        res.set_header("Content-Type", "application/octet-stream");
+        res.set_header("Content-Length", std::to_string(file_size));
+
+        res.set_content_provider(
+          file_size,
+          "application/octet-stream",
+          [file](size_t offset, size_t length, httplib::DataSink &sink) {
+            constexpr size_t buffer_size = 64 * 1024;
+            char buffer[buffer_size];
+            file->seekg(offset, std::ios::beg);
+
+            while (length > 0) {
+              size_t to_read = std::min(buffer_size, length);
+              if (!file->read(buffer, to_read)) {
+                return false; // ошибка чтения
+              }
+              sink.write(buffer, to_read);
+              length -= to_read;
+            }
+            return true;
+          }
+        );
+      });
+
       add_content_handlers(svr, "source", "source",true,
           [this](const auto& req, auto& res, const string& name) {
               auto path = CDN_DATA_DIR + "source/" + name;
