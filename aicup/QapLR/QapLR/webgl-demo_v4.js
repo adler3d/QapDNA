@@ -818,6 +818,70 @@ function isPowerOf2(value) {
   return (value & (value - 1)) === 0;
 }
 
+// Размер буфера для передачи в WASM (можно подстроить)
+const CHUNK_SIZE = 64 * 1024; // 64KB
+
+async function streamProcessReplay(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch ' + url);
+  }
+
+  const reader = response.body.getReader();
+
+  // Буфер внутри JS для накопления данных перед передачей в WASM
+  let buffer = new Uint8Array(CHUNK_SIZE);
+  let bufferOffset = 0;
+
+  for(;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      // Передать оставшиеся данные в WASM
+      if (bufferOffset > 0) {
+        processChunk(buffer.subarray(0, bufferOffset));
+      }
+      console.log('Stream finished');
+      break;
+    }
+
+    let start = 0;
+    while (start < value.length) {
+      // Сколько памяти осталось в буфере
+      const spaceLeft = CHUNK_SIZE - bufferOffset;
+      const toCopy = Math.min(spaceLeft, value.length - start);
+
+      buffer.set(value.subarray(start, start + toCopy), bufferOffset);
+      bufferOffset += toCopy;
+      start += toCopy;
+
+      if (bufferOffset === CHUNK_SIZE) {
+        // Буфер накопился — передаем в wasm
+        processChunk(buffer);
+        bufferOffset = 0;
+      }
+    }
+  }
+}
+
+// Функция, которая копирует текущий chunk данных в память wasm и вызывает метод обработки
+function processChunk(chunk) {
+  const ptr = Module._malloc(chunk.length);
+  Module.HEAPU8.set(chunk, ptr);
+
+  // Предположим, у вас в wasm есть функция:
+  // void process_replay_chunk(uint8_t* data, int length);
+  //Module.ccall('process_replay_chunk', null, ['number', 'number'], [ptr, chunk.length]);
+  console.log("processChunk",ptr,chunk.length);
+
+  Module._free(ptr);
+}
+
+function start_replay(){
+  // Вызов функции потоковой загрузки
+  streamProcessReplay('http://5.129.196.254:12346/replay/0').catch(console.error);
+}
+
+
 //Module.onRuntimeInitialized=()=>start();
 /*var g_start_int=setInterval(()=>{
   if((typeof start !== 'undefined')&&
