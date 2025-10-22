@@ -293,17 +293,17 @@ public:
   t_scrollbar speed_scrollbar;
   t_button play_pause_btn;
   void gui_init(){
-    real bar_y = pviewport->get_vertex_by_dir(vec2d(-1, -1)).y + 8;
+    real bar_y = pviewport->get_vertex_by_dir(vec2d(-1, -1)).y + 8*2;
     real W = pviewport->size.x;
 
     frame_scrollbar.center = vec2d(0, bar_y);
-    frame_scrollbar.size = vec2d(W-100*2, 16);
+    frame_scrollbar.size = vec2d(W-100*2, 2*16);
 
     play_pause_btn.center = vec2d(-W * 0.5 + 50, bar_y);
-    play_pause_btn.size = vec2d(20, 16);
+    play_pause_btn.size = vec2d(3*20, 2*16);
 
     speed_scrollbar.center = vec2d(W * 0.5 - 50, bar_y);
-    speed_scrollbar.size = vec2d(80, 16);
+    speed_scrollbar.size = vec2d(80, 2*16);
     speed_scrollbar.pos = 0.0;
     set_playback_speed(get_world_type()==EWorldType::Continuous?Sys.UPS:8.0);
   }
