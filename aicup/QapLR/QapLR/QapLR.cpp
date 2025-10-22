@@ -4653,8 +4653,8 @@ int QapLR_main(int argc,char*argv[]){
       t_cdn_game_builder b{r2};
       for(int i=0;i<cgs_str.size();i++)
         b.feed(cgs_str.substr(i,1));
-      for(auto&t2e:r2.slot2tick2elem)t2e.pop_back();
-      cgs2.load_from(r2);
+      //for(auto&t2e:r2.slot2tick2elem)t2e.pop_back();
+      cgs2.load_from(r2);cgs2.version=replay.version;
       auto s2=cgs2.serialize();
       //vector<vector<t_cdn_game::t_elem>> ta,tb;
       //QapLoadFromStr(ta,cgs.tick2slot2elem);
@@ -4668,6 +4668,16 @@ int QapLR_main(int argc,char*argv[]){
       if(out!=s){
         file_put_contents("15.out",out);
         int fail=1;
+      }
+      for(int i=0;i<100;i++){
+        t_cdn_game g;
+        t_cdn_game_builder b{g};
+        test_random_fragments(b,cgs_str);
+        cgs2.load_from(r2);cgs2.version=replay.version;
+        auto s2=cgs2.serialize();
+        if(s2!=cgs_str){
+          int fail=1;
+        }
       }
       g_args.num_players=replay.gd.arr.size();
       g_args.seed_initial=replay.gd.seed_initial;

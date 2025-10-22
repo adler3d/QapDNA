@@ -344,6 +344,7 @@ struct t_cdn_game_builder {
   ElemDeserializer elem_deserializer;
   bool feed_to_s2t2e(const std::string& fragment) {
     //buffer.append(fragment);
+
     if (s2t2e_size == -1) {
       if (!read_int32(buffer, parse_pos, s2t2e_size)) return true; // ждём данных
     }
@@ -353,44 +354,53 @@ struct t_cdn_game_builder {
       slot_count = static_cast<int32_t>(out.gd.arr.size());
     }
 
-    // Добавляем новые слоты в out.slot2tick2elem при необходимости
-    while ((int)out.slot2tick2elem.size() <= current_slot) {
-      out.slot2tick2elem.emplace_back(); // создаём новую строку (слот)
-    }
-    // Добавляем тики во внутренний вектор слота по необходимости
-    while ((int)out.slot2tick2elem[current_slot].size() <= current_tick) {
-      out.slot2tick2elem[current_slot].emplace_back(); // по одному элементу (тик)
-    }
-
-    // Читаем элементы пока хватает данных
     while (current_tick < tick_count) {
       while (current_slot < slot_count) {
-        // Проверяем опять размер вектора на текущий слот и тик
-        if ((int)out.slot2tick2elem.size() <= current_slot) {
-          out.slot2tick2elem.emplace_back();
-        }
-        if ((int)out.slot2tick2elem[current_slot].size() <= current_tick) {
-          out.slot2tick2elem[current_slot].emplace_back();
-        }
-        t_cdn_game::t_elem& elem = out.slot2tick2elem[current_slot][current_tick];
-        if (!elem_deserializer.feed(buffer, parse_pos, elem)) {
+        t_cdn_game::t_elem elem_tmp;
+        if (!elem_deserializer.feed(buffer, parse_pos, elem_tmp)) {
           return true; // недостаёт данных, ждём
         }
-        ++current_slot;
 
-        // При переходе к следующему тикту сбрасываем слот
-        if (current_slot == slot_count) {
-          current_slot = 0;
-          ++current_tick;
-        }
+        // Проверяем и расширяем размер векторов только если current_slot и current_tick в допустимых пределах
+        if ((int)out.slot2tick2elem.size() <= current_slot)
+          out.slot2tick2elem.emplace_back();
+        if ((int)out.slot2tick2elem[current_slot].size() <= current_tick)
+          out.slot2tick2elem[current_slot].emplace_back();
+
+        // Записываем элемент
+        out.slot2tick2elem[current_slot][current_tick] = std::move(elem_tmp);
+
+        ++current_slot;
       }
+      current_slot = 0;
+      ++current_tick;
     }
 
-    // Всё успешно прочитано
+    // После полной загрузки элементов не создаём лишних
     return false;
   }
 };
+void test_random_fragments(t_cdn_game_builder& b, const std::string& cgs_str) {
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<size_t> dist(1, 10); // длина фрагмента от 1 до 10
 
+    size_t pos = 0;
+    while (pos < cgs_str.size()) {
+        size_t chunk_size = dist(rng);
+        if (pos + chunk_size > cgs_str.size())
+            chunk_size = cgs_str.size() - pos;
+
+        std::string fragment = cgs_str.substr(pos, chunk_size);
+        bool need_more = b.feed(fragment);
+
+        pos += chunk_size;
+
+        if (!need_more && pos == cgs_str.size()) {
+            std::cout << "Parsing complete after random chunk feed\n";
+            return;
+        }
+    }
+}
 struct t_game{
   #define DEF_PRO_COPYABLE()
   #define DEF_PRO_CLASSNAME()t_game
