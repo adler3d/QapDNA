@@ -966,8 +966,8 @@ struct t_node:t_process,t_node_cache{
       return false;
     }*/
     
-    for(auto&ex:gd.arr)thread([&]{
-      int i=&ex-&gd.arr[0];
+    for(int i=0;i<gd.arr.size();i++)thread([&,i]{
+      auto&ex=gd.arr[i];
       auto&b2=qap_add_back(g.slot2api);
       b2=make_unique<t_docker_api_v2>();
       t_docker_api_v2&v2=*b2.get();
