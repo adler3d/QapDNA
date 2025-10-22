@@ -153,6 +153,12 @@ public:
       GOO("player_status["+IToS(i)+"]",color);
     }
     TE.AddText("^7---");
+    #ifndef _WIN32
+    #ifndef QAP_UNIX
+    GOO("w",FToS(pviewport->size.x));
+    GOO("h",FToS(pviewport->size.y));
+    #endif
+    #endif
     int bx=TE.bx;
     int cy=TE.y;
     TE.bx=bx;
