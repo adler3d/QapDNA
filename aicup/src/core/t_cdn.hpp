@@ -223,6 +223,14 @@ struct t_cdn:t_http_base{
           }
           std::cout << " | Response Status: " << res.status << std::endl;
       });
+      svr.set_default_headers({
+        {"Access-Control-Allow-Origin", "*"},
+        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
+        {"Access-Control-Allow-Headers", "Content-Type"}
+      });
+      svr.Options(R"(.*)", [](const httplib::Request &, httplib::Response &res) {
+        res.status = 204; // No Content
+      });
       svr.Put("/", [this](const httplib::Request& req, httplib::Response& res) {
         res.set_content(file_get_contents("index.html"), "text/html");
       });
