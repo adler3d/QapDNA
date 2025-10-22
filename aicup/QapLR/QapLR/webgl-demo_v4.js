@@ -888,40 +888,22 @@ async function streamProcessReplay(url) {
       start += toCopy;
 
       if (bufferOffset === CHUNK_SIZE) {
-        // Буфер накопился — передаем в wasm
         processChunk(buffer);
         bufferOffset = 0;
       }
     }
   }
 }
-
-// Функция, которая копирует текущий chunk данных в память wasm и вызывает метод обработки
 function processChunk(chunk) {
   const ptr = Module._malloc(chunk.length);
   HEAPU8.set(chunk, ptr);
   console.log("processChunk",ptr,chunk.length);
-
-  // void process_replay_chunk(uint8_t* data, int length);
   Module.ccall('process_replay_chunk', null, ['number', 'number'], [ptr, chunk.length]);
-
   Module._free(ptr);
 }
-
 function start_replay(){
-  // Вызов функции потоковой загрузки
-  streamProcessReplay('http://5.129.196.254:12346/stream/0').catch(console.error);
+  let h=document.location.hash;
+  if(h.length>0)h=h.substr(1);
+  h=h.length?h:0;
+  streamProcessReplay('http://5.129.196.254:12346/stream/'+h).catch(console.error);
 }
-
-
-//Module.onRuntimeInitialized=()=>start();
-/*var g_start_int=setInterval(()=>{
-  if((typeof start !== 'undefined')&&
-     (typeof Module !== 'undefined')&&
-     ('ccall' in Module)&&
-     (typeof wasmExports !== 'undefined')
-    ){
-    document.body.style="width:100%; height:100%;";
-    clearInterval(g_start_int);start();
-  };
-},1000);*/
