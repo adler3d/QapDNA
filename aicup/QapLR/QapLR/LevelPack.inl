@@ -371,6 +371,7 @@ public:
   real playback_speed = 1.0; // от 0 до 8
   bool dragging_frame = false; // для отслеживания drag'а (опционально, но удобно)
   void RenderImpl(QapDev&qDev){
+    if(!session.world)return;
     QapDev::BatchScope Scope(qDev);
     t_offcentric_scope scope(qDev,cam_pos,cam_dir,scale,cam_offcentric);
     vec2d mpos=kb.MousePos;
