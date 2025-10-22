@@ -965,7 +965,7 @@ struct t_node:t_process,t_node_cache{
       });
       return false;
     }*/
-    vector<thread> tarr;tarr.reserve(gd.arr.size());
+    vector<thread> tarr;tarr.reserve(gd.arr.size());g.slot2api.reserve(gd.arr.size());
     for(int i=0;i<gd.arr.size();i++)tarr.emplace_back([&,i]{
       auto&ex=gd.arr[i];
       auto&b2=qap_add_back(g.slot2api);
