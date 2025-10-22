@@ -464,7 +464,14 @@ public:
     if(/*kb.OnDown('S')||*/kb.OnDown(VK_SPACE)){step_by_step=!step_by_step;reset();}
     //if(kb.OnDown('U'))Sys.UPS_enabled=true;
     //if(kb.OnDown('D'))Sys.UPS_enabled=false;
-    if(kb.OnDown('Q')){genmap();Sys.UPS_enabled=false;}
+    if(kb.OnDown('Q')){
+      genmap();Sys.UPS_enabled=false;
+      #ifndef _WIN32
+      #ifndef QAP_UNIX
+      EM_ASM(console.log('Q'));
+      #endif
+      #endif
+    }
     if(kb.OnDown(VK_ESCAPE)){Sys.NeedClose=true;}
     if(kb.OnDown(VK_F9)){reinit_the_same_level();}
     bool runned=!Win()&&!Fail();
