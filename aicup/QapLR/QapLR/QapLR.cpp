@@ -3098,6 +3098,56 @@ struct GameSession {
 #endif
 #include "by_ai/mapgen.cpp"
 #include "../../src/core/aicup_structs.inl"
+struct t_replay_stream{
+  t_cdn_game g;
+  t_cdn_game_builder b{g};
+  int tick=0;
+  bool feed_rv=true;
+  void update(){
+    if(g.gd.arr.size()&&!g_args.num_players){
+      g_args.num_players=g.gd.arr.size();
+      g_args.seed_initial=g.gd.seed_initial;
+      g_args.seed_strategies=g.gd.seed_strategies;
+      g_args.world_name=g.gd.world;
+      g_args.gui_mode=true;
+      session.init();
+    }
+    if(!g.fg.tick)return;
+    for(;tick<g.fg.tick;tick++){
+      int n=0;
+      auto&arr=g.slot2tick2elem;
+      bool next_ready=false;
+      if(!feed_rv)next_ready=true;
+      for(int i=0;!next_ready&&i<arr.size();i++){
+        auto&p=arr[i];
+        if(tick+1>=p.size())continue;
+        next_ready=true;
+        break;
+      }
+      if(!next_ready)break;
+      for(int i=0;i<arr.size();i++){
+        auto&p=arr[i];
+        if(tick>=p.size())continue;
+        string outerr;
+        session.world->use(i,arr[i][tick].cmd,outerr);
+        if(outerr.size()){
+          int gg=1;
+          n++;
+        }
+      }
+      session.world->step();
+      session.ws.push_back(session.world->clone());
+    }
+  }
+} replay_stream;
+
+extern "C" {
+  void /*EMSCRIPTEN_KEEPALIVE*/ process_replay_chunk(const char*data,int length) {
+    string s(data,length);
+    replay_stream.feed_rv=replay_stream.b.feed(s);//if feed say false then all done
+    replay_stream.update();
+  }
+}
 string g_host="185.92.223.117";
 QapClock g_clock;
 class TGame{
@@ -4600,6 +4650,7 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
 
     return true;
 }
+
 int QapLR_main(int argc,char*argv[]){
     /*
     for(int i=0;i<1000;i++){
@@ -4647,7 +4698,7 @@ int QapLR_main(int argc,char*argv[]){
       auto s=file_get_contents(*args.replay_in_file);
       t_cdn_game replay;
       t_cdn_game_builder b{replay};
-      b.feed(s);
+      b.feed(s); // <--- можно кормить маленькими кусочками
       g_args.num_players=replay.gd.arr.size();
       g_args.seed_initial=replay.gd.seed_initial;
       g_args.seed_strategies=replay.gd.seed_strategies;
