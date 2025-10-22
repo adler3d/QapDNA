@@ -612,21 +612,15 @@ function start(){
   });
   function normalizeMouseButton(e) {
     var button = e.button;
-    // https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button
-    // В большинстве браузеров:
-    // 0 - Лево, 1 - Среднее, 2 - Правое
-    // В IE и старых - 1 - правая, 2 - средняя
     if (navigator.userAgent.indexOf("MSIE ") > -1 || navigator.userAgent.indexOf("Trident/") > -1) {
-      // Для IE меняем 1 и 2 местами
-      if (button === 1) return 2; // правая
-      if (button === 2) return 1; // средняя
+      if (button === 1) return 2;
+      if (button === 2) return 1;
     }
     return button;
   }
   document.addEventListener("mousedown",(e)=>{
     if(e.button>2)return;
-
-    let k=g_keys[mid2key[normalizeMouseButton(e.button)]];
+    let k=g_keys[mid2key[normalizeMouseButton(e)]];
     k.down=true;
     k.changed=true;
     k.k.map(k=>g_kb_down[k]=1);
@@ -635,7 +629,7 @@ function start(){
   });
   document.addEventListener("mouseup",(e)=>{
     if(e.button>2)return;
-    let k=g_keys[mid2key[normalizeMouseButton(e.button)]];
+    let k=g_keys[mid2key[normalizeMouseButton(e)]];
     k.down=false;
     k.changed=true;
     k.k.map(k=>g_kb_down[k]=0);
