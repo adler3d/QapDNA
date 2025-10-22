@@ -393,6 +393,7 @@ function update_kb(pD,pC){
     HEAPU8[pD+i]=g_kb_down[i];
     HEAPU8[pC+i]=g_kb_changed[i];
     g_kb_changed[i]=false;
+    g_zDelta=0;
   }
 }
 //https://gist.github.com/adler3d/7f18282ea9ef553d5fa03a101bf4c3d0
@@ -534,13 +535,14 @@ var g_keys={"0":{"v":["VK_NUMPAD0"],"k":[96]},
 var g_mpos={x:0,y:0};
 var g_kb_down={};
 var g_kb_changed={};
+var g_zDelta=0;
 function start(){
   document.documentElement.style.overflow='hidden';
   document.body.scroll="no";
   g_keys.mbLeft={k:[257]};
   g_keys.mbRight={k:[258]};
   g_keys.mbMiddle={k:[259]};
-  let mid2key=['mbLeft','mbRight','mbMiddle'];
+  let mid2key=['mbLeft','mbMiddle','mbRight'];
   for(let k='a'.charCodeAt(0);k<='z'.charCodeAt(0);k++)g_keys[String.fromCharCode(k)]={k:[String.fromCharCode(k).toUpperCase().charCodeAt(0)]};
   for(let k='A'.charCodeAt(0);k<='Z'.charCodeAt(0);k++)g_keys[String.fromCharCode(k)]={k:[k]};
   for(let k='0'.charCodeAt(0);k<='9'.charCodeAt(0);k++)g_keys[String.fromCharCode(k)]={k:[k]};
@@ -608,9 +610,23 @@ function start(){
     var y=e.pageY;
     g_mpos={x,y};
   });
+  function normalizeMouseButton(e) {
+    var button = e.button;
+    // https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button
+    // В большинстве браузеров:
+    // 0 - Лево, 1 - Среднее, 2 - Правое
+    // В IE и старых - 1 - правая, 2 - средняя
+    if (navigator.userAgent.indexOf("MSIE ") > -1 || navigator.userAgent.indexOf("Trident/") > -1) {
+      // Для IE меняем 1 и 2 местами
+      if (button === 1) return 2; // правая
+      if (button === 2) return 1; // средняя
+    }
+    return button;
+  }
   document.addEventListener("mousedown",(e)=>{
     if(e.button>2)return;
-    let k=g_keys[mid2key[e.button]];
+
+    let k=g_keys[mid2key[normalizeMouseButton(e.button)]];
     k.down=true;
     k.changed=true;
     k.k.map(k=>g_kb_down[k]=1);
@@ -619,7 +635,7 @@ function start(){
   });
   document.addEventListener("mouseup",(e)=>{
     if(e.button>2)return;
-    let k=g_keys[mid2key[e.button]];
+    let k=g_keys[mid2key[normalizeMouseButton(e.button)]];
     k.down=false;
     k.changed=true;
     k.k.map(k=>g_kb_down[k]=0);
@@ -627,6 +643,15 @@ function start(){
     prevent_event(e);
   });
   document.addEventListener('contextmenu',prevent_event);
+  window.addEventListener('wheel', function(e) {
+    if (e.deltaY > 0) {
+      g_zDelta=deltaY;
+    } else {
+      g_zDelta=deltaY;
+    }
+    return cancelEvent(e);
+  }, {passive:false});
+
   let host=0?"185.92.223.117":document.location.host+"";
   console.log({host});
   Module.ccall('qap_main','int',["string"],[host]);

@@ -3848,6 +3848,7 @@ void update_kb(){
   EM_ASM({update_kb($0,$1);},int(&kb.Down[0]),int(&kb.Changed[0]));
   kb.MousePos.x=+EM_ASM_INT({return g_mpos.x;})-Sys.SM.W/2;
   kb.MousePos.y=-EM_ASM_INT({return g_mpos.y;})+Sys.SM.H/2;
+  kb.zDelta=EM_ASM_INT({return g_zDelta;});
   update_last_char_from_keyboard(kb);
 }
 extern "C" {
