@@ -125,7 +125,7 @@ public:
   void reinit_the_same_level(){
     Game->ReloadWinFail();
   }
-  bool inited=false;
+  bool inited=false;int frame_counter=0;
   void Init(TGame*Game){
     this->pviewport=&Game->qDev.viewport;pviewport->size=vec2d{real(Sys.SM.W),real(Sys.SM.H)};
     this->Game=Game;
@@ -135,6 +135,7 @@ public:
   bool Fail(){return false;}
 public:
   void AddText(TextRender&TE){
+    if(TE.BlurFont&&!inited){inited=true;last_frame_time=g_clock.MS()*0.001;frame_counter=0;gui_init();}else frame_counter++;
     string BEG="^7";
     string SEP=" ^2: ^8";
     #define GOO(TEXT,VALUE)TE.AddText(string(BEG)+string(TEXT)+string(SEP)+string(VALUE));
@@ -297,11 +298,11 @@ public:
 
     speed_scrollbar.center = vec2d(W * 0.5 - 50, bar_y);
     speed_scrollbar.size = vec2d(80, 16);
-    speed_scrollbar.pos = 0.5;
+    speed_scrollbar.pos = 0.0;
     set_playback_speed(get_world_type()==EWorldType::Continuous?Sys.UPS:8.0);
   }
   void UpdateBar(){
-    if(update_button(play_pause_btn))last_frame_time=g_clock.MS()*0.001;;
+    if(update_button(play_pause_btn))last_frame_time=g_clock.MS()*0.001;
     if (play_pause_btn.pressed) {
       step_by_step = !step_by_step;
     }
@@ -405,6 +406,7 @@ public:
     }
   }
   void Render(QapDev&qDev){
+    //frame_counter++;
     RenderImpl(qDev);
     RenderMap(qDev);
     RenderBar(qDev);
@@ -453,9 +455,9 @@ public:
     if(kb.OnDown(VK_HOME)){frame=0;reset();}
     if(kb.OnDown(VK_END)){frame=int(session.ws.size())-1;reset();}
     if(kb.OnDown('N'))set_frame=!set_frame;
-    if(kb.OnDown('S')||kb.OnDown(VK_SPACE)){step_by_step=!step_by_step;reset();}
-    if(kb.OnDown('U'))Sys.UPS_enabled=true;
-    if(kb.OnDown('D'))Sys.UPS_enabled=false;
+    if(/*kb.OnDown('S')||*/kb.OnDown(VK_SPACE)){step_by_step=!step_by_step;reset();}
+    //if(kb.OnDown('U'))Sys.UPS_enabled=true;
+    //if(kb.OnDown('D'))Sys.UPS_enabled=false;
     if(kb.OnDown('Q')){genmap();Sys.UPS_enabled=false;}
     if(kb.OnDown(VK_ESCAPE)){Sys.NeedClose=true;}
     if(kb.OnDown(VK_F9)){reinit_the_same_level();}

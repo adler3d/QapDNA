@@ -4644,62 +4644,30 @@ int QapLR_main(int argc,char*argv[]){
     if(args.replay_in_file){
       auto s=file_get_contents(*args.replay_in_file);
       t_cdn_game replay;
-      //QapLoadFromStr(replay,s);
       t_cdn_game_builder b{replay};
       b.feed(s);
       g_args.num_players=replay.gd.arr.size();
       g_args.seed_initial=replay.gd.seed_initial;
       g_args.seed_strategies=replay.gd.seed_strategies;
       g_args.world_name=replay.gd.world;
-      //QapLoadFromStr(session.replay,s);
       g_args.gui_mode=true;
-      session.init();//auto w=session.world->clone();int i=-1;session.ws2.push_back(w->clone());
-#if(0)
-      auto&arr=replay.tick2cmds;
-      for(int tick=0;tick<arr.size();tick++){
-        auto&ex=arr[tick];
-        //i++;if(i>30)break;
+      session.init();
+      auto&arr=replay.slot2tick2elem;
+      for(int tick=0;tick<replay.fg.tick;tick++){
         int n=0;
-        for(int i=0;i<ex.size();i++){
+        for(int i=0;i<arr.size();i++){
+          auto&p=arr[i];
+          if(tick>=p.size())continue;
           string outerr;
-          session.world->use(i,ex[i],outerr);
+          session.world->use(i,arr[i][tick].cmd,outerr);
           if(outerr.size()){
             int gg=1;
             n++;
           }
         }
-        if(n==ex.size()){
-          int fail=1;
-        }
         session.world->step();
         session.ws.push_back(session.world->clone());
       }
-#endif
-      //auto replay2=session.replay;replay2={};
-      //auto mem=file_get_contents("replay14.cmds");
-      //QapLoadFromStr(replay2,mem);int j=-1;
-      //for(auto&ex:replay2){
-      //  j++;auto&ey=session.replay[j];
-      //  for(int i=0;i<g_args.num_players;i++){
-      //    if(ey[i]!=ex[i]||1){
-      //      int what=1;
-      //      TGame::t_splinter::t_world::t_cmd a,b;
-      //      QapLoadFromStr(a,ey[i]);
-      //      QapLoadFromStr(b,ex[i]);
-      //      int gg=1;
-      //    }
-      //    string outerr;
-      //    w->use(i,ex[i],outerr);
-      //  }
-      //  w->step();
-      //  session.ws2.push_back(w->clone());
-      //  string vpow2,vpow1;
-      //  session.ws[j+1]->get_vpow(0,vpow1);
-      //  w->get_vpow(0,vpow2);
-      //  if(vpow2!=vpow1){
-      //    int wtf=1;
-      //  }
-      //}
       #ifdef _WIN32
       return QapLR_DoNice();
       #else
