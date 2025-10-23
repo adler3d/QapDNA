@@ -3249,8 +3249,6 @@ extern "C" {
     t_cdn_game g,g2;
     s.save_to(g);
     t_cdn_game_builder b2{g2};
-    vector<string> out;
-    for(auto&ex:replay_stream.frags)out.push_back(to_string(ex.size()));
     int fails=0;
     for(int i=0;i<32;i++){
       auto&src=replay_stream.farr[i];
