@@ -3154,13 +3154,13 @@ struct t_replay_stream{
     }
     if(!feed_rv)done=true;
   }
+  t_cdn_game g2;
+  t_cdn_game_builder b2{g2};
   void end(){
     t_cdn_game_stream s;
     QapLoadFromStr(s,buf);
     s.save_to(g);
-    t_cdn_game g2;
-    t_cdn_game_builder b2{g2};
-    b2.feed(buf);
+    //b2.feed(buf);
     auto msg=compare_slot2tick2elem(g.slot2tick2elem,g2.slot2tick2elem);
     if(msg.empty())msg="is equal! nice!";
     #ifdef QAP_EMCC
@@ -3203,6 +3203,7 @@ extern "C" {
   void /*EMSCRIPTEN_KEEPALIVE*/ process_replay_chunk(const char*data,int length) {
     string s(data,length);
     replay_stream.buf+=s;
+    replay_stream.b2.feed(s);
     return;
     #ifndef _WIN32
     EM_ASM({console.log("replay_stream.b.feed::bef");});
