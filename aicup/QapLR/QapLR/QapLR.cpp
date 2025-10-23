@@ -3131,7 +3131,7 @@ struct t_replay_stream{
     //if(!feed_rv)done=true;
   }
   QapClock clock;
-  int consume_time(double max_ms=16){
+  int consume_time(double max_ms=8){
     if(!need_step())return 0;
     auto t0=clock.MS();
     for(int t=1;;t++){
@@ -3142,7 +3142,7 @@ struct t_replay_stream{
     return 0;
   }
   bool need_step(){
-    return g.fg.tick&&check_next_ready();
+    return g.fg.tick&&tick<g.fg.tick&&check_next_ready();
   }
   void do_step(){
     step();
