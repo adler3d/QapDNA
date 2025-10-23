@@ -1,5 +1,4 @@
-﻿void check_it(int);
-#if(0)
+﻿#if(0)
 //#include "socket_adapter.cpp"
 #include "counter.cpp"
 #else
@@ -1975,13 +1974,9 @@ public:
     VID.resize(n*2);
     for(int i=0;i<n;i++)
     {
-      check_it(990);
       vec2d v=Vec2dEx(ang+Pi2*(real(i)/real(n)),1);
-      check_it(991);
       VID[0+i]=AddVertex(pos+v*r0,color,0,0);
-      check_it(992);
       VID[n+i]=AddVertex(pos+v*r1,color,0,0);
-      check_it(993);
     }
     for(int i=0;i<n;i++)
     {
@@ -1989,11 +1984,8 @@ public:
       int b=VID[0+(i+1)%n];
       int c=VID[n+(i+0)%n];
       int d=VID[n+(i+1)%n];
-      check_it(994);
       AddTris(a,b,d);
-      check_it(995);
       AddTris(d,c,a);
-      check_it(996);
     }
   }
 public:
@@ -3131,7 +3123,7 @@ struct t_replay_stream{
     }
     if(!g.fg.tick)return;
     packet++;
-    if(packet<3)
+    //if(packet<3)
     for(;tick<g.fg.tick;tick++){
       #ifndef _WIN32
       EM_ASM({console.log("tick",$0);},tick);
@@ -3165,6 +3157,7 @@ struct t_replay_stream{
   t_cdn_game g2;
   t_cdn_game_builder b2{g2};
   void end(){
+    return;
     t_cdn_game_stream s;
     QapLoadFromStr(s,buf);
     s.save_to(g);
@@ -3186,7 +3179,7 @@ struct t_replay_stream{
       #ifndef _WIN32
       EM_ASM({console.log("tick",$0);},tick);
       #endif
-      if(tick>108)break;
+      //if(tick>108)break;
       int n=0;
       auto&arr=g.slot2tick2elem;
       for(int i=0;i<arr.size();i++){
@@ -3249,7 +3242,7 @@ extern "C" {
     replay_stream.buf+=s;
     replay_stream.frags.push_back(s);
     //replay_stream.b2.feed(s);
-    return;
+    //return;
     #ifndef _WIN32
     EM_ASM({console.log("replay_stream.b.feed::bef");});
     #endif
@@ -3629,7 +3622,7 @@ public:
       #endif
     }
     QAP_EM_LOG("before qDev.Init();");
-    qDev.Init(1024*32*8,1024*32*2*8);
+    qDev.Init(1024*1024,1024*1024*3);
     QAP_EM_LOG("after qDev.Init();");
     InitLevelsInfo();
     //RestartLevel();
@@ -3875,7 +3868,6 @@ public:
       qDev.SetColor(0xffffffff);
       qDev.DrawQuad(0.5,0.5,Atlas.W,Atlas.H,0);
     }
-    check_it(0);
     if(RenderScene_debug)QAP_EM_LOG("after kb.A");
     if(!Menu)return;
     if(Menu->InGame())
@@ -3884,27 +3876,20 @@ public:
         for(auto&ex:g_global_imgs)if(!ex.second.done){QAP_EM_LOG("inside check_frames::fail");return false;}
         return true;
       };
-      check_it(1);
       if(Level.get())if(check_frames()){
-        check_it(2);
         if(RenderScene_debug)QAP_EM_LOG("before Level->Render");
         Level->Render(qDev);
-        check_it(3);
       }
     }else{
       TextRender TE(&qDev);
       qDev.SetColor(0xff000000);
       TE.BeginScope(0,0,&NormFont,&BlurFont);
-      check_it(4);
       Menu->Render(qDev,TE);
-      check_it(5);
       TE.EndScope();
     };
     {
       if(RenderScene_debug)QAP_EM_LOG("before RenderText");
-      check_it(6);
       RenderText(qDev);
-      check_it(7);
       if(RenderScene_debug)QAP_EM_LOG("after RenderText");
     }
   }
@@ -4085,9 +4070,7 @@ extern "C" {
   int render(int nope){
     if(EM_ASM_INT({return (('go' in g_qDev)?0:1);}))return 0;
     if(!replay_stream.done)return 0;
-    check_it(8);
     Game.RenderScene();
-    check_it(9);
     return 0;
   }
   int update(int nope){
@@ -4095,17 +4078,14 @@ extern "C" {
     //QAP_EM_LOG("Game.RenderScene();");
     //Game.RenderScene();
     //QAP_EM_LOG("update_kb();");
-    check_it(10);
     update_kb();
-    check_it(11);
     Game.Update();
-    check_it(12);
     return 0;
   }
   int EMSCRIPTEN_KEEPALIVE qap_malloc(int n){return (int)malloc(n);}
 }
 void init(){
-  qDev.Init(1024*64,1024*64*3);
+  qDev.Init(1024*1024,1024*1024*3);
   Game.Init();
 }
 extern "C" {
@@ -4544,7 +4524,7 @@ public:
     need_init=false;
     Game.Sys_HWND=win.Form.WinPair.hWnd;
     Game.qDev.MountDev(D9Dev);
-    Game.qDev.Init(1024*64,1024*64*3);
+    qDev.Init(1024*1024,1024*1024*3);
     Game.Init();
   }
   void DoMove()override{
@@ -4555,13 +4535,9 @@ public:
     Game.Update();
   };
   void DoDraw()override{
-    check_it(13);
     auto_init();
-    check_it(14);
     Game.qDev.NextFrame();
-    check_it(15);
     Game.RenderScene();
-    check_it(16);
   };
   void Free(){Game.qDev.Free();}
 };

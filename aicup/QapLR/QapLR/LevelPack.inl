@@ -373,32 +373,21 @@ public:
   bool dragging_frame = false; // для отслеживания drag'а (опционально, но удобно)
   void RenderImpl(QapDev&qDev){
     if(!session.world)return;
-    check_it(3010);
     QapDev::BatchScope Scope(qDev);
     t_offcentric_scope scope(qDev,cam_pos,cam_dir,scale,cam_offcentric);
     vec2d mpos=kb.MousePos;
-    check_it(3011);
     qDev.BindTex(0,nullptr);
-    check_it(3012);
     //frame=-1;
     auto n=session.ws.size();auto W=pviewport->size.x;
-    
-    check_it(30131);
     if(set_frame)if(kb.Down[mbLeft])frame=Lerp<real>(0,n+1,(mpos.x+W*0.5)/W);
-    check_it(30132);
     auto&ws=session.ws;
     if(frame<0||frame>=ws.size())frame=-1;
-    check_it(30133);
     lock_guard<mutex> lock(session.mtx);
-    check_it(30134);
     auto&world=frame<0?*session.world:*ws[frame];
-    check_it(30135);
     auto api=world.get_render_api_version();
-    check_it(30136);
     if(api==0){
       world.renderV0(qDev);
     }
-    check_it(30137);
     //auto&w2=frame<0||frame>=session.ws2.size()?*session.world:*session.ws2[frame];
     //auto api2=w2.get_render_api_version();
     //if(api2==0){
@@ -426,15 +415,10 @@ public:
   void Render(QapDev&qDev){
     //lock_guard<mutex> lock(session.mtx);
     //frame_counter++;
-    check_it(301);
     RenderImpl(qDev);
-    check_it(302);
     RenderMap(qDev);
-    check_it(303);
     RenderBar(qDev);
-    check_it(304);
     RenderText(qDev);
-    check_it(305);
   }
   void RenderText(QapDev&qDev){
     TextRender TE(&qDev);
