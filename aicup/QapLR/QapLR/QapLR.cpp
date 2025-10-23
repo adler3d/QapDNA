@@ -3915,6 +3915,7 @@ void update_kb(){
 }
 extern "C" {
   int render(int nope){
+    if(replay_stream.feed_rv)return;
     Game.RenderScene();
     return 0;
   }
