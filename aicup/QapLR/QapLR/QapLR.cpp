@@ -3990,6 +3990,7 @@ void update_kb(){
 }
 extern "C" {
   int render(int nope){
+    if(EM_ASM_INT({(!('go' in g_qDev))}))return 0;
     if(!replay_stream.done)return 0;
     Game.RenderScene();
     return 0;
