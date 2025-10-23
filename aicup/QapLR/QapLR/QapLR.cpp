@@ -3198,6 +3198,7 @@ struct t_replay_stream{
   }
   string buf;
   vector<string> frags;
+  vector<vector<string>> farr;
 } replay_stream;
 
 extern "C" {
@@ -3218,6 +3219,7 @@ extern "C" {
   }
   void process_replay_end(){
     replay_stream.end();
+    for(int i=0;i<32;i++)replay_stream.farr.push_back(replay_stream.frags);
   }
   void feed_them(){
     t_cdn_game_stream s;
@@ -3227,7 +3229,15 @@ extern "C" {
     t_cdn_game_builder b2{g2};
     vector<string> out;
     for(auto&ex:replay_stream.frags)out.push_back(to_string(ex.size()));
+    int fails=0;
+    for(int i=0;i<32;i++){
+      auto&src=replay_stream.farr[i];
+      if(src!=replay_stream.frags)fails++;
+    }
     #ifdef QAP_EMCC
+    EM_ASM({
+      console.log("fails",$0);
+    }, fails);
     EM_ASM({
       console.log(UTF8ToString($0));
     }, ("["+join(out,",")+"]").c_str());
