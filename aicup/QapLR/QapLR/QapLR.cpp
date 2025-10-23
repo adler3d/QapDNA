@@ -3256,15 +3256,28 @@ extern "C" {
       auto&src=replay_stream.farr[i];
       auto err=compare_string_vectors(src,replay_stream.frags);
       if(err.size()){
+        vector<string> outa,outb;auto sa=src[0].substr(0,32);auto sb=replay_stream.frags[0].substr(0,32);
+        string msg;
+        if(sb.size()!=sa.size())msg="sizefail";else{
+          for(int i=0;i<sb.size();i++){
+            outa.push_back(to_string(sa[i]));
+            outb.push_back(to_string(sb[i]));
+          }
+        }
+        auto a="["+join(outa,",")+"]";
+        auto b="["+join(outb,",")+"]";
+        msg+="\n"+a+" "+b;
         #ifdef QAP_EMCC
         EM_ASM({
           console.log(UTF8ToString($0));
-        }, ("vstr_diff_faild_with:"+err).c_str());
+        }, msg.c_str());
         #endif
         fails++;
         break;
       }
     }
+    vector<string> out;
+    for(auto&ex:replay_stream.frags)out.push_back(to_string(ex.size()));
     #ifdef QAP_EMCC
     EM_ASM({
       console.log("fails",$0);
