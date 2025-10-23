@@ -1,5 +1,6 @@
 const G_UPS=128;
 const UPDATE_INTERVAL = 1000 / G_UPS; // 7.8125 мс
+var g_qDev={};
 var qDev={
   parr:[-1,-1,+1,-1,+1,+1,-1,+1].map(e=>e*256),
   // ÷вета теперь uint8_t RGBA (Direct3D9), например: [255,255,255,255, 255,0,0,255, ...]
