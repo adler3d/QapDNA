@@ -3222,6 +3222,15 @@ std::string compare_string_vectors(const std::vector<std::string>& a, const std:
   }
   return ""; // строки равны
 }
+void check_it(){
+  #ifdef QAP_EMCC
+  auto is_debug=EM_ASM_INT({return ("d" in g_qDev)?1:0;});
+  if(!is_debug)return;
+  if(replay_stream.farr[0][0]!=20){
+    EM_ASM({alert("got it");debugger;});
+  }
+  #endif
+}
 extern "C" {
   void /*EMSCRIPTEN_KEEPALIVE*/ process_replay_chunk(const char*data,int length) {
     string s(data,length);
@@ -3854,6 +3863,7 @@ public:
       qDev.SetColor(0xffffffff);
       qDev.DrawQuad(0.5,0.5,Atlas.W,Atlas.H,0);
     }
+    check_it();
     if(RenderScene_debug)QAP_EM_LOG("after kb.A");
     if(!Menu)return;
     if(Menu->InGame())
@@ -3862,20 +3872,27 @@ public:
         for(auto&ex:g_global_imgs)if(!ex.second.done){QAP_EM_LOG("inside check_frames::fail");return false;}
         return true;
       };
+      check_it();
       if(Level.get())if(check_frames()){
+        check_it();
         if(RenderScene_debug)QAP_EM_LOG("before Level->Render");
         Level->Render(qDev);
+        check_it();
       }
     }else{
       TextRender TE(&qDev);
       qDev.SetColor(0xff000000);
       TE.BeginScope(0,0,&NormFont,&BlurFont);
+      check_it();
       Menu->Render(qDev,TE);
+      check_it();
       TE.EndScope();
     };
     {
       if(RenderScene_debug)QAP_EM_LOG("before RenderText");
+      check_it();
       RenderText(qDev);
+      check_it();
       if(RenderScene_debug)QAP_EM_LOG("after RenderText");
     }
   }
@@ -4056,7 +4073,9 @@ extern "C" {
   int render(int nope){
     if(EM_ASM_INT({return (('go' in g_qDev)?0:1);}))return 0;
     if(!replay_stream.done)return 0;
+    check_it();
     Game.RenderScene();
+    check_it();
     return 0;
   }
   int update(int nope){
@@ -4064,8 +4083,11 @@ extern "C" {
     //QAP_EM_LOG("Game.RenderScene();");
     //Game.RenderScene();
     //QAP_EM_LOG("update_kb();");
+    check_it();
     update_kb();
+    check_it();
     Game.Update();
+    check_it();
     return 0;
   }
   int EMSCRIPTEN_KEEPALIVE qap_malloc(int n){return (int)malloc(n);}
@@ -4521,9 +4543,13 @@ public:
     Game.Update();
   };
   void DoDraw()override{
+    check_it();
     auto_init();
+    check_it();
     Game.qDev.NextFrame();
+    check_it();
     Game.RenderScene();
+    check_it();
   };
   void Free(){Game.qDev.Free();}
 };
