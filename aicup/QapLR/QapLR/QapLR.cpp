@@ -3629,7 +3629,7 @@ public:
       #endif
     }
     QAP_EM_LOG("before qDev.Init();");
-    qDev.Init(1024*32,1024*32*2);
+    qDev.Init(1024*32*8,1024*32*2*8);
     QAP_EM_LOG("after qDev.Init();");
     InitLevelsInfo();
     //RestartLevel();
