@@ -3226,7 +3226,7 @@ void check_it(){
   #ifdef QAP_EMCC
   auto is_debug=EM_ASM_INT({return ("d" in g_qDev)?1:0;});
   if(!is_debug)return;
-  if(replay_stream.farr[0][0]!=20){
+  if(replay_stream.frags[0][0]!=20){
     EM_ASM({alert("got it");debugger;});
   }
   #endif
