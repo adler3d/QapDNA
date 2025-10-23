@@ -3115,6 +3115,7 @@ struct t_replay_stream{
   int tick=0;
   bool feed_rv=true;
   bool done=false;
+  int packet=0;
   void update(){
     lock_guard<mutex> lock(session.mtx);
     if(g.gd.arr.size()&&!g_args.num_players){
@@ -3126,6 +3127,8 @@ struct t_replay_stream{
       session.init();
     }
     if(!g.fg.tick)return;
+    packet++;
+    if(packet<3)
     for(;tick<g.fg.tick;tick++){
       #ifndef _WIN32
       EM_ASM({console.log("tick",$0);},tick);
@@ -3153,7 +3156,6 @@ struct t_replay_stream{
       }
       session.world->step();
       session.ws.push_back(session.world->clone());
-
     }
     if(!feed_rv)done=true;
   }
@@ -3926,6 +3928,7 @@ extern "C" {
     return 0;
   }
   int update(int nope){
+    if(!replay_stream.done)return 0;
     //QAP_EM_LOG("Game.RenderScene();");
     //Game.RenderScene();
     //QAP_EM_LOG("update_kb();");
