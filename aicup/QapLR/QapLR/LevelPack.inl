@@ -413,7 +413,7 @@ public:
     }
   }
   void Render(QapDev&qDev){
-    lock_guard<mutex> lock(session.mtx);
+    //lock_guard<mutex> lock(session.mtx);
     //frame_counter++;
     RenderImpl(qDev);
     RenderMap(qDev);

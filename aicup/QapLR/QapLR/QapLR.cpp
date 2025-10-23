@@ -2575,14 +2575,6 @@ public:
   void AddText(const string&text)
   {
     if(text.size()){
-      EM_ASM({console.log("&text",$0)},&text);
-      EM_ASM({console.log("text.size()",$0)},text.size());
-      EM_ASM({console.log("AddText::this",$0)},this);
-      EM_ASM({console.log("AddText::LV.size()",$0)},LV.size());
-      int n=sizeof(LV);
-      for(int i=0;i<n;i+=4){
-        EM_ASM({console.log("AddText::LV::int",$0)},((int*)&LV)[i]);
-      }
       LV.push_back(TextLine(x,y,text));
     }
     BR();
@@ -4727,7 +4719,11 @@ int QapLR_main(int argc,char*argv[]){
       auto s=file_get_contents(*args.replay_in_file);
       t_cdn_game replay;
       t_cdn_game_builder b{replay};
-      b.feed(s); // <--- можно кормить маленькими кусочками
+      int i=0;int n=1024*64;
+      for(;i+n<s.size();i+=n){
+        b.feed(s.substr(i,n)); // <--- можно кормить маленькими кусочками
+      }
+      b.feed(s.substr(i));
       g_args.num_players=replay.gd.arr.size();
       g_args.seed_initial=replay.gd.seed_initial;
       g_args.seed_strategies=replay.gd.seed_strategies;
@@ -4736,6 +4732,7 @@ int QapLR_main(int argc,char*argv[]){
       session.init();
       auto&arr=replay.slot2tick2elem;
       for(int tick=0;tick<replay.fg.tick;tick++){
+        //if(tick>108)break;
         int n=0;
         for(int i=0;i<arr.size();i++){
           auto&p=arr[i];
