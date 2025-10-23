@@ -20,6 +20,9 @@ void LOG(const std::string&str);
 #ifndef _WIN32
 #ifndef QAP_UNIX
 #include <emscripten.h>
+#ifdef __EMSCRIPTEN__
+#define QAP_EMCC
+#endif
 #endif
 #else
 #include <d3d9.h>
@@ -3155,6 +3158,16 @@ struct t_replay_stream{
     t_cdn_game_stream s;
     QapLoadFromStr(s,buf);
     s.save_to(g);
+    t_cdn_game g2;
+    t_cdn_game_builder b2{g};
+    b2.feed(buf);
+    auto msg=compare_slot2tick2elem(g.slot2tick2elem,g2.slot2tick2elem);
+    if(msg.empty())msg="is equal! nice!";
+    #ifdef QAP_EMCC
+    EM_ASM({
+      console.log(UTF8ToString($0));
+    }, msg.c_str());
+    #endif
     g_args.num_players=g.gd.arr.size();
     g_args.seed_initial=g.gd.seed_initial;
     g_args.seed_strategies=g.gd.seed_strategies;
@@ -3165,7 +3178,7 @@ struct t_replay_stream{
       #ifndef _WIN32
       EM_ASM({console.log("tick",$0);},tick);
       #endif
-      if(tick>108)break;
+      //if(tick>108)break;
       int n=0;
       auto&arr=g.slot2tick2elem;
       for(int i=0;i<arr.size();i++){
@@ -4762,8 +4775,13 @@ int QapLR_main(int argc,char*argv[]){
         b.feed(s.substr(i,n)); // <--- можно кормить маленькими кусочками
       }
       b.feed(s.substr(i));
-      replay_stream.buf=s;
-      replay_stream.end();
+      /*replay_stream.buf=s;
+      replay_stream.end();*/
+      t_cdn_game_stream cgs;
+      QapLoadFromStr(cgs,s);
+      t_cdn_game g;
+      cgs.save_to(g);
+      compare_slot2tick2elem(g.slot2tick2elem,replay.slot2tick2elem);
       g_args.num_players=replay.gd.arr.size();
       g_args.seed_initial=replay.gd.seed_initial;
       g_args.seed_strategies=replay.gd.seed_strategies;

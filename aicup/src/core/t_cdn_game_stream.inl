@@ -1,32 +1,31 @@
-bool compare_slot2tick2elem(
+std::string compare_slot2tick2elem(
   const std::vector<std::vector<t_cdn_game::t_elem>>& a,
   const std::vector<std::vector<t_cdn_game::t_elem>>& b)
 {
   if (a.size() != b.size()) {
-    std::cout << "Mismatch: different number of slots. a.size()=" << a.size() << ", b.size()=" << b.size() << "\n";
-    return false;
+    return "Mismatch: different number of slots. a.size()=" + std::to_string(a.size()) +
+           ", b.size()=" + std::to_string(b.size());
   }
   for (size_t slot = 0; slot < a.size(); ++slot) {
     if (a[slot].size() != b[slot].size()) {
-      std::cout << "Mismatch at slot " << slot << ": different number of ticks. a[slot].size()=" << a[slot].size() << ", b[slot].size()=" << b[slot].size() << "\n";
-      return false;
+      return "Mismatch at slot " + std::to_string(slot) +
+             ": different number of ticks. a[slot].size()=" + std::to_string(a[slot].size()) +
+             ", b[slot].size()=" + std::to_string(b[slot].size());
     }
     for (size_t tick = 0; tick < a[slot].size(); ++tick) {
       const auto& elem_a = a[slot][tick];
       const auto& elem_b = b[slot][tick];
-      // Сравниваем поля elem: например cmd и ms
       if (elem_a.cmd != elem_b.cmd) {
-        std::cout << "Mismatch at slot " << slot << ", tick " << tick << ": cmd differs. a=\"" << elem_a.cmd << "\", b=\"" << elem_b.cmd << "\"\n";
-        return false;
+        return "Mismatch at slot " + std::to_string(slot) + ", tick " + std::to_string(tick) +
+               ": cmd differs. a=\"" + elem_a.cmd + "\", b=\"" + elem_b.cmd + "\"";
       }
       if (elem_a.ms != elem_b.ms) {
-        std::cout << "Mismatch at slot " << slot << ", tick " << tick << ": ms differs. a=" << elem_a.ms << ", b=" << elem_b.ms << "\n";
-        return false;
+        return "Mismatch at slot " + std::to_string(slot) + ", tick " + std::to_string(tick) +
+               ": ms differs. a=" + std::to_string(elem_a.ms) + ", b=" + std::to_string(elem_b.ms);
       }
     }
   }
-  std::cout << "No mismatches found, structures are equal.\n";
-  return true;
+  return ""; // пустая строка значит структуры равны
 }
 struct t_cdn_game_stream{
   struct t_gdfgs2e{
