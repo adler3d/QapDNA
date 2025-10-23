@@ -3178,7 +3178,7 @@ struct t_replay_stream{
       #ifndef _WIN32
       EM_ASM({console.log("tick",$0);},tick);
       #endif
-      //if(tick>108)break;
+      if(tick>108)break;
       int n=0;
       auto&arr=g.slot2tick2elem;
       for(int i=0;i<arr.size();i++){
@@ -3197,13 +3197,15 @@ struct t_replay_stream{
     done=true;
   }
   string buf;
+  vector<string> frags;
 } replay_stream;
 
 extern "C" {
   void /*EMSCRIPTEN_KEEPALIVE*/ process_replay_chunk(const char*data,int length) {
     string s(data,length);
     replay_stream.buf+=s;
-    replay_stream.b2.feed(s);
+    replay_stream.frags.push_back(s);
+    //replay_stream.b2.feed(s);
     return;
     #ifndef _WIN32
     EM_ASM({console.log("replay_stream.b.feed::bef");});
@@ -3216,6 +3218,21 @@ extern "C" {
   }
   void process_replay_end(){
     replay_stream.end();
+  }
+  void feed_them(){
+    t_cdn_game_stream s;
+    QapLoadFromStr(s,replay_stream.buf);
+    t_cdn_game g,g2;
+    s.save_to(g);
+    t_cdn_game_builder b2{g2};
+    for(auto&ex:replay_stream.frags)b2.feed(ex);
+    auto msg=compare_slot2tick2elem(g.slot2tick2elem,g2.slot2tick2elem);
+    if(msg.empty())msg="is equal! nice! feed_them!";
+    #ifdef QAP_EMCC
+    EM_ASM({
+      console.log(UTF8ToString($0));
+    }, msg.c_str());
+    #endif
   }
 }
 string g_host="185.92.223.117";
