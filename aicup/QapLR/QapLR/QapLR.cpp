@@ -3222,19 +3222,16 @@ std::string compare_string_vectors(const std::vector<std::string>& a, const std:
   }
   return ""; // строки равны
 }
-void check_it(){
+void check_it(int id){
   #ifdef QAP_EMCC
   auto is_debug=EM_ASM_INT({return ("d" in g_qDev)?1:0;});
   if(!is_debug)return;
   if(replay_stream.frags[0][0]!=20){
-    //EM_ASM({alert("got it");});
-    void*voidPtr=(void*)(rand()%1);
-    union{
-      typedef void (*MyFuncPtr)(int);
-      MyFuncPtr f;
-      void*p;
-    } foo;foo.p=voidPtr;
-    foo.f(10);
+    static bool fireonce=true;
+    if(fireonce){
+      fireonce=false;
+      EM_ASM({console.log("got it at ",$0);},id);
+    }
   }
   #endif
 }
