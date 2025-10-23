@@ -446,8 +446,8 @@ public:
     qDev.DrawQuad(p.x,p.y,wh.x,wh.y,ang);
   }
   void Update(TGame*Game){
-    #ifndef _WIN32
-    if(!replay_stream.done)return;
+    #ifdef QAP_EMCC
+    //if(!replay_stream.done)return;
     #endif
     lock_guard<mutex> lock(session.mtx);
     if(bool neeed_empty_te=true)
