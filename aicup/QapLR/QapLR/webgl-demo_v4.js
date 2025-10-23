@@ -385,7 +385,7 @@ function main() {
     //squareRotation += deltaTime;
     requestAnimationFrame(render);
   }
-  //requestAnimationFrame(render);
+  requestAnimationFrame(render);
   g_render=render;
 }
 function start_render(){
