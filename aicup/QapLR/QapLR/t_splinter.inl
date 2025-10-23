@@ -376,18 +376,22 @@ struct t_splinter{
         0xFFFF6347, // томатный
         0xFF32CD32  // лаймовый зелёный
       };
+      check_it(3013710);
       while(player_colors.size()<w.slot2score.size()){
         player_colors.push_back(QapColor(255,rand()%256,rand()%256,rand()%256));
       }
+      check_it(3013711);
       auto&world=w;
       // --- Рисуем арену ---
       qDev.SetColor(0x40000000);
       qDev.DrawCircle(vec2d{}, world.ARENA_RADIUS,0,2, 64);
-
+      
+      check_it(3013712);
       // --- Рисуем цель ---
       qDev.SetColor(0x8000FF00); // полупрозрачный зелёный
       qDev.DrawCircle(vec2d{}, 5,0,2, 32);
-
+      
+      check_it(3013713);
       // --- Рисуем пружины ---
       for (const auto& spring : world.springs) {
           const auto& a = world.balls[spring.a].pos;
@@ -398,6 +402,7 @@ struct t_splinter{
           qDev.SetColor(0xff000000);
           qDev.DrawLine(a, b, 1.0);
       }
+      check_it(3013714);
       if(0)
       for(int i=0;i<1;i++){
         vec2d c,v;
@@ -413,12 +418,14 @@ struct t_splinter{
         qDev.DrawCircleEx(c+v.SetMag(200), 0, 8.0, 16, 0);
       }
       
+      check_it(3013715);
       for(int i=0;i<world.parr.size();i++){
         auto&ex=world.parr[i];
         qDev.SetColor(player_colors[ex.color]);
         qDev.DrawCircleEx(ex.pos, 0, 8.0, 10, 0);
       }
-
+      
+      check_it(3013716);
       // --- Рисуем шарики ---
       for (int p = 0; p < world.slot2score.size(); p++) {
           for (int i = 0; i < 3; i++) {
@@ -430,6 +437,7 @@ struct t_splinter{
               qDev.DrawCircleEx(ball.pos, 8.0, 9.0, 32, 0);
           }
       }
+      check_it(3013717);
       qDev.SetColor(0xFFFFFFFF);
     }
     int get_tick()override{return w.tick;}
