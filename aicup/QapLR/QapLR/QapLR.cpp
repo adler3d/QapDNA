@@ -3190,7 +3190,6 @@ struct t_replay_stream{
 } replay_stream;
 
 extern "C" {
-  string ;
   void /*EMSCRIPTEN_KEEPALIVE*/ process_replay_chunk(const char*data,int length) {
     string s(data,length);
     replay_stream.buf+=s;
