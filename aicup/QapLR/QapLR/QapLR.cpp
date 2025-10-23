@@ -3159,7 +3159,7 @@ struct t_replay_stream{
     QapLoadFromStr(s,buf);
     s.save_to(g);
     t_cdn_game g2;
-    t_cdn_game_builder b2{g};
+    t_cdn_game_builder b2{g2};
     b2.feed(buf);
     auto msg=compare_slot2tick2elem(g.slot2tick2elem,g2.slot2tick2elem);
     if(msg.empty())msg="is equal! nice!";
