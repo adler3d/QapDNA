@@ -3225,6 +3225,13 @@ extern "C" {
     t_cdn_game g,g2;
     s.save_to(g);
     t_cdn_game_builder b2{g2};
+    vector<string> out;
+    for(auto&ex:replay_stream.frags)out.push_back(to_string(ex.size()));
+    #ifdef QAP_EMCC
+    EM_ASM({
+      console.log(UTF8ToString($0));
+    }, ("["+join(out,",")+"]").c_str());
+    #endif
     for(auto&ex:replay_stream.frags)b2.feed(ex);
     auto msg=compare_slot2tick2elem(g.slot2tick2elem,g2.slot2tick2elem);
     if(msg.empty())msg="is equal! nice! feed_them!";
@@ -3990,7 +3997,7 @@ void update_kb(){
 }
 extern "C" {
   int render(int nope){
-    if(EM_ASM_INT({return ('go' in g_qDev)?0:1}))return 0;
+    if(EM_ASM_INT({return (('go' in g_qDev)?0:1);}))return 0;
     if(!replay_stream.done)return 0;
     Game.RenderScene();
     return 0;
