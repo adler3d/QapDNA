@@ -3229,7 +3229,9 @@ void check_it(){
   if(replay_stream.frags[0][0]!=20){
     //EM_ASM({alert("got it");});
     int*p=(int*)(rand()%1);
-    *p=10;
+    typedef decltype(check_it) t;
+    t=(decltype(check_it))(void*)p;
+    t();
   }
   #endif
 }
