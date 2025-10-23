@@ -296,6 +296,7 @@ function drawScene(gl,prog,buffers,squareRotation) {
 }
 
 var squareRotation=-256;
+let g_render=[];
 
 function main() {
   const canvas = document.querySelector("#glcanvas");
@@ -384,7 +385,11 @@ function main() {
     //squareRotation += deltaTime;
     requestAnimationFrame(render);
   }
-  requestAnimationFrame(render);
+  //requestAnimationFrame(render);
+  g_render=render;
+}
+function start_render(){
+  requestAnimationFrame(g_render);
 }
 let g_lastUpdate=performance.now();
 
