@@ -3867,7 +3867,7 @@ public:
       qDev.SetColor(0xffffffff);
       qDev.DrawQuad(0.5,0.5,Atlas.W,Atlas.H,0);
     }
-    check_it();
+    check_it(0);
     if(RenderScene_debug)QAP_EM_LOG("after kb.A");
     if(!Menu)return;
     if(Menu->InGame())
@@ -3876,27 +3876,27 @@ public:
         for(auto&ex:g_global_imgs)if(!ex.second.done){QAP_EM_LOG("inside check_frames::fail");return false;}
         return true;
       };
-      check_it();
+      check_it(1);
       if(Level.get())if(check_frames()){
-        check_it();
+        check_it(2);
         if(RenderScene_debug)QAP_EM_LOG("before Level->Render");
         Level->Render(qDev);
-        check_it();
+        check_it(3);
       }
     }else{
       TextRender TE(&qDev);
       qDev.SetColor(0xff000000);
       TE.BeginScope(0,0,&NormFont,&BlurFont);
-      check_it();
+      check_it(4);
       Menu->Render(qDev,TE);
-      check_it();
+      check_it(5);
       TE.EndScope();
     };
     {
       if(RenderScene_debug)QAP_EM_LOG("before RenderText");
-      check_it();
+      check_it(6);
       RenderText(qDev);
-      check_it();
+      check_it(7);
       if(RenderScene_debug)QAP_EM_LOG("after RenderText");
     }
   }
@@ -4077,9 +4077,9 @@ extern "C" {
   int render(int nope){
     if(EM_ASM_INT({return (('go' in g_qDev)?0:1);}))return 0;
     if(!replay_stream.done)return 0;
-    check_it();
+    check_it(8);
     Game.RenderScene();
-    check_it();
+    check_it(9);
     return 0;
   }
   int update(int nope){
@@ -4087,11 +4087,11 @@ extern "C" {
     //QAP_EM_LOG("Game.RenderScene();");
     //Game.RenderScene();
     //QAP_EM_LOG("update_kb();");
-    check_it();
+    check_it(10);
     update_kb();
-    check_it();
+    check_it(11);
     Game.Update();
-    check_it();
+    check_it(12);
     return 0;
   }
   int EMSCRIPTEN_KEEPALIVE qap_malloc(int n){return (int)malloc(n);}
@@ -4547,13 +4547,13 @@ public:
     Game.Update();
   };
   void DoDraw()override{
-    check_it();
+    check_it(13);
     auto_init();
-    check_it();
+    check_it(14);
     Game.qDev.NextFrame();
-    check_it();
+    check_it(15);
     Game.RenderScene();
-    check_it();
+    check_it(16);
   };
   void Free(){Game.qDev.Free();}
 };
