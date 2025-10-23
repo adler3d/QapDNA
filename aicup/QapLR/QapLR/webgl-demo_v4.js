@@ -389,6 +389,7 @@ function main() {
   g_render=render;
 }
 function start_render(){
+  g_lastUpdate=performance.now();
   requestAnimationFrame(g_render);
 }
 let g_lastUpdate=performance.now();
