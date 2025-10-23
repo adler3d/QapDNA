@@ -1052,6 +1052,12 @@ struct t_node:t_process,t_node_cache{
     bool connect_to_container_socket(t_docker_api_v2&api,function<void()>&&on_connect) {
       wait_for_socket(api.socket_path_on_host);
       auto&client=api.socket;
+      int waited = 0; int max_wait_ms=1024*5; int poll_interval_ms=16;
+      while (!client.connect_unix(api.socket_path_on_host) && waited < max_wait_ms) {
+        LOG("t_node::client.connect_unix(path) failed with "+api.socket_path_on_host); 
+        std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
+        waited += poll_interval_ms;
+      }
       if (!client.connect_unix(api.socket_path_on_host)) {
         LOG("t_node::client.connect_unix(path) failed with "+api.socket_path_on_host); 
         return false;
