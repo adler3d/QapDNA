@@ -3164,7 +3164,13 @@ struct t_replay_stream{
 extern "C" {
   void /*EMSCRIPTEN_KEEPALIVE*/ process_replay_chunk(const char*data,int length) {
     string s(data,length);
+    #ifndef _WIN32
+    EM_ASM({console.log("replay_stream.b.feed::bef");});
+    #endif
     replay_stream.feed_rv=replay_stream.b.feed(s);//if feed say false then all done
+    #ifndef _WIN32
+    EM_ASM({console.log("replay_stream.b.feed::aft");});
+    #endif
     replay_stream.update();
   }
 }
