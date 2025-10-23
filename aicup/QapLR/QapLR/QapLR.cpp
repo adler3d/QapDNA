@@ -3201,6 +3201,27 @@ struct t_replay_stream{
   vector<vector<string>> farr;
 } replay_stream;
 
+std::string compare_string_vectors(const std::vector<std::string>& a, const std::vector<std::string>& b) {
+  if (a.size() != b.size()) {
+    return "Mismatch: vector sizes differ. a.size() = " + std::to_string(a.size()) +
+            ", b.size() = " + std::to_string(b.size());
+  }
+
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (a[i] != b[i]) {
+      // Формируем цитату из первой строки
+      std::string sampleA = a[i].substr(0, 30);
+      if (a[i].size() > 30) sampleA += "...";
+      std::string sampleB = b[i].substr(0, 30);
+      if (b[i].size() > 30) sampleB += "...";
+
+      return "Mismatch at index " + std::to_string(i) +
+              ": a=\"" + sampleA + "\"" +
+              ", b=\"" + sampleB + "\"";
+    }
+  }
+  return ""; // строки равны
+}
 extern "C" {
   void /*EMSCRIPTEN_KEEPALIVE*/ process_replay_chunk(const char*data,int length) {
     string s(data,length);
@@ -3221,6 +3242,7 @@ extern "C" {
     replay_stream.end();
     for(int i=0;i<32;i++)replay_stream.farr.push_back(replay_stream.frags);
   }
+
   void feed_them(){
     t_cdn_game_stream s;
     QapLoadFromStr(s,replay_stream.buf);
@@ -3232,7 +3254,16 @@ extern "C" {
     int fails=0;
     for(int i=0;i<32;i++){
       auto&src=replay_stream.farr[i];
-      if(src!=replay_stream.frags)fails++;
+      auto err=compare_string_vectors(src,replay_stream.frags);
+      if(err.size()){
+        #ifdef QAP_EMCC
+        EM_ASM({
+          console.log(UTF8ToString($0));
+        }, ("vstr_diff_faild_with:"+err).c_str());
+        #endif
+        fails++;
+        break;
+      }
     }
     #ifdef QAP_EMCC
     EM_ASM({
