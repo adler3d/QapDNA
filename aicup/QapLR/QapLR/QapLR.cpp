@@ -3104,6 +3104,7 @@ struct t_replay_stream{
   int tick=0;
   bool feed_rv=true;
   void update(){
+    lock_guard<mutex> lock(session.mtx);
     if(g.gd.arr.size()&&!g_args.num_players){
       g_args.num_players=g.gd.arr.size();
       g_args.seed_initial=g.gd.seed_initial;

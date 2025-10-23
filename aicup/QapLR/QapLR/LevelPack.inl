@@ -135,6 +135,7 @@ public:
   bool Fail(){return false;}
 public:
   void AddText(TextRender&TE){
+    lock_guard<mutex> lock(session.mtx);
     if(TE.BlurFont&&!inited){inited=true;last_frame_time=g_clock.MS()*0.001;frame_counter=0;gui_init();}else frame_counter++;
     string BEG="^7";
     string SEP=" ^2: ^8";
@@ -412,6 +413,7 @@ public:
     }
   }
   void Render(QapDev&qDev){
+    lock_guard<mutex> lock(session.mtx);
     //frame_counter++;
     RenderImpl(qDev);
     RenderMap(qDev);
@@ -444,6 +446,7 @@ public:
     qDev.DrawQuad(p.x,p.y,wh.x,wh.y,ang);
   }
   void Update(TGame*Game){
+    lock_guard<mutex> lock(session.mtx);
     if(bool neeed_empty_te=true)
     {
       QapDev*pQapDev=nullptr;
