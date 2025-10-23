@@ -1,4 +1,5 @@
-﻿#if(0)
+﻿void check_it(int);
+#if(0)
 //#include "socket_adapter.cpp"
 #include "counter.cpp"
 #else
@@ -1974,9 +1975,13 @@ public:
     VID.resize(n*2);
     for(int i=0;i<n;i++)
     {
+      check_it(990);
       vec2d v=Vec2dEx(ang+Pi2*(real(i)/real(n)),1);
+      check_it(991);
       VID[0+i]=AddVertex(pos+v*r0,color,0,0);
+      check_it(992);
       VID[n+i]=AddVertex(pos+v*r1,color,0,0);
+      check_it(993);
     }
     for(int i=0;i<n;i++)
     {
@@ -1984,8 +1989,11 @@ public:
       int b=VID[0+(i+1)%n];
       int c=VID[n+(i+0)%n];
       int d=VID[n+(i+1)%n];
+      check_it(994);
       AddTris(a,b,d);
+      check_it(995);
       AddTris(d,c,a);
+      check_it(996);
     }
   }
 public:

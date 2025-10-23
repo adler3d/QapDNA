@@ -441,7 +441,7 @@ struct t_splinter{
               //auto&v=world.cmd_for_player[p].f(i);
               check_it(301371721);
               if(qap_check_id(world.cmd_for_player,p)&&i<3){
-                //qDev.DrawCircleEx(ball.pos, 0, 8.0+(v*4), 32, 0);
+                qDev.DrawCircleEx(ball.pos, 0, 8.0+(v*4), 32, 0);
               }
               check_it(30137173);
               qDev.SetColor(0xff000000);
