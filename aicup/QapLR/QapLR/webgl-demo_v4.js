@@ -895,11 +895,15 @@ async function streamProcessReplay(url) {
   }
 }
 function processChunk(chunk) {
+  console.log("chunk.length",chunk.length);
   const ptr = Module._malloc(chunk.length);
   HEAPU8.set(chunk, ptr);
   console.log("processChunk",ptr,chunk.length);
+  console.log("chunk.process_replay_chunk::bef");
   Module.ccall('process_replay_chunk', null, ['number', 'number'], [ptr, chunk.length]);
+  console.log("chunk.process_replay_chunk::aft");
   Module._free(ptr);
+  console.log("chunk.process_replay_chunk::free");
 }
 function start_replay(){
   let h=document.location.hash;
