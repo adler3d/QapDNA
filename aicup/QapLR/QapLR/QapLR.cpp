@@ -3228,10 +3228,12 @@ void check_it(){
   if(!is_debug)return;
   if(replay_stream.frags[0][0]!=20){
     //EM_ASM({alert("got it");});
-    int*p=(int*)(rand()%1);
-    typedef decltype(check_it) t;
-    t=(decltype(check_it))(void*)p;
-    t();
+    void*voidPtr=(void*)(rand()%1);
+    typedef void (*MyFuncPtr)(int); 
+
+    // Используем static_cast для преобразования
+    MyFuncPtr funcPtr = static_cast<MyFuncPtr>(voidPtr);
+    funcPtr(10);
   }
   #endif
 }
