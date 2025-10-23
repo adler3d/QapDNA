@@ -4068,8 +4068,8 @@ void update_kb(){
 }
 extern "C" {
   int render(int nope){
-    if(EM_ASM_INT({return (('go' in g_qDev)?0:1);}))return 0;
-    if(!replay_stream.done)return 0;
+    //if(EM_ASM_INT({return (('go' in g_qDev)?0:1);}))return 0;
+    //if(!replay_stream.done)return 0;
     Game.RenderScene();
     return 0;
   }
