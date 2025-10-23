@@ -431,10 +431,19 @@ struct t_splinter{
           for (int i = 0; i < 3; i++) {
               int idx = p * 3 + i;
               const auto& ball = world.balls[idx];
-              qDev.SetColor(world.slot2deaded[p]?0x40000000:player_colors[p]&0xAAFFFFFF);
+              check_it(30137171);
+              auto deaded=world.slot2deaded[p];
+              check_it(301371712);
+              auto c=player_colors[p];
+              check_it(301371713);
+              qDev.SetColor(deaded?0x40000000:c&0xAAFFFFFF);
+              check_it(30137172);
               qDev.DrawCircleEx(ball.pos, 0, 8.0+(world.cmd_for_player[p].f(i)*4), 32, 0);
+              check_it(30137173);
               qDev.SetColor(0xff000000);
+              check_it(30137174);
               qDev.DrawCircleEx(ball.pos, 8.0, 9.0, 32, 0);
+              check_it(30137175);
           }
       }
       check_it(3013717);
