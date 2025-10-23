@@ -3114,6 +3114,7 @@ struct t_replay_stream{
   t_cdn_game_builder b{g};
   int tick=0;
   bool feed_rv=true;
+  bool done=false;
   void update(){
     lock_guard<mutex> lock(session.mtx);
     if(g.gd.arr.size()&&!g_args.num_players){
@@ -3150,6 +3151,7 @@ struct t_replay_stream{
       session.world->step();
       session.ws.push_back(session.world->clone());
     }
+    if(!feed_rv)done=true;
   }
 } replay_stream;
 
