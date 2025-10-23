@@ -2576,6 +2576,10 @@ public:
   {
     EM_ASM({console.log("AddText::this",$0)},this);
     EM_ASM({console.log("AddText::LV.size()",$0)},LV.size());
+    int n=sizeof(LV);
+    for(int i=0;i<n;i+=4){
+      EM_ASM({console.log("AddText::LV::int",$0,$1)},((int*)&LV)[i]);
+    }
     LV.push_back(TextLine(x,y,text));BR();
   }
   int text_len(const string&text){return GetQ3TextLength(*NormFont,text);}
