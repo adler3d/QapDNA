@@ -3202,8 +3202,8 @@ struct t_replay_stream{
 extern "C" {
   void /*EMSCRIPTEN_KEEPALIVE*/ process_replay_chunk(const char*data,int length) {
     string s(data,length);
-    replay_stream.buf+=s;
-    return;
+    //replay_stream.buf+=s;
+    //return;
     #ifndef _WIN32
     EM_ASM({console.log("replay_stream.b.feed::bef");});
     #endif
@@ -3214,7 +3214,7 @@ extern "C" {
     replay_stream.update();
   }
   void process_replay_end(){
-    replay_stream.end();
+    //replay_stream.end();
   }
 }
 string g_host="185.92.223.117";
