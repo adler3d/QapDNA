@@ -3229,11 +3229,12 @@ void check_it(){
   if(replay_stream.frags[0][0]!=20){
     //EM_ASM({alert("got it");});
     void*voidPtr=(void*)(rand()%1);
-    typedef void (*MyFuncPtr)(int); 
-
-    // Используем static_cast для преобразования
-    MyFuncPtr funcPtr = static_cast<MyFuncPtr>(voidPtr);
-    funcPtr(10);
+    union{
+      typedef void (*MyFuncPtr)(int);
+      MyFuncPtr f;
+      void*p;
+    } foo;foo.p=voidPtr;
+    foo.f(10);
   }
   #endif
 }
