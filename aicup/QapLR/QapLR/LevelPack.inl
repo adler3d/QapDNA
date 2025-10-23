@@ -482,6 +482,7 @@ public:
     if(kb.OnDown(VK_F9)){reinit_the_same_level();}
     bool runned=!Win()&&!Fail();
     UpdateBar();
+    replay_stream.consume_time();
     //if(runned){
     //  bool done=false;
     //  while(session.try_step()){

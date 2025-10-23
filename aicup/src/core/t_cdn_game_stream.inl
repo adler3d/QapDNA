@@ -332,9 +332,9 @@ struct t_cdn_game_builder {
           out.slot2tick2elem[current_slot].emplace_back();
 
         // Записываем элемент
-        if(qap_check_id(out.slot2tick2elem,current_slot)&&qap_check_id(out.slot2tick2elem[current_slot],current_tick)){
-          out.slot2tick2elem[current_slot][current_tick] = std::move(elem_tmp);
-        }
+        //if(qap_check_id(out.slot2tick2elem,current_slot)&&qap_check_id(out.slot2tick2elem[current_slot],current_tick)){
+        out.slot2tick2elem[current_slot][current_tick] = std::move(elem_tmp);
+        //}
 
         ++current_slot;
       }

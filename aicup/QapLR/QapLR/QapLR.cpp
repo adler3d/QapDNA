@@ -3109,7 +3109,7 @@ struct t_replay_stream{
   t_cdn_game_builder b{g};
   int tick=0;
   bool feed_rv=true;
-  bool done=false;
+  //bool done=false;
   int packet=0;
   void update(){
     lock_guard<mutex> lock(session.mtx);
@@ -3121,38 +3121,61 @@ struct t_replay_stream{
       g_args.gui_mode=true;
       session.init();
     }
-    if(!g.fg.tick)return;
     packet++;
+    return;
+    if(!g.fg.tick)return;
     //if(packet<3)
     for(;tick<g.fg.tick;tick++){
-      #ifndef _WIN32
-      EM_ASM({console.log("tick",$0);},tick);
-      #endif
-      int n=0;
-      auto&arr=g.slot2tick2elem;
-      bool next_ready=false;
-      if(!feed_rv)next_ready=true;
-      for(int i=0;!next_ready&&i<arr.size();i++){
-        auto&p=arr[i];
-        if(tick+1>=p.size())continue;
-        next_ready=true;
-        break;
-      }
-      if(!next_ready)break;
-      for(int i=0;i<arr.size();i++){
-        auto&p=arr[i];
-        if(tick>=p.size())continue;
-        string outerr;
-        session.world->use(i,arr[i][tick].cmd,outerr);
-        if(outerr.size()){
-          int gg=1;
-          n++;
-        }
-      }
-      session.world->step();
-      session.ws.push_back(session.world->clone());
+      if(!step())break;
     }
-    if(!feed_rv)done=true;
+    //if(!feed_rv)done=true;
+  }
+  QapClock clock;
+  int consume_time(double max_ms=16){
+    if(!need_step())return;
+    auto t0=clock.MS();
+    for(int t=1;;t++){
+      do_step();
+      if((clock.MS()-t0)>max_ms)return t;
+      if(!need_step())return t;
+    }
+  }
+  bool need_step(){
+    return g.fg.tick&&check_next_ready();
+  }
+  void do_step(){
+    step();
+    tick++;
+  }
+  bool check_next_ready(/*const vector<vector<t_cdn_game::t_elem>>&arr,int tick,bool feed_rv*/){
+    auto&arr=g.slot2tick2elem;
+    if(!feed_rv)return true;
+    for(const auto&p:arr){
+      if(tick+1<p.size())return true;
+    }
+    return false;
+  }
+  bool step(){
+    bool next_ready=check_next_ready();
+    if(!next_ready)return false;
+    #ifndef _WIN32
+    EM_ASM({console.log("tick",$0);},tick);
+    #endif
+    int n=0;
+    auto&arr=g.slot2tick2elem;
+    for(int i=0;i<arr.size();i++){
+      auto&p=arr[i];
+      if(tick>=p.size())continue;
+      string outerr;
+      session.world->use(i,arr[i][tick].cmd,outerr);
+      if(outerr.size()){
+        int gg=1;
+        n++;
+      }
+    }
+    session.world->step();
+    session.ws.push_back(session.world->clone());
+    return true;
   }
   t_cdn_game g2;
   t_cdn_game_builder b2{g2};
@@ -3195,7 +3218,7 @@ struct t_replay_stream{
       session.world->step();
       session.ws.push_back(session.world->clone());
     }
-    done=true;
+    //done=true;
   }
   string buf;
   vector<string> frags;
