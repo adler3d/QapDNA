@@ -3249,6 +3249,11 @@ extern "C" {
     t_cdn_game g,g2;
     s.save_to(g);
     t_cdn_game_builder b2{g2};
+    #ifdef QAP_EMCC
+    EM_ASM({
+      console.log("&replay_stream.frags[0][0]",$0);
+    }, &replay_stream.frags[0][0]);
+    #endif
     int fails=0;
     for(int i=0;i<32;i++){
       auto&src=replay_stream.farr[i];
