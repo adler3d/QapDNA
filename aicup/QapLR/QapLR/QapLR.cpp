@@ -3127,6 +3127,9 @@ struct t_replay_stream{
     }
     if(!g.fg.tick)return;
     for(;tick<g.fg.tick;tick++){
+      #ifndef _WIN32
+      EM_ASM({console.log("tick",$0);},tick);
+      #endif
       int n=0;
       auto&arr=g.slot2tick2elem;
       bool next_ready=false;
@@ -3150,6 +3153,7 @@ struct t_replay_stream{
       }
       session.world->step();
       session.ws.push_back(session.world->clone());
+
     }
     if(!feed_rv)done=true;
   }
