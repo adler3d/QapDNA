@@ -3155,6 +3155,12 @@ struct t_replay_stream{
     t_cdn_game_stream s;
     QapLoadFromStr(s,buf);
     s.save_to(g);
+    g_args.num_players=g.gd.arr.size();
+    g_args.seed_initial=g.gd.seed_initial;
+    g_args.seed_strategies=g.gd.seed_strategies;
+    g_args.world_name=g.gd.world;
+    g_args.gui_mode=true;
+    session.init();
     for(int tick=0;tick<g.fg.tick;tick++){
       #ifndef _WIN32
       EM_ASM({console.log("tick",$0);},tick);
@@ -3162,15 +3168,6 @@ struct t_replay_stream{
       if(tick>108)break;
       int n=0;
       auto&arr=g.slot2tick2elem;
-      bool next_ready=false;
-      if(!feed_rv)next_ready=true;
-      for(int i=0;!next_ready&&i<arr.size();i++){
-        auto&p=arr[i];
-        if(tick+1>=p.size())continue;
-        next_ready=true;
-        break;
-      }
-      if(!next_ready)break;
       for(int i=0;i<arr.size();i++){
         auto&p=arr[i];
         if(tick>=p.size())continue;
@@ -4765,6 +4762,8 @@ int QapLR_main(int argc,char*argv[]){
         b.feed(s.substr(i,n)); // <--- можно кормить маленькими кусочками
       }
       b.feed(s.substr(i));
+      replay_stream.buf=s;
+      replay_stream.end();
       g_args.num_players=replay.gd.arr.size();
       g_args.seed_initial=replay.gd.seed_initial;
       g_args.seed_strategies=replay.gd.seed_strategies;
