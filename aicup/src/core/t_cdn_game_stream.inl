@@ -51,7 +51,50 @@ struct t_cdn_game_stream{
   //===
   string serialize()const{return QapSaveToStr(*this);}
   int size()const{return serialize().size();}
-  void save_to(t_cdn_game&ref){QapNoWay();}
+  void save_to(t_cdn_game&ref) {
+    // Десериализация внутреннего состояния gdfgs2e в структуру
+    t_gdfgs2e gfs;
+    QapLoadFromStr(gfs,gdfgs2e);
+  
+    // Копируем базовую информацию обратно в ref
+    ref.gd = gfs.gd;
+    ref.fg = gfs.fg;
+    ref.slot2err = gfs.slot2err;
+
+    // Десериализуем tick2slot2elem из бинарной строки
+    TDataIO IO;
+    IO.IO.mem = tick2slot2elem;
+  
+    int32_t ticks = 0;
+    IO.load(ticks);
+
+    vector<vector<t_cdn_game::t_elem>> tick2slot2elem_vec(ticks);
+    for (auto &vec : tick2slot2elem_vec) {
+      vec.resize(ref.gd.arr.size());
+    }
+  
+    for (int tick = 0; tick < ticks; tick++) {
+      for (int slot = 0; slot < ref.gd.arr.size(); slot++) {
+        QapLoad(IO, tick2slot2elem_vec[tick][slot]);
+      }
+    }
+
+    // Транспонируем обратно из tick2slot2elem -> slot2tick2elem
+    vector<vector<t_cdn_game::t_elem>> slot2tick2elem_vec(ref.gd.arr.size());
+    int max_ticks = ticks;
+    for (auto &vec : slot2tick2elem_vec) {
+      vec.resize(max_ticks);
+    }
+  
+    for (int tick = 0; tick < max_ticks; tick++) {
+      for (int slot = 0; slot < ref.gd.arr.size(); slot++) {
+        slot2tick2elem_vec[slot][tick] = tick2slot2elem_vec[tick][slot];
+      }
+    }
+
+    ref.slot2tick2elem = std::move(slot2tick2elem_vec);
+    ref.version = version;
+  }
   void load_from(const t_cdn_game&ref){
     t_gdfgs2e gfs;
     gfs.gd=ref.gd;

@@ -3151,11 +3151,50 @@ struct t_replay_stream{
     }
     if(!feed_rv)done=true;
   }
+  void end(){
+    t_cdn_game_stream s;
+    QapLoadFromStr(s,buf);
+    s.save_to(g);
+    for(int tick=0;tick<g.fg.tick;tick++){
+      #ifndef _WIN32
+      EM_ASM({console.log("tick",$0);},tick);
+      #endif
+      if(tick>108)break;
+      int n=0;
+      auto&arr=g.slot2tick2elem;
+      bool next_ready=false;
+      if(!feed_rv)next_ready=true;
+      for(int i=0;!next_ready&&i<arr.size();i++){
+        auto&p=arr[i];
+        if(tick+1>=p.size())continue;
+        next_ready=true;
+        break;
+      }
+      if(!next_ready)break;
+      for(int i=0;i<arr.size();i++){
+        auto&p=arr[i];
+        if(tick>=p.size())continue;
+        string outerr;
+        session.world->use(i,arr[i][tick].cmd,outerr);
+        if(outerr.size()){
+          int gg=1;
+          n++;
+        }
+      }
+      session.world->step();
+      session.ws.push_back(session.world->clone());
+    }
+    done=true;
+  }
+  string buf;
 } replay_stream;
 
 extern "C" {
+  string ;
   void /*EMSCRIPTEN_KEEPALIVE*/ process_replay_chunk(const char*data,int length) {
     string s(data,length);
+    replay_stream.buf+=s;
+    return;
     #ifndef _WIN32
     EM_ASM({console.log("replay_stream.b.feed::bef");});
     #endif
@@ -3164,6 +3203,9 @@ extern "C" {
     EM_ASM({console.log("replay_stream.b.feed::aft");});
     #endif
     replay_stream.update();
+  }
+  void process_replay_end(){
+    replay_stream.end();
   }
 }
 string g_host="185.92.223.117";

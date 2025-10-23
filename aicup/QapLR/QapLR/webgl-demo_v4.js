@@ -873,6 +873,7 @@ async function streamProcessReplay(url) {
       if (bufferOffset > 0) {
         processChunk(buffer.subarray(0, bufferOffset));
       }
+      Module.ccall('process_replay_end', null, [], []);
       console.log('Stream finished');
       break;
     }
