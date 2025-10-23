@@ -3228,7 +3228,7 @@ void check_it(){
   if(!is_debug)return;
   if(replay_stream.frags[0][0]!=20){
     //EM_ASM({alert("got it");});
-    int*p=rand()%1;
+    int*p=(void*)rand()%1;
     *p=10;
   }
   #endif
