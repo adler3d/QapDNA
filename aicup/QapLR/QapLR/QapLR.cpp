@@ -3132,13 +3132,14 @@ struct t_replay_stream{
   }
   QapClock clock;
   int consume_time(double max_ms=16){
-    if(!need_step())return;
+    if(!need_step())return 0;
     auto t0=clock.MS();
     for(int t=1;;t++){
       do_step();
       if((clock.MS()-t0)>max_ms)return t;
       if(!need_step())return t;
     }
+    return 0;
   }
   bool need_step(){
     return g.fg.tick&&check_next_ready();
@@ -4097,7 +4098,7 @@ extern "C" {
     return 0;
   }
   int update(int nope){
-    if(!replay_stream.done)return 0;
+    //if(!replay_stream.done)return 0;
     //QAP_EM_LOG("Game.RenderScene();");
     //Game.RenderScene();
     //QAP_EM_LOG("update_kb();");
