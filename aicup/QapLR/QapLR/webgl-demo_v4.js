@@ -376,6 +376,7 @@ function main() {
     deltaTime = now - then;
     then = now;
     drawScene(gl,prog,null,squareRotation);
+    g_dontupdate=false;
     for(;!g_dontupdate;){
       if(performance.now()-g_lastUpdate>=UPDATE_INTERVAL){
         if(!g_dontupdate)Module.ccall('update','int',["int"],[0]);

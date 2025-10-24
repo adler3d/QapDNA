@@ -3159,11 +3159,11 @@ struct t_replay_stream{
     }
     return false;
   }
-  bool step(int unksrc=1){
+  bool step(){
     bool next_ready=check_next_ready();
     if(!next_ready)return false;
     #ifndef _WIN32
-    EM_ASM({console.log("tick",$0,$1);},tick,unksrc);
+    EM_ASM({console.log("tick",$0);},tick);
     #endif
     int n=0;
     auto&arr=g.slot2tick2elem;
