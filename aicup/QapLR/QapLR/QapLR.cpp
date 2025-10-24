@@ -3140,7 +3140,7 @@ struct t_replay_stream{
       if(!need_step())return t;
     }
     #ifdef QAP_EMCC
-    EM_ASM({g_lastUpdate=performance.now();});
+    EM_ASM({g_lastUpdate=performance.now();g_dontupdate=true;});
     #endif
     return 0;
   }

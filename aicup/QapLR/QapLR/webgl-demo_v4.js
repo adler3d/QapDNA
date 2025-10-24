@@ -376,9 +376,9 @@ function main() {
     deltaTime = now - then;
     then = now;
     drawScene(gl,prog,null,squareRotation);
-    for(;;){
+    for(;!g_dontupdate;){
       if(performance.now()-g_lastUpdate>=UPDATE_INTERVAL){
-        Module.ccall('update','int',["int"],[0]);
+        if(!g_dontupdate)Module.ccall('update','int',["int"],[0]);
         g_lastUpdate+=UPDATE_INTERVAL;
       }else break;
     }
@@ -392,7 +392,7 @@ function start_render(){
   g_lastUpdate=performance.now();
   requestAnimationFrame(g_render);
 }
-let g_lastUpdate=performance.now();
+let g_lastUpdate=performance.now();let g_dontupdate=false;
 
 function update_kb(pD,pC){
   let MAX_KEY=263;
