@@ -386,9 +386,9 @@ public:
     //auto n=session.ws.size();auto W=pviewport->size.x;
     //if(set_frame)if(kb.Down[mbLeft])frame=Lerp<real>(0,n+1,(mpos.x+W*0.5)/W);
     auto&ws=session.ws;
-    if(frame<0||frame>=ws.size())frame=-1;
+    if(frame>=ws.size())frame=int(ws.size())-1;if(frame<0)frame=0;
     lock_guard<mutex> lock(session.mtx);
-    auto&world=frame<0?*session.world:*ws[frame];
+    auto&world=frame<0||frame>=ws.size()?*session.world:*ws[frame];
     auto api=world.get_render_api_version();
     if(api==0){
       world.renderV0(qDev);
