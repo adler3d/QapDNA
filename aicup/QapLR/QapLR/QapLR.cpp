@@ -3140,7 +3140,7 @@ struct t_replay_stream{
       if(!need_step())return t;
     }
     #ifdef QAP_EMCC
-    EM_ASM({let g_lastUpdate=performance.now();});
+    EM_ASM({g_lastUpdate=performance.now();});
     #endif
     return 0;
   }
@@ -3148,7 +3148,7 @@ struct t_replay_stream{
     return g.fg.tick&&tick<g.fg.tick&&check_next_ready();
   }
   void do_step(){
-    step();
+    step(0);
     tick++;
   }
   bool check_next_ready(/*const vector<vector<t_cdn_game::t_elem>>&arr,int tick,bool feed_rv*/){
@@ -3159,11 +3159,11 @@ struct t_replay_stream{
     }
     return false;
   }
-  bool step(){
+  bool step(int unksrc=1){
     bool next_ready=check_next_ready();
     if(!next_ready)return false;
     #ifndef _WIN32
-    EM_ASM({console.log("tick",$0);},tick);
+    EM_ASM({console.log("tick",$0,$1);},tick,unksrc);
     #endif
     int n=0;
     auto&arr=g.slot2tick2elem;
