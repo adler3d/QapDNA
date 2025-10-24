@@ -3148,7 +3148,7 @@ struct t_replay_stream{
     return g.fg.tick&&tick<g.fg.tick&&check_next_ready();
   }
   void do_step(){
-    step(0);
+    step();
     tick++;
   }
   bool check_next_ready(/*const vector<vector<t_cdn_game::t_elem>>&arr,int tick,bool feed_rv*/){
