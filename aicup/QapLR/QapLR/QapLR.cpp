@@ -3131,7 +3131,7 @@ struct t_replay_stream{
     //if(!feed_rv)done=true;
   }
   QapClock clock;
-  int consume_time(double max_ms=8){
+  int consume_time(double max_ms=14){
     if(!need_step())return 0;
     auto t0=clock.MS();
     int t=1;

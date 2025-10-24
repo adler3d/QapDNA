@@ -232,10 +232,10 @@ public:
     }
   };
 
-  void draw_scrollbar(QapDev& qDev, const t_scrollbar& sb,QapColor c=0xFF0000FF) {
+  void draw_scrollbar(QapDev& qDev, const t_scrollbar& sb,QapColor c=0xFF0000FF,bool ground=true) {
     // Фон
     qDev.color = 0xFF000000;
-    qDev.DrawQuad(sb.center.x, sb.center.y, sb.size.x, sb.size.y);
+    if(ground)qDev.DrawQuad(sb.center.x, sb.center.y, sb.size.x, sb.size.y);
 
     real handle_x = sb.get_pixel_pos()-sb.pos*sb.size.x*0.5;
     qDev.color = c;
@@ -292,6 +292,7 @@ public:
   }
   t_scrollbar frame_scrollbar;
   t_scrollbar speed_scrollbar;
+  t_scrollbar loadbar;
   t_button play_pause_btn;
   void gui_init(){
     real bar_y = pviewport->get_vertex_by_dir(vec2d(-1, -1)).y + 8*2;
@@ -306,6 +307,7 @@ public:
     speed_scrollbar.center = vec2d(W * 0.5 - 50, bar_y);
     speed_scrollbar.size = vec2d(80, 2*16);
     speed_scrollbar.pos = 0.0;
+    loadbar=frame_scrollbar;loadbar.size.y*=0.75;
     set_playback_speed(get_world_type()==EWorldType::Continuous?Sys.UPS:8.0);
   }
   void UpdateBar(){
@@ -313,6 +315,7 @@ public:
     if (play_pause_btn.pressed) {
       step_by_step = !step_by_step;
     }
+    double rsgfgt=rsgfgt?replay_stream.g.fg.tick:1e9;
     EWorldType wtype = get_world_type();
     vec2d mpos = kb.MousePos;
 
@@ -320,7 +323,7 @@ public:
       if (dragging_frame||frame_scrollbar.hit_test(mpos)) {
         dragging_frame=true;
         frame_scrollbar.set_by_mouse_x(mpos.x);
-        auto n = session.ws.size();
+        auto n = rsgfgt;
         frame = n > 0 ? Clamp<int>(frame_scrollbar.pos * n, 0, (int)n - 1) : -1;
       }
       if (speed_scrollbar.hit_test(mpos)&&!dragging_frame) {
@@ -344,7 +347,7 @@ public:
           int steps = (int)(elapsed / target_interval);
 
           // Но не выходим за границы
-          int max_possible = (int)session.ws.size() - 1 - frame;
+          int max_possible = (int)rsgfgt - 1 - frame;
           if (max_possible <= 0) {
             // Достигли конца
             //step_by_step = true;
@@ -356,16 +359,18 @@ public:
             last_frame_time += actual_steps * target_interval;
 
             // Синхронизируем скроллбар
-            frame_scrollbar.pos = real(frame) / session.ws.size();
+            frame_scrollbar.pos = real(frame) / rsgfgt;
           }
         }
       }
     }
-    frame_scrollbar.pos = real(frame) / session.ws.size();
+    frame_scrollbar.pos=real(frame)/rsgfgt;
+    loadbar.pos=replay_stream.tick/rsgfgt;
   }
   void RenderBar(QapDev& qDev) {
     qDev.BindTex(0, nullptr);
-    draw_scrollbar(qDev, frame_scrollbar);
+    draw_scrollbar(qDev, loadbar,0xffff0000,true);
+    draw_scrollbar(qDev, frame_scrollbar,0xff0000ff,false);
     draw_scrollbar(qDev, speed_scrollbar,0xFF008100);
     draw_play_pause_button(qDev, play_pause_btn, step_by_step);
   }
@@ -378,8 +383,8 @@ public:
     vec2d mpos=kb.MousePos;
     qDev.BindTex(0,nullptr);
     //frame=-1;
-    auto n=session.ws.size();auto W=pviewport->size.x;
-    if(set_frame)if(kb.Down[mbLeft])frame=Lerp<real>(0,n+1,(mpos.x+W*0.5)/W);
+    //auto n=session.ws.size();auto W=pviewport->size.x;
+    //if(set_frame)if(kb.Down[mbLeft])frame=Lerp<real>(0,n+1,(mpos.x+W*0.5)/W);
     auto&ws=session.ws;
     if(frame<0||frame>=ws.size())frame=-1;
     lock_guard<mutex> lock(session.mtx);
