@@ -3134,15 +3134,16 @@ struct t_replay_stream{
   int consume_time(double max_ms=8){
     if(!need_step())return 0;
     auto t0=clock.MS();
-    for(int t=1;;t++){
+    int t=1;
+    for(;;t++){
       do_step();
-      if((clock.MS()-t0)>max_ms)return t;
-      if(!need_step())return t;
+      if((clock.MS()-t0)>max_ms)break;
+      if(!need_step())break;
     }
     #ifdef QAP_EMCC
     EM_ASM({g_lastUpdate=performance.now();g_dontupdate=true;});
     #endif
-    return 0;
+    return t;
   }
   bool need_step(){
     return g.fg.tick&&tick<g.fg.tick&&check_next_ready();
