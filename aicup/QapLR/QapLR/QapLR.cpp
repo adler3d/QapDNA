@@ -3112,13 +3112,16 @@ struct t_replay_stream{
   //bool done=false;
   int packet=0;
   void update(){
-    lock_guard<mutex> lock(session.mtx);
     if(g.gd.arr.size()&&!g_args.num_players){
       g_args.num_players=g.gd.arr.size();
       g_args.seed_initial=g.gd.seed_initial;
       g_args.seed_strategies=g.gd.seed_strategies;
       g_args.world_name=g.gd.world;
       g_args.gui_mode=true;
+      while(g_args.player_names.size()<g_args.num_players){
+        auto id=g_args.player_names.size();
+        g_args.player_names.push_back(g.gd.arr[id].coder/*:"Player"+to_string(id)*/);
+      }
       session.init();
     }
     packet++;
@@ -3143,6 +3146,7 @@ struct t_replay_stream{
     #ifdef QAP_EMCC
     EM_ASM({g_lastUpdate=performance.now();g_dontupdate=true;});
     #endif
+    Sys.UPS_enabled=tick>=g.fg.tick;
     return t;
   }
   bool need_step(){
@@ -4893,6 +4897,11 @@ int QapLR_main(int argc,char*argv[]){
 
     if(args.replay_in_file){
       auto s=file_get_contents(*args.replay_in_file);
+      g_args.num_players=0;
+      replay_stream.b.feed(s);
+      replay_stream.update();
+      //replay_stream
+      /*
       t_cdn_game replay;
       t_cdn_game_builder b{replay};
       int i=0;int n=1024*64;
@@ -4900,8 +4909,8 @@ int QapLR_main(int argc,char*argv[]){
         b.feed(s.substr(i,n)); // <--- можно кормить маленькими кусочками
       }
       b.feed(s.substr(i));
-      /*replay_stream.buf=s;
-      replay_stream.end();*/
+      //replay_stream.buf=s;
+      //replay_stream.end();
       t_cdn_game_stream cgs;
       QapLoadFromStr(cgs,s);
       t_cdn_game g;
@@ -4929,7 +4938,7 @@ int QapLR_main(int argc,char*argv[]){
         }
         session.world->step();
         session.ws.push_back(session.world->clone());
-      }
+      }*/
       #ifdef _WIN32
       return QapLR_DoNice();
       #else

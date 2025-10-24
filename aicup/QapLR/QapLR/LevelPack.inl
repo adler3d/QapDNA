@@ -143,15 +143,22 @@ public:
     GOO("time",qap_time());
     GOO("frame",IToS(frame));
     GOO("playback_speed",FToS(playback_speed));
-    GOO("curr_t",FToS(!session.world?0:session.world->get_tick()*1.0/Sys.UPS));
+    if(frame>=session.ws.size())frame=int(session.ws.size())-1;if(frame<0)frame=0;
+    auto&world=frame<0||frame>=session.ws.size()?session.world:session.ws[frame];
+    GOO("curr_t",FToS(!world?0:world->get_tick()*1.0/Sys.UPS));
     GOO("seed",IToS(g_args.seed_initial));
     TE.AddText("^7---");
-    vector<int> is_alive;if(session.world)session.world->is_alive(is_alive);
+    vector<int> is_alive;if(world)world->is_alive(is_alive);
+    vector<double> scores;if(world)world->get_score(scores);
+    int ppad=0;
+    for(int i=0;i<g_args.num_players;i++){ppad=max(ppad,g_args.player_names[i].size());}
+    auto pad=[](int n,const string&s){return string(n-s.size(),' ')+s;};
     for(int i=0;i<g_args.num_players;i++){
-      string color="^7waiting";
-      if(session.carr[i])color=session.connected[i]?(is_alive[i]?"^3online":"^2deaded"):"^4offline";
+      string color="^3waiting";
+      if(session.carr[i])color=session.connected[i]?(is_alive[i]?"^2online":"^7deaded"):"^4offline";
       if(session.carr[i]&&session.carr[i]->network_state==session.carr[i]->nsErr)color="^1error";
-      GOO("player_status["+IToS(i)+"]",color);
+      GOO(pad(ppad,g_args.player_names[i]),(is_alive[i]?"^2":color.substr(0,2))+FToS2(scores[i]));
+      //GOO("player_status["+IToS(i)+"]",color);
     }
     TE.AddText("^7---");
     #ifndef _WIN32
@@ -315,7 +322,7 @@ public:
     if (play_pause_btn.pressed) {
       step_by_step = !step_by_step;
     }
-    double rsgfgt=rsgfgt?replay_stream.g.fg.tick:1e9;
+    double rsgfgt=replay_stream.g.fg.tick?replay_stream.g.fg.tick+1:1e9;
     EWorldType wtype = get_world_type();
     vec2d mpos = kb.MousePos;
 
