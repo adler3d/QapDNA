@@ -3131,7 +3131,7 @@ struct t_replay_stream{
     //if(!feed_rv)done=true;
   }
   QapClock clock;
-  int consume_time(double max_ms=2){
+  int consume_time(double max_ms=8){
     if(!need_step())return 0;
     auto t0=clock.MS();
     for(int t=1;;t++){
@@ -3139,6 +3139,9 @@ struct t_replay_stream{
       if((clock.MS()-t0)>max_ms)return t;
       if(!need_step())return t;
     }
+    #ifdef QAP_EMCC
+    EM_ASM({let g_lastUpdate=performance.now();});
+    #endif
     return 0;
   }
   bool need_step(){
