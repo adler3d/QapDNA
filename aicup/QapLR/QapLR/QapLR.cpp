@@ -2853,6 +2853,7 @@ struct i_world{
   virtual void renderV0(QapDev&qDev){}
   virtual int get_render_api_version(){return 0;}
   virtual int get_tick()=0;
+  virtual string diff(const string&vpow)=0;
 };
 unique_ptr<i_world> TGame_mk_world(const string&world);
 struct GameSession {
@@ -3111,6 +3112,7 @@ struct t_replay_stream{
   bool feed_rv=true;
   //bool done=false;
   int packet=0;
+  vector<string> worlds;
   void update(){
     if(g.gd.arr.size()&&!g_args.num_players){
       g_args.num_players=g.gd.arr.size();
@@ -3123,6 +3125,11 @@ struct t_replay_stream{
         g_args.player_names.push_back(g.gd.arr[id].coder/*:"Player"+to_string(id)*/);
       }
       session.init();
+      //for(auto&w:session.ws){
+      //  string s;w->get_vpow(-1,s);worlds.push_back(s);
+      //}
+      auto s=file_get_contents("15.bin");
+      QapLoadFromStr(worlds,s);
     }
     packet++;
     return;
@@ -3139,7 +3146,19 @@ struct t_replay_stream{
     auto t0=clock.MS();
     int t=1;
     for(;;t++){
-      do_step();
+      string wpov;
+      session.world->get_vpow(-1,wpov);
+      if(wpov!=worlds[tick]){
+        auto msg=session.world->diff(worlds[tick]);
+        int wtf=1;
+      }
+      do_step();{
+      string wpov;
+      session.world->get_vpow(-1,wpov);
+      if(wpov!=worlds[tick]){
+        auto msg=session.world->diff(worlds[tick]);
+        int wtf=1;
+      }}
       if((clock.MS()-t0)>max_ms)break;
       if(!need_step())break;
     }
@@ -3147,6 +3166,7 @@ struct t_replay_stream{
     EM_ASM({g_lastUpdate=performance.now();g_dontupdate=true;});
     #endif
     Sys.UPS_enabled=tick>=g.fg.tick;
+    if(tick+1==g.fg.tick)test();
     return t;
   }
   bool need_step(){
@@ -3188,6 +3208,15 @@ struct t_replay_stream{
   }
   t_cdn_game g2;
   t_cdn_game_builder b2{g2};
+  void test(){
+    return;
+    vector<string> worlds;
+    for(auto&w:session.ws){
+      string s;w->get_vpow(-1,s);worlds.push_back(s);
+    }
+    file_put_contents("15.bin",QapSaveToStr(worlds));
+    int gg=1;
+  }
   void end(){
     return;
     t_cdn_game_stream s;

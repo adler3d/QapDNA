@@ -1299,8 +1299,11 @@ void setup_main(t_main&m){
   m.ai2cid.push_back(2);
   qap_add_back(m.carr).set(3,"Admin","admin@example.com","admin");
 }
+#include "t_main_test.h"
 #include <signal.h>
 int main(int argc,char*argv[]){
+  main_test();//t_coder_rec::t_source
+  return 0;
   signal(SIGPIPE, SIG_IGN);
   srand(time(0));
   if(bool prod=true){

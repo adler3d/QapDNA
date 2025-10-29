@@ -257,12 +257,113 @@ struct t_splinter{
           }
       }
       static bool add_point(t_world&w,int i,std::mt19937&gen){
-        auto r=[&gen](){static std::uniform_real_distribution<double>dist(-1.0,1.0);return vec2d{dist(gen),dist(gen)};};
+        auto r=[&gen](){static std::uniform_real_distribution<double>dist(-1.0,1.0);auto x=dist(gen);return vec2d{x,dist(gen)};};
         auto&b=qap_add_back(w.parr);
         b.pos=r()*w.ARENA_RADIUS;b.color=i%w.slot2score.size();
         if(b.pos.Mag()>w.ARENA_RADIUS){i--;w.parr.pop_back();return false;}
         return true;
       };
+//#include <string>
+//#include <sstream>
+//#include <iomanip>
+
+static std::string compare_t_ball(const t_ball& a, const t_ball& b) {
+    #define CMP(field) if (a.field != b.field) return #field;
+    CMP(pos.x); CMP(pos.y);
+    CMP(vel.x); CMP(vel.y);
+    CMP(mass);
+    return "";
+}
+#undef CMP
+static std::string compare_t_point(const t_point& a, const t_point& b) {
+    #define CMP(field) if (a.field != b.field) return #field;
+    CMP(pos.x); CMP(pos.y);
+    CMP(v.x);   CMP(v.y);
+    CMP(deaded);
+    CMP(color);
+    return "";
+}
+#undef CMP
+static std::string compare_t_spring(const t_spring& a, const t_spring& b) {
+    #define CMP(field) if (a.field != b.field) return #field;
+    CMP(a);
+    CMP(b);
+    CMP(rest_length);
+    CMP(k);
+    return "";
+}
+#undef CMP
+static std::string compare_t_cmd(const t_cmd& a, const t_cmd& b) {
+    #define CMP(field) if (a.field != b.field) return #field;
+    CMP(spring0_new_rest);
+    CMP(spring1_new_rest);
+    CMP(spring2_new_rest);
+    CMP(friction0);
+    CMP(friction1);
+    CMP(friction2);
+    return "";
+}
+#undef CMP
+static std::string compare_int(const int& a, const int& b) {
+    if (a!= b) return "#";
+    return "";
+}
+static std::string compare_double(const double& a, const double& b) {
+    if (a!= b) return "#";
+    return "";
+}
+static std::string compare_worlds(const t_world& a, const t_world& b) {
+    std::ostringstream path;
+// Сравнение примитивов
+    #define CMP(field) \
+        if (a.field != b.field) { \
+            path << #field; \
+            return path.str(); \
+        }
+
+    // Сравнение векторов с индексами
+    #define CMP_VECTOR(vec, type) \
+        if (a.vec.size() != b.vec.size()) { \
+            path << #vec "[size]"; \
+            return path.str(); \
+        } \
+        for (size_t i = 0; i < a.vec.size(); ++i) { \
+            std::ostringstream subpath; \
+            subpath << #vec "[" << i << "]"; \
+            auto diff = compare_ ## type(a.vec[i], b.vec[i]); \
+            if (!diff.empty()) { \
+                path << subpath.str() << "." << diff; \
+                return path.str(); \
+            } \
+        }
+
+    // Сравнение вложенных структур
+    #define CMP_STRUCT(field, type) \
+        { \
+            auto diff = compare_ ## type(a.field, b.field); \
+            if (!diff.empty()) { \
+                path << #field << "." << diff; \
+                return path.str(); \
+            } \
+        }
+
+    // === Примитивные поля t_world ===
+    CMP(your_id);
+    CMP(tick);
+    CMP(ARENA_RADIUS);
+
+    // === Вектора ===
+    CMP_VECTOR(balls, t_ball);
+    CMP_VECTOR(springs, t_spring);
+    CMP_VECTOR(parr, t_point);
+    CMP_VECTOR(slot2deaded, int);
+    CMP_VECTOR(slot2score, double);
+    CMP_VECTOR(cmd_for_player, t_cmd);
+
+    // Если всё совпадает
+    return "";
+#undef CMP
+}
   };
   static void init_world(t_world&world,std::mt19937&gen,uint32_t num_players) {
     // Очищаем
@@ -283,7 +384,7 @@ struct t_splinter{
 
     const double REST_LENGTH = 30.0;
     
-    auto r=[&gen](){static std::uniform_real_distribution<double>dist(-1.0,1.0);return vec2d{dist(gen),dist(gen)};};
+    auto r=[&gen](){static std::uniform_real_distribution<double>dist(-1.0,1.0);auto x=dist(gen);return vec2d{x,dist(gen)};};
     world.cmd_for_player.resize(num_players);
     for (int p = 0; p < num_players; p++) {
       int base_idx = world.balls.size();
@@ -332,6 +433,11 @@ struct t_splinter{
     int init_from_config(const string&cfg,string&outmsg)override{
       outmsg="no impl";
       return 0;
+    }
+    string diff(const string&vpow)override{
+      t_world w2;
+      QapLoadFromStr(w2,vpow);
+      return t_world::compare_worlds(w,w2);
     }
     unique_ptr<i_world> clone()override{return make_unique<t_world_impl>(*this);}
     void renderV0(QapDev&qDev)override{
