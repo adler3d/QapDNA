@@ -1008,28 +1008,7 @@ int main_test_gen(){
 "7|S|S|C|A|N\n"));
   print_strategy(17305345489350727204);
   cout<<"---\n";
-  //for (int i = 0; i < 3;i++){
-  //  g(generous_tft_num);g(opportunistic_num);g(fast_trust_num);g(ada);f(ada);
-  //  for(auto v:meta_pack)q(v);
-  //}
-  /*
-  for(int i=0;i<59;i++){
-    add_some_by_random(mt.garr,encode_strategy(generate_reachable_strategy(rng)));
-  }*/
-  if(0)for(int i=0;i<60*1000;i++){
-    //f(encode_strategy(generate_reachable_strategy(rng)));
-    bool lastwin=false;
-    if(add_finished_game(mt,s,&lastwin)){if(!lastwin){
-      mt.garr.pop_back();
-      s.phases[0]->uids.erase(mt.garr.size());
-    }else{
-      cout<<i<<"\n";
-    }}
-  }
-  /*for(int i=0;i<mt_games_per_phase;i++){
-    //if(rand()%3==0)f(encode_strategy(generate_reachable_strategy(rng)));
-    add_finished_game(mt,s);
-  }*/
+
   auto rmp=[&](const string&phase){
     record_all_ranks(s,phase);
     record_all_tracked_ranks(s,phase);
