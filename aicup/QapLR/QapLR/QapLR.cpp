@@ -3146,19 +3146,19 @@ struct t_replay_stream{
     auto t0=clock.MS();
     int t=1;
     for(;;t++){
-      string wpov;
-      session.world->get_vpow(-1,wpov);
-      if(wpov!=worlds[tick]){
-        auto msg=session.world->diff(worlds[tick]);
-        int wtf=1;
-      }
-      do_step();{
-      string wpov;
-      session.world->get_vpow(-1,wpov);
-      if(wpov!=worlds[tick]){
-        auto msg=session.world->diff(worlds[tick]);
-        int wtf=1;
-      }}
+      //string wpov;
+      //session.world->get_vpow(-1,wpov);
+      //if(wpov!=worlds[tick]){
+      //  auto msg=session.world->diff(worlds[tick]);
+      //  int wtf=1;
+      //}
+      do_step();//{
+      //string wpov;
+      //session.world->get_vpow(-1,wpov);
+      //if(wpov!=worlds[tick]){
+      //  auto msg=session.world->diff(worlds[tick]);
+      //  int wtf=1;
+      //}}
       if((clock.MS()-t0)>max_ms)break;
       if(!need_step())break;
     }
