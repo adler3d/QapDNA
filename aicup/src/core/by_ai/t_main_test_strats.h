@@ -3308,3 +3308,84 @@ double evaluate_world_v1_by_alice_v2(
 
     return score;
 }
+#define DEF_CONST(param, importance, base, from, to, func) \
+    constexpr double param = base; /* importance: importance, range: [from, to], func: func */
+
+double evaluate_world_v1_by_perplexity_v2(const t_pubg_world& world_before, const t_pubg_world& world_after, int my_id) {
+    // Константы для настройки и масштабирования
+    DEF_CONST(DEATH_PENALTY, 10.0, 10000.0, 5000.0, 20000.0, linear)
+    DEF_CONST(TICKS_SURVIVED_WEIGHT, 1.0, 1.0, 0.5, 2.0, linear)
+    DEF_CONST(DAMAGE_DEALT_WEIGHT, 0.7, 0.314, 0.1, 1.0, linear)
+    DEF_CONST(FRAGS_WEIGHT, 0.9, 50.0, 10.0, 100.0, linear)
+    DEF_CONST(ENERGY_WEIGHT, 0.2, 0.1, 0.05, 0.5, linear)
+    DEF_CONST(HP_WEIGHT, 1.6, 0.5, 0.2, 1.5, linear)
+    DEF_CONST(SAFE_ZONE_BONUS, 0.5, 5.0, 1.0, 10.0, linear)
+    DEF_CONST(SAFE_ZONE_PENALTY, 0.7, -5.0, -1.0, -10.0, linear)
+    DEF_CONST(CENTER_APPROACH_BONUS, 0.3, 2.0, 0.5, 5.0, linear)
+    DEF_CONST(CENTER_MOVE_PENALTY, 0.3, -2.0, -0.5, -5.0, linear)
+    DEF_CONST(LOW_HP_THRESHOLD, 0.9, 30.0, 10.0, 50.0, linear)
+    DEF_CONST(ENEMY_THREAT_WEIGHT, 1.0, -20.0, -50.0, -10.0, linear)  // штраф за близкого сильного врага
+
+    const auto& before = world_before.agents[my_id];
+    const auto& after = world_after.agents[my_id];
+
+    // Большой штраф за смерть
+    if (!after.alive) return -DEATH_PENALTY;
+
+    double score = 0.0;
+
+    // 1. Выживание — плюс за прирост выживших тиков
+    score += (after.ticks_survived - before.ticks_survived) * TICKS_SURVIVED_WEIGHT;
+
+    // 2. Нанесённый урон — мотивировать искать цель для атаки
+    score += (after.damage_dealt - before.damage_dealt) * DAMAGE_DEALT_WEIGHT;
+
+    // 3. Фраги — крайне важны для финального результата
+    score += (after.frags - before.frags) * FRAGS_WEIGHT;
+
+    // 4. Сохранение энергии — важно для возможности двигаться и атаковать
+    score += (after.energy - before.energy) * ENERGY_WEIGHT;
+
+    // 5. Здоровье — сильный порог, урон сильно бьёт по баллу
+    score += (after.hp - before.hp) * HP_WEIGHT;
+
+    // 6. Бонус за нахождение внутри безопасной зоны
+    int dist_after_sq = after.x * after.x + after.y * after.y;
+    int R = world_after.R;
+    if (dist_after_sq < R * R) {
+        score += SAFE_ZONE_BONUS;
+    } else {
+        score += SAFE_ZONE_PENALTY;
+    }
+
+    // 7. Поощрение движения к центру, чтобы избегать зоны урона (градиент)
+    int dist_before_sq = before.x * before.x + before.y * before.y;
+    double dist_before = std::sqrt(static_cast<double>(dist_before_sq));
+    double dist_after = std::sqrt(static_cast<double>(dist_after_sq));
+    if (dist_after < dist_before) {
+        score += CENTER_APPROACH_BONUS;
+    } else {
+        score += CENTER_MOVE_PENALTY;
+    }
+
+    // 8. Учитываем угрозу от близких врагов (улучшение соображения врагов)
+    // Найдём здоровье ближайшего вражеского агента
+    int min_enemy_hp = 10000;
+    int threat_dist_sq = 1000000;
+    for (const auto& enemy : world_after.agents) {
+        if (&enemy == &after || !enemy.alive) continue;
+        int dx = after.x - enemy.x;
+        int dy = after.y - enemy.y;
+        int dist_sq = dx*dx + dy*dy;
+        if (dist_sq < threat_dist_sq) {
+            threat_dist_sq = dist_sq;
+            min_enemy_hp = enemy.hp;
+        }
+    }
+    // Если у врага много хп и он близко — минус в score
+    if (threat_dist_sq < 400*400 && min_enemy_hp > LOW_HP_THRESHOLD) {
+        score += ENEMY_THREAT_WEIGHT * (min_enemy_hp / 100.0);
+    }
+
+    return score;
+}

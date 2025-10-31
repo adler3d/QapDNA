@@ -1482,6 +1482,7 @@ std::vector<double> simulate_arena_v11(const std::vector<Strategy>& strategies, 
                   F(16,evaluate_world_v1_by_grok_v3i);
                   F(17,evaluate_world_v1_by_gemini_v2);
                   F(18,evaluate_world_v1_by_alice_v2);
+                  F(19,evaluate_world_v1_by_perplexity_v2);
                   #undef F
                 }
             }
@@ -1935,6 +1936,7 @@ vector<pair<uint64_t,string>> make_meta_pack(){
   F(32456+16,"evaluate_world_v1_by_grok_v3i");
   F(32456+17,"evaluate_world_v1_by_gimini_v2");
   F(32456+18,"evaluate_world_v1_by_alice_v2");
+  F(32456+19,"evaluate_world_v1_by_perplexity_v2");
   /*
   
 1. evaluate_world_v1_by_chatgpt SF#2/S2#2/S1#2/R2#4/R1#3/F#1 UID=4 880 121306 32461
