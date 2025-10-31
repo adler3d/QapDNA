@@ -1913,6 +1913,18 @@ vector<pair<uint64_t,string>> make_meta_pack(){
   14. dna_by_grok_v0 S1#12/R1#14 UID=4 135000 -2.40876e+06 31463
   15. dna_by_chatgpt S1#14/R1#15 UID=7 135000 -2.43706e+06 31465
   16. dna_by_deepseek_v2 S1#16/R1#16 UID=3 135000 -4.68224e+06 31462
+
+  1. dna_by_perplexity S2#248/S1#222/R2#25/R1#18 UID=0 4812 107277 31459
+  2. dna_by_perplexity S2#233/S1#194/R2#31/R1#15 UID=1 4812 104480 31459
+  3. dna_by_deepseek S2#58/S1#70/R2#40/R1#10 UID=2 4812 86234.5 31461
+  4. dna_by_gemini S2#433/S1#465/R2#228/R1#235 UID=9 4812 -21914.2 31466
+  5. dna_by_gemini S2#474/S1#506/R2#241/R1#266 UID=8 4812 -26480.2 31466
+  6. dna_by_chatgpt S2#123/S1#160/R2#290/R1#56 UID=7 4812 -48160.4 31465
+  7. dna_by_chatgpt S2#142/S1#179/R2#298/R1#73 UID=6 4812 -53437.1 31465
+  8. dna_by_qwen_coder_v2 S2#42/S1#10/R2#328/R1#155 UID=11 4812 -87227.9 31468
+  9. dna_by_alice S2#27/S1#56/R2#343/R1#395 UID=15 4812 -113359 31471
+  10. dna_by_alice S2#37/S1#24/R2#347/R1#405 UID=14 4812 -128137 31471
+  11. dna_by_grok_v0 S2#193/S1#198/R2#359/R1#507 UID=4 4812 -189740 31463
   */
   F(31456+0,"dna_by_adler");
   F(31456+2,"dna_by_deep_seek_with_sim");
