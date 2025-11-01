@@ -2,7 +2,7 @@ struct t_game_uploaded_ack{
   #define DEF_PRO_COPYABLE()
   #define DEF_PRO_CLASSNAME()t_game_uploaded_ack
   #define DEF_PRO_VARIABLE(ADD)\
-  ADD(int,game_id,{})\
+  ADD(uint64_t,game_id,{})\
   ADD(string,err,{})\
   //===
   #include "defprovar.inl"
@@ -12,8 +12,9 @@ struct t_game_slot{
   #define DEF_PRO_COPYABLE()
   #define DEF_PRO_CLASSNAME()t_game_slot
   #define DEF_PRO_VARIABLE(ADD)\
+  ADD(uint64_t,uid,{})\
   ADD(string,coder,{})\
-  ADD(int,v,0)\
+  ADD(uint64_t,v,0)\
   ADD(string,cdn_bin_file,{})\
   //===
   #include "defprovar.inl"
@@ -28,9 +29,12 @@ struct t_game_decl{
   ADD(uint32_t,seed_initial,{})\
   ADD(uint32_t,seed_strategies,{})\
   ADD(string,config,{})\
-  ADD(int,game_id,{})\
-  ADD(int,maxtick,20000)\
-  ADD(int,stderr_max,1024*64)\
+  ADD(uint64_t,game_id,{})\
+  ADD(uint64_t,season,{})\
+  ADD(uint64_t,phase,{})\
+  ADD(uint64_t,wave,{})\
+  ADD(uint64_t,maxtick,20000)\
+  ADD(uint64_t,stderr_max,1024*64)\
   ADD(double,TL,750.0)\
   ADD(double,TL0,1000.0)\
   //===
@@ -41,12 +45,12 @@ struct t_finished_game{
   #define DEF_PRO_COPYABLE()
   #define DEF_PRO_CLASSNAME()t_finished_game
   #define DEF_PRO_VARIABLE(ADD)\
-  ADD(int,game_id,{})\
+  ADD(uint64_t,game_id,{})\
   ADD(vector<double>,slot2ms,{})\
   ADD(vector<double>,slot2score,{})\
   ADD(vector<string>,slot2status,{})\
-  ADD(int,tick,0)\
-  ADD(int,size,0)\
+  ADD(uint64_t,tick,0)\
+  ADD(uint64_t,size,0)\
   //===
   #include "defprovar.inl"
   //===
@@ -74,7 +78,7 @@ struct t_cdn_game{
   #include "defprovar.inl"
   //===
   string serialize()const{return QapSaveToStr(*this);}
-  int size()const{return serialize().size();}// TODO: need return serialize().size() but optimized!
+  uint64_t size()const{return serialize().size();}// TODO: need return serialize().size() but optimized!
 };
 struct t_game{
   #define DEF_PRO_COPYABLE()

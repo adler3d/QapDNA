@@ -411,37 +411,37 @@ struct t_coder_rec{
     string time;
     string prod_time;
     string status;
-    int size=0;
+    uint64_t size=0;
     bool ok()const{return status.find("ok:{\"success\":true,\"")==0;}
   };
+  uint64_t id;
   string last_ip;
-  int64_t id;
   string sysname;
   string visname;
   string token;
   string email;
   string time;
-  unique_ptr<mutex> sarr_mtx;
-  vector<t_source> sarr;
-  int64_t total_games=0;
-  double elo=1500;
-  bool allowed_next_src_upload()const{
-    lock_guard<mutex> lock(*sarr_mtx);
-    if(sarr.empty())return true;
-    if(sarr.back().prod_time.empty())return false;
-    return qap_time_diff(sarr.back().time,qap_time())>60*1000;
-  }
-  t_coder_rec&set(int id,string u,string e,string t){
-    this->id=id;sysname=LowerStr(u);visname=u;email=e;token=t;time=qap_time();
-    sarr_mtx=make_unique<mutex>();
-    return *this;
-  }
-  int try_get_last_valid_ver(int v)const{
-    auto fail=[&](int v){return v<0||v>=(int)sarr.size();};
-    if(fail(v))return -1;
-    while(!fail(v)&&!sarr[v].ok())v--;
-    return v;
-  }
+  //unique_ptr<mutex> sarr_mtx;
+  //vector<t_source> sarr;
+  //uint64_t total_games=0;
+  //double elo=1500;
+  //bool allowed_next_src_upload()const{
+  //  lock_guard<mutex> lock(*sarr_mtx);
+  //  if(sarr.empty())return true;
+  //  if(sarr.back().prod_time.empty())return false;
+  //  return qap_time_diff(sarr.back().time,qap_time())>60*1000;
+  //}
+  //t_coder_rec&set(uint64_t id,string u,string e,string t){
+  //  this->id=id;sysname=LowerStr(u);visname=u;email=e;token=t;time=qap_time();
+  //  sarr_mtx=make_unique<mutex>();
+  //  return *this;
+  //}
+  //int try_get_last_valid_ver(int v)const{
+  //  auto fail=[&](int v){return v<0||v>=(int)sarr.size();};
+  //  if(fail(v))return -1;
+  //  while(!fail(v)&&!sarr[v].ok())v--;
+  //  return v;
+  //}
 };
 //struct t_cmd{bool valid=true;};
 struct t_world{
@@ -451,8 +451,9 @@ struct t_world{
   vector<double> slot2score;
 };
 struct t_main : t_process,t_http_base {
-  vector<t_coder_rec> carr;mutex carr_mtx;vector<size_t> ai2cid;
-  vector<t_game> garr;mutex garr_mtx;
+  mutex mtx;
+  vector<t_coder_rec> carr;//mutex carr_mtx;vector<size_t> ai2cid;
+  vector<t_game> garr;//mutex garr_mtx;
   //map<string, string> node2ipport;
   //t_net_api capi;
   map<int, emitter_on_data_decoder> client_decoders;mutex cds_mtx;//mutex n2i_mtx;
@@ -464,7 +465,7 @@ struct t_main : t_process,t_http_base {
       decoder.cb = [this, client_id, send](const string& z, const string& payload) {
         if(z=="game_finished:"+UPLOAD_TOKEN){
           auto result=parse<t_finished_game>(payload);
-          lock_guard<mutex> lock(garr_mtx);
+          lock_guard<mutex> lock(mtx);
           auto gid=result.game_id;
           if(gid<0||gid>=garr.size()){LOG("t_main::wrong game_id form "+to_string(client_id));return;}
           auto&g=garr[gid];
@@ -477,7 +478,7 @@ struct t_main : t_process,t_http_base {
         }
         if(z=="game_uploaded:"+UPLOAD_TOKEN){
           auto result=parse<t_game_uploaded_ack>(payload);
-          lock_guard<mutex> lock(garr_mtx);
+          lock_guard<mutex> lock(mtx);
           auto gid=result.game_id;
           if(gid<0||gid>=garr.size()){LOG("t_main::wrong game_id form "+to_string(client_id));return;}
           auto&g=garr[gid];
@@ -487,8 +488,8 @@ struct t_main : t_process,t_http_base {
         if(z=="game_aborted:"+UPLOAD_TOKEN){
           auto a=split(payload,",");
           if(a.size()!=2)return;
-          auto game_id=stoi(a[0]);
-          lock_guard<mutex> lock(garr_mtx);
+          auto game_id=stoull(a[0]);
+          lock_guard<mutex> lock(mtx);
           auto gid=game_id;
           if(gid<0||gid>=garr.size()){LOG("t_main::wrong game_id form "+to_string(client_id));return;}
           auto&g=garr[gid];
@@ -586,62 +587,62 @@ struct t_main : t_process,t_http_base {
   t_coder_rec*coder2rec(const string&coder){for(auto&ex:carr){if(ex.sysname!=coder)continue;return &ex;}return nullptr;}
   t_coder_rec*email2rec(const string&email){for(auto&ex:carr){if(ex.email!=email)continue;return &ex;}return nullptr;}
   // t_site->t_main
-  CompileJob new_source_job(const string&coder,const string&src){
-    CompileJob out;
-    t_coder_rec*p=nullptr;
-    {
-      lock_guard<mutex> lock(carr_mtx);
-      p=coder2rec(coder);
-      if(!p)return out;
-    }
-    int src_id=-1;
-    {
-      lock_guard<mutex> lock(*p->sarr_mtx);
-      src_id=p->sarr.size();
-    }
-    string v=to_string(src_id);
-    t_coder_rec::t_source b;
-    b.time=qap_time();
-    b.cdn_src_url="source/"+to_string(p->id)+"_"+v+".cpp";
-    b.cdn_bin_url="binary/"+to_string(p->id)+"_"+v+".elf";
-    b.size=src.size();
-    {lock_guard<mutex> lock(*p->sarr_mtx);p->sarr.push_back(b);}
-    json body_json;
-    body_json["coder_id"] = p->id;
-    body_json["elf_version"] = v;
-    body_json["source_code"] = src;
-    body_json["timeout_ms"] = 20000;
-    body_json["memory_limit_mb"] = 512;
-    out.cdn_src_url=b.cdn_src_url;
-    out.src=src;
-    out.json=body_json.dump();
-    out.on_uploaderror=[&,p,src_id](int s){
-      if(s==200)return;
-      lock_guard<mutex> lock(*p->sarr_mtx);
-      auto&src=p->sarr[src_id];
-      src.status="http_upload_err:"+to_string(s);
-      src.prod_time=qap_time();
-    };
-    out.on_complete=[&,p,src_id](t_post_resp&resp){
-      lock_guard<mutex> lock(*p->sarr_mtx);
-      if(resp.status!=200){
-        auto&src=p->sarr[src_id];
-        src.status="compile_err:"+resp.body;
-        src.prod_time=qap_time();
-        return;
-      }
-      auto&src=p->sarr[src_id];
-      src.status="ok:"+resp.body;
-      src.prod_time=qap_time();
-      lock_guard<mutex> lock2(carr_mtx);
-      for(int i=0;i<ai2cid.size();i++){
-        auto&ex=ai2cid[i];
-        if(ex==p->id)return;
-      }
-      ai2cid.push_back(p->id);
-    };
-    return std::move(out);
-  }
+  //CompileJob new_source_job(uint64_t uid,const string&src){
+  //  CompileJob out;
+  //  t_coder_rec*p=nullptr;
+  //  {
+  //    lock_guard<mutex> lock(carr_mtx);
+  //    p=coder2rec(coder);
+  //    if(!p)return out;
+  //  }
+  //  int src_id=-1;
+  //  {
+  //    lock_guard<mutex> lock(*p->sarr_mtx);
+  //    src_id=p->sarr.size();
+  //  }
+  //  string v=to_string(src_id);
+  //  t_coder_rec::t_source b;
+  //  b.time=qap_time();
+  //  b.cdn_src_url="source/"+to_string(p->id)+"_"+v+".cpp";
+  //  b.cdn_bin_url="binary/"+to_string(p->id)+"_"+v+".elf";
+  //  b.size=src.size();
+  //  {lock_guard<mutex> lock(*p->sarr_mtx);p->sarr.push_back(b);}
+  //  json body_json;
+  //  body_json["coder_id"] = p->id;
+  //  body_json["elf_version"] = v;
+  //  body_json["source_code"] = src;
+  //  body_json["timeout_ms"] = 20000;
+  //  body_json["memory_limit_mb"] = 512;
+  //  out.cdn_src_url=b.cdn_src_url;
+  //  out.src=src;
+  //  out.json=body_json.dump();
+  //  out.on_uploaderror=[&,p,src_id](int s){
+  //    if(s==200)return;
+  //    lock_guard<mutex> lock(*p->sarr_mtx);
+  //    auto&src=p->sarr[src_id];
+  //    src.status="http_upload_err:"+to_string(s);
+  //    src.prod_time=qap_time();
+  //  };
+  //  out.on_complete=[&,p,src_id](t_post_resp&resp){
+  //    lock_guard<mutex> lock(*p->sarr_mtx);
+  //    if(resp.status!=200){
+  //      auto&src=p->sarr[src_id];
+  //      src.status="compile_err:"+resp.body;
+  //      src.prod_time=qap_time();
+  //      return;
+  //    }
+  //    auto&src=p->sarr[src_id];
+  //    src.status="ok:"+resp.body;
+  //    src.prod_time=qap_time();
+  //    lock_guard<mutex> lock2(carr_mtx);
+  //    for(int i=0;i<ai2cid.size();i++){
+  //      auto&ex=ai2cid[i];
+  //      if(ex==p->id)return;
+  //    }
+  //    ai2cid.push_back(p->id);
+  //  };
+  //  return std::move(out);
+  //}
   struct t_sch_api:i_sch_api{
     t_main*pmain=nullptr;
     bool assign_game(const t_game_decl&game,const string&node)override{
@@ -724,7 +725,7 @@ struct t_main : t_process,t_http_base {
         if(email.find('@')==string::npos){res.status=409;res.set_content("email must contain @","text/plain");return;}
         if(!isValidName(name)){res.status=409;res.set_content("some char in name is not allowed! allowed=gen_dips(\"azAZ09\")+\"_.\"","text/plain");return;}
         {
-          lock_guard<mutex> lock(carr_mtx);
+          lock_guard<mutex> lock(mtx);
           int users_on_ip=0;
           for (const auto& c : carr) {
             if (c.sysname == sysname) {
@@ -752,7 +753,6 @@ struct t_main : t_process,t_http_base {
           b.sysname = sysname;
           b.email = sysemail;
           b.token = sha256(b.time + name + email + to_string((rand() << 16) + rand()) + "2025.08.23 15:10:42.466");
-          b.sarr_mtx = make_unique<mutex>();
 
           carr.push_back(std::move(b));
         }
@@ -771,6 +771,7 @@ struct t_main : t_process,t_http_base {
         res.set_content(string("Exception: ") + e.what(), "text/plain");
       }
     });
+    /*
     srv.Post("/source/new",[this](const httplib::Request& req, httplib::Response& res) {
       //RATE_LIMITER(25);
       try {
@@ -797,7 +798,7 @@ struct t_main : t_process,t_http_base {
           p->last_ip=req.remote_addr;
           //if(!p->allowed_next_src_upload()){res.status=429;res.set_content("rate limit exceeded","text/plain");return;}
         }
-        compq.push_job(std::move(new_source_job(coder,src)));
+        //compq.push_job(std::move(new_source_job(coder,src)));
         res.status = 200;
         res.set_content("["+qap_time()+"] - ok // size = "+to_string(src.size()),"text/plain");
       }
@@ -832,10 +833,10 @@ struct t_main : t_process,t_http_base {
         {
           auto t=qap_time();
           lock_guard<mutex> lock(coder2lgt_mtx);
-          if(0)if (last_game_time.count(author) && (qap_time_diff(last_game_time[author],t)) < 10*1000/*5 * 60*1000*/) {
+          if(0)if (last_game_time.count(author) && (qap_time_diff(last_game_time[author],t)) < 5*60*1000) {
             res.status = 429;
-            res.set_content("Rate limit: one game per 10 sec", "text/plain");
-            //res.set_content("Rate limit: one game per 5 minutes", "text/plain");
+            //res.set_content("Rate limit: one game per 10 sec", "text/plain");
+            res.set_content("Rate limit: one game per 5 minutes", "text/plain");
             return;
           }
           last_game_time[author]=t;
@@ -929,7 +930,7 @@ struct t_main : t_process,t_http_base {
         res.status = 500;
         res.set_content(e.what(), "text/plain");
       }
-    });
+    });*//*
     auto game2json=[](const t_game&g,json&j){
       j = {
         {"game_id", g.gd.game_id},
@@ -1143,7 +1144,7 @@ struct t_main : t_process,t_http_base {
 
       res.status = 200;
       res.set_content(status.dump(2), "application/json");
-    });
+    });*/
     srv.Get("/", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
       res.set_content(file_get_contents("index.html"), "text/html");
@@ -1157,6 +1158,344 @@ struct t_main : t_process,t_http_base {
     });
   }
   string main_start_time=qap_time();
+public:
+//---T_MAIN_TEST---
+public:
+  //typedef t_coder_rec t_global_user;
+  //struct t_global_user{
+  //  uint64_t user_id;
+  //  string email;
+  //  string sysname;
+  //  string visname;
+  //  string token;
+  //  string created_at;
+  //};
+  typedef map<uint64_t,uint64_t> t_phase2rank;
+  struct t_tracked_info {
+    string label;           // "Pure Farmer", "R1-Winner-1", "S2-TOP3-5", ...
+    uint64_t source_phase;    // фаза, в которой был отмечен
+    uint64_t source_rank;        // место в той фазе
+    t_phase2rank phase2rank; // история рангов по фазам
+  };
+  typedef map<uint64_t,uint64_t> t_phase2rank;
+  struct t_season_coder{
+    uint64_t uid;
+    string sysname;
+    vector<t_coder_rec::t_source> sarr;//unique_ptr<mutex> sarr_mtx=make_unique<mutex>();
+    string last_submit_time;
+    bool hide = false;
+    bool is_meta = false;               // true, если это из meta_pack
+    string meta_name;                   // например, "Pure Farmer"
+    t_phase2rank phase2rank;        // "R1" → 42, "R2" → 15, ...
+    optional<t_tracked_info> tracked;
+    int try_get_last_valid_ver(int v)const{
+      auto fail=[&](int v){return v<0||v>=(int)sarr.size();};
+      if(fail(v))return -1;
+      while(!fail(v)&&!sarr[v].ok())v--;
+      return v;
+    }
+    bool allowed_next_src_upload()const{
+      //lock_guard<mutex> lock(*sarr_mtx);
+      if(sarr.empty())return true;
+      if(sarr.back().prod_time.empty())return false;
+      return qap_time_diff(sarr.back().time,qap_time())>60*1000;
+    }
+    //t_season_coder&set(uint64_t id){
+    //  user_id=id;sysname=LowerStr(u);reg_time=qap_time();
+    //  sarr_mtx=make_unique<mutex>();
+    //  return *this;
+    //}
+  };
+  typedef map<uint64_t,double> t_uid2score;
+  typedef map<uint64_t,uint64_t> t_uid2games;
+  typedef map<uint64_t,string> t_uid2source_phase;
+
+  struct t_phase {
+    struct t_qr_decl {
+      string from_phase;
+      uint64_t top_n=50;
+    };
+    struct t_qualification_rule {
+      uint64_t from_phase;
+      uint64_t top_n=50;
+    };
+    struct t_uid_rec{
+      double score=1500;
+      uint64_t games=0;
+      uint64_t source_phase=0;
+    };
+    typedef map<uint64_t,t_uid_rec> t_uid2rec;
+    uint64_t phase=0;
+    // type=="sandbox"|"round"
+    string type;
+    string phase_name;
+    string world;
+    string game_config;
+    uint64_t num_players = 2;
+    //bool is_active = false;
+    vector<t_qualification_rule> qualifying_from;
+    t_uid2rec uid2rec;
+    vector<uint64_t> games;
+
+    // === Управление волнами ===
+    string start_time="2025.10.31 19:08:07.120";
+    bool is_active = false;
+
+    // Для round:
+    uint64_t total_waves = 3;                // сколько волн сыграть
+    uint64_t current_wave = 0;               // какая волна сейчас (0 = не начата)
+    vector<vector<uint64_t>> wave2gid;           // games[wave2gid[wave_id][i]]
+
+    // Для sandbox:
+    string last_wave_time="2025.10.31 19:08:07.120";
+    uint64_t sandbox_wave_interval_ms = 5 * 60 * 1000; // 5 минут
+  };
+
+  typedef map<uint64_t,t_season_coder> t_uid2scoder;
+  struct t_season {
+    uint64_t season=0;
+    string season_name; // "splinter_2025"
+    string world_base; // "t_splinter"
+    string title;
+    t_uid2scoder uid2scoder;
+    vector<t_phase> phases;
+    uint64_t cur_phase = 0;
+    //mutex participants_mtx;
+  };
+  const t_phase* find_phase(const t_season& season, const string& phase_name) {
+    for (auto& p : season.phases) {
+      if (p.phase_name == phase_name) return &p;
+    }
+    return nullptr;
+  }
+public:
+  //vector<t_global_user> gus;
+  vector<unique_ptr<t_season>> seasons;
+  void ensure_user_in_season(t_season& season, uint64_t user_id) {
+    t_phase* active =&season.phases[season.cur_phase];
+    if (season.uid2scoder.count(user_id) == 0) {
+        season.uid2scoder[user_id] = t_season_coder{user_id, "", {}};
+        active->uid2rec[user_id]={};
+    }
+  }
+  void init_splinter_2025_season(t_season& s) {
+    s.season_name = "splinter_2025";
+    s.world_base = "t_splinter";
+    s.title = "Splinter 2025";
+
+    // Определяем фазы в порядке их появления
+    vector<tuple<string, string, uint64_t, vector<t_phase::t_qr_decl>>> phase_specs = {
+      // {phase_id, type, num_players, qualifying_from}
+      {"S1", "sandbox", 16, {}},
+      {"R1", "round",   16, {{"S1", 900}}},
+      {"S2", "sandbox", 16, {}},
+      {"R2", "round",   16, {{"R1", 300}, {"S2", 60}}},
+      {"SF", "sandbox", 16, {}},
+      {"F",  "round",   16, {{"R2", 50},  {"SF", 10}}},
+      {"S",  "sandbox", 16, {}}
+    };
+
+    //for (auto& [phase_id, type, num_players, rules] : phase_specs) {
+    //  auto phase = make_unique<t_phase>();
+    //  phase->phase_id = phase_id;
+    //  phase->type = type;
+    //  phase->num_players = num_players;
+    //  //phase->qualifying_from = rules;
+    //  // uids и uid2score заполнятся позже при активации
+    //  s.phases.push_back(std::move(phase));
+    //}
+  }
+  void next_phase(t_season& season,uint64_t phase) {
+    t_phase*target=&season.phases[phase];
+
+    if (season.cur_phase < season.phases.size()) {
+      season.phases[season.cur_phase].is_active = false;
+    }
+    target->is_active = true;
+    season.cur_phase = phase;
+
+    // === Проведём отбор участников ===
+    target->uid2rec.clear();
+
+    if (target->type == "sandbox") {
+      // В песочницу — все, кто есть в сезоне
+      for (const auto& [uid, _] : season.uid2scoder) {
+        target->uid2rec[uid]={1500,0,0};
+      }
+    } else if (target->type == "round") {
+      set<uint64_t> already_qualified;
+
+      for (const auto& rule : target->qualifying_from) {
+        t_phase*src_phase=&season.phases[rule.from_phase];
+        if (!src_phase) continue;
+
+        // Собираем кандидатов из исходной фазы
+        vector<pair<double, uint64_t>> ranked;
+        for (auto&[uid,rec]:src_phase->uid2rec) {
+          // Пропускаем тех, кто уже отобран
+          if (already_qualified.count(uid)) continue;
+
+          double score = rec.score;
+          ranked.emplace_back(-score, uid);
+        }
+        std::sort(ranked.begin(), ranked.end());
+
+        // Берём до rule.top_n новых участников
+        uint64_t added = 0;
+        for (auto& [neg_score, uid] : ranked) {
+          if (added >= rule.top_n) break;
+          target->uid2rec[uid]={0,0,rule.from_phase};
+          already_qualified.insert(uid);
+          added++;
+        }
+      }
+    }
+    LOG("Activated phase: "+to_string(phase)+" with "+to_string(target->uid2rec.size())+" participants");
+  }
+  void update_seasons() {
+    for (auto& season : seasons) {
+      if (season->cur_phase >= season->phases.size()) continue;
+      auto* phase =&season->phases[season->cur_phase];
+      if (!phase->is_active) continue;
+      launch_missing_games_for_phase(*phase,*season);
+    }
+  }
+  void seasons_main_loop(){
+    for(;;){
+      update_seasons();
+      std::this_thread::sleep_for(128ms);
+    }
+  }
+  void launch_missing_games_for_phase(t_phase& phase, t_season& season) {
+    if (!phase.is_active) return;
+
+    auto now = qap_time(); // предположим, у тебя есть такая функция
+
+    // === Определяем, нужно ли запускать новую волну ===
+    bool should_launch_wave = false;
+    string wave_start_time;
+
+    if (phase.type == "round") {
+      if (phase.current_wave >= phase.total_waves) return; // всё сделано
+      should_launch_wave = true;
+      wave_start_time = qap_time(); // время старта волны — сейчас
+    } else if (phase.type == "sandbox") {
+      if (qap_time_diff(phase.last_wave_time,now)>=phase.sandbox_wave_interval_ms) {
+        should_launch_wave = true;
+        wave_start_time = qap_time();
+      }
+    }
+
+    if (!should_launch_wave) return;
+
+    // === Генерация новой волны ===
+    vector<t_game_decl> wave = generate_wave(phase, season);
+    if (wave.empty()) return;
+
+    // === Сохраняем игры в глобальный garr и в фазу ===
+    vector<uint64_t> new_gids;
+    {
+      lock_guard<mutex> lock(mtx);
+      for (auto& gd : wave) {
+        gd.game_id = garr.size(); // присваиваем глобальный ID
+        gd.season=season.season;
+        gd.season=phase.phase;
+        gd.wave=phase.type=="round"?phase.current_wave+1:0;
+        t_game game;
+        game.gd = gd;
+        game.status = "scheduled";
+        game.ordered_at = wave_start_time;
+        game.author = "system:season:" + season.season_name + ":" + phase.phase_name + ":wave" + to_string(phase.current_wave);
+        garr.push_back(std::move(game));
+        new_gids.push_back(gd.game_id);
+      }
+    }
+
+    // === Обновляем метаданные фазы ===
+    if (phase.type == "round") {
+      phase.wave2gid.resize(phase.current_wave + 1);
+      phase.wave2gid[phase.current_wave] = std::move(new_gids);
+      phase.current_wave++;
+    } else {
+      phase.wave2gid.push_back(std::move(new_gids));
+      phase.last_wave_time = wave_start_time;
+    }
+
+    LOG("Launched wave for " + phase.phase_name +
+      " (" + phase.type + ") with " + to_string(wave.size()) + " games");
+
+    // === Отправляем в scheduler ===
+    for (auto& gd : wave) {
+      sch.add_game_decl(gd);
+    }
+  }
+  default_random_engine dre{time(0)};
+  vector<t_game_decl> generate_wave(t_phase& phase, t_season& season) {
+    vector<t_game_decl> wave;
+    lock_guard<mutex> lock(mtx);
+
+    if (phase.uid2rec.empty()) return{};
+    if (phase.num_players > carr.size()) return{};
+
+    // Проверка: все ли uid корректны?
+    for (auto&[uid,rec]:phase.uid2rec) {
+      if (uid >= carr.size()) {
+        LOG("launch_missing_games_for_phase: invalid uid " + to_string(uid) + " >= carr.size()");
+        return{};
+      }
+    }
+    vector<uint64_t> uids;
+    for(auto&[uid,rec]:phase.uid2rec){
+      uids.push_back(uid);
+    }
+    shuffle(uids.begin(), uids.end(), dre);
+
+    // Сколько игр в волне?
+    uint64_t games_in_wave = 0;
+    if (phase.type == "round") {
+      uint64_t groups = (uids.size() + phase.num_players - 1) / phase.num_players;
+      games_in_wave = groups * 3; // 3 игры на группу
+    } else {
+      games_in_wave = min<uint64_t>(100, uids.size() * 2);
+    }
+
+    size_t next_idx = 0;
+    for (uint64_t g = 0; g < games_in_wave; ++g) {
+      vector<t_game_slot> slots;
+      for (uint64_t p = 0; p < phase.num_players; ++p) {
+        if (next_idx >= uids.size()) {
+          next_idx = 0;
+          shuffle(uids.begin(), uids.end(), dre);
+        }
+        uint64_t uid = uids[next_idx++];
+        auto& coder = season.uid2scoder[uid];
+        if (coder.sarr.empty()) continue;
+
+        int ver = -1;
+        {
+          //lock_guard<mutex> lock2(*coder.sarr_mtx);
+          ver = coder.try_get_last_valid_ver((int)coder.sarr.size() - 1);
+          if (ver < 0) continue;
+          QapAssert(coder.sysname.size());
+          t_game_slot slot;
+          slot.uid=uid;
+          slot.coder = coder.sysname;
+          slot.v = ver;
+          slot.cdn_bin_file = coder.sarr[ver].cdn_bin_url;
+          slots.push_back(slot);
+        }
+      }
+
+      if (slots.size() == phase.num_players) {
+        t_game_decl gd;
+        gd.arr = slots;
+        gd.config = season.world_base;
+        wave.push_back(gd);
+      }
+    }
+
+    return wave;
+  }
 };
 
 #ifdef _WIN32
@@ -1287,6 +1626,9 @@ bool ensure_runner_image() {
 
 #include "t_node.hpp"
 void setup_main(t_main&m){
+  //auto&b=qap_add_back(m.carr);
+  //b.
+  /*
   {auto&b=qap_add_back(qap_add_back(m.carr).set(0,"Adler","adler3d@gmail.com","321").sarr);
   b.status="ok:";b.cdn_bin_url="0";b.cdn_src_url="0";b.prod_time=qap_time();
   m.ai2cid.push_back(0);}
@@ -1298,11 +1640,12 @@ void setup_main(t_main&m){
   m.ai2cid.push_back(1);
   m.ai2cid.push_back(2);
   qap_add_back(m.carr).set(3,"Admin","admin@example.com","admin");
+  */
 }
-#include "t_main_test.h"
+//#include "t_main_test.h"
 #include <signal.h>
 int main(int argc,char*argv[]){
-  main_test();//t_coder_rec::t_source
+  //main_test();//t_coder_rec::t_source
   return 0;
   signal(SIGPIPE, SIG_IGN);
   srand(time(0));
