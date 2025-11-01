@@ -1255,11 +1255,17 @@ public:
   struct t_season {
     uint64_t season=0;
     string season_name; // "splinter_2025"
-    string world_base; // "t_splinter"
+    //string world; // "t_splinter"
     string title;
     t_uid2scoder uid2scoder;
     vector<t_phase> phases;
     uint64_t cur_phase = 0;
+    struct t_scheduled_transition{
+      bool deaded=false;
+      string target_phase_name;
+      string time;
+    };
+    vector<t_scheduled_transition> scheduled_transitions;
     //mutex participants_mtx;
   };
   const t_phase* find_phase(const t_season& season, const string& phase_name) {
@@ -1270,17 +1276,17 @@ public:
   }
 public:
   //vector<t_global_user> gus;
-  vector<unique_ptr<t_season>> seasons;
+  vector<t_season> seasons;
   void ensure_user_in_season(t_season& season, uint64_t user_id) {
     t_phase* active =&season.phases[season.cur_phase];
     if (season.uid2scoder.count(user_id) == 0) {
-        season.uid2scoder[user_id] = t_season_coder{user_id, "", {}};
-        active->uid2rec[user_id]={};
+      season.uid2scoder[user_id] = t_season_coder{user_id, "", {}};
+      active->uid2rec[user_id]={};
     }
   }
   void init_splinter_2025_season(t_season& s) {
     s.season_name = "splinter_2025";
-    s.world_base = "t_splinter";
+    //s.world = "t_splinter";
     s.title = "Splinter 2025";
 
     // Определяем фазы в порядке их появления
@@ -1294,7 +1300,16 @@ public:
       {"F",  "round",   16, {{"R2", 50},  {"SF", 10}}},
       {"S",  "sandbox", 16, {}}
     };
-
+    for (size_t i = 0; i < phase_specs.size(); ++i) {
+      auto& [phase_name, type, num_players, rules] = phase_specs[i];
+      t_phase p;
+      p.phase = i;              // ← критично для ссылок из игр
+      p.phase_name = phase_name;
+      p.type = type;
+      p.num_players = num_players;
+      // ...
+      s.phases.push_back(p);
+    }
     //for (auto& [phase_id, type, num_players, rules] : phase_specs) {
     //  auto phase = make_unique<t_phase>();
     //  phase->phase_id = phase_id;
@@ -1353,11 +1368,22 @@ public:
     LOG("Activated phase: "+to_string(phase)+" with "+to_string(target->uid2rec.size())+" participants");
   }
   void update_seasons() {
+    auto now=qap_time();
     for (auto& season : seasons) {
-      if (season->cur_phase >= season->phases.size()) continue;
-      auto* phase =&season->phases[season->cur_phase];
-      if (!phase->is_active) continue;
-      launch_missing_games_for_phase(*phase,*season);
+      if (season.cur_phase >= season.phases.size()) continue;
+      auto&phase=season.phases[season.cur_phase];
+      if (!phase.is_active) continue;
+      launch_missing_games_for_phase(phase,season);
+      for (auto&ex:season.scheduled_transitions)if(!ex.deaded){
+        if (qap_time_diff(ex.time,now)>0) {
+          auto*target=find_phase(season,ex.target_phase_name);
+          if (target) {
+            next_phase(season, target->phase);
+          }
+          ex.deaded=true;
+        }
+      }
+      qap_clean_if_deaded(season.scheduled_transitions);
     }
   }
   void seasons_main_loop(){
@@ -1399,7 +1425,7 @@ public:
       for (auto& gd : wave) {
         gd.game_id = garr.size(); // присваиваем глобальный ID
         gd.season=season.season;
-        gd.season=phase.phase;
+        gd.phase=phase.phase;
         gd.wave=phase.type=="round"?phase.current_wave+1:0;
         t_game game;
         game.gd = gd;
@@ -1489,7 +1515,8 @@ public:
       if (slots.size() == phase.num_players) {
         t_game_decl gd;
         gd.arr = slots;
-        gd.config = season.world_base;
+        gd.config = phase.game_config;
+        gd.world = phase.world;
         wave.push_back(gd);
       }
     }

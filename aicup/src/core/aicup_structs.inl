@@ -1,3 +1,4 @@
+static constexpr uint32_t kInvalidIndex = std::numeric_limits<uint64_t>::max();
 struct t_game_uploaded_ack{
   #define DEF_PRO_COPYABLE()
   #define DEF_PRO_CLASSNAME()t_game_uploaded_ack
@@ -29,10 +30,10 @@ struct t_game_decl{
   ADD(uint32_t,seed_initial,{})\
   ADD(uint32_t,seed_strategies,{})\
   ADD(string,config,{})\
-  ADD(uint64_t,game_id,{})\
-  ADD(uint64_t,season,{})\
-  ADD(uint64_t,phase,{})\
-  ADD(uint64_t,wave,{})\
+  ADD(uint64_t,game_id,kInvalidIndex)\
+  ADD(uint64_t,season,kInvalidIndex)\
+  ADD(uint64_t,phase,kInvalidIndex)\
+  ADD(uint64_t,wave,kInvalidIndex)\
   ADD(uint64_t,maxtick,20000)\
   ADD(uint64_t,stderr_max,1024*64)\
   ADD(double,TL,750.0)\
