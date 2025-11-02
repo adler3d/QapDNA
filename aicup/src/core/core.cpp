@@ -1412,7 +1412,7 @@ public:
     t_season& season = seasons.back();
     auto now = qap_time();
 
-    // Сначала найдём активную фазу (если есть)
+    // 1. Найдём активную фазу (для удобства)
     t_phase* active_phase = nullptr;
     for (auto& p : season.phases) {
       if (p.is_active) {
@@ -1420,39 +1420,54 @@ public:
         break;
       }
     }
-    
-    // Проверяем возможность перехода к следующим фазам
-    for (auto& phase : season.phases) {
-      if (phase.is_active || phase.is_completed) continue;
 
-      // Можно ли закрыть предыдущую фазу?
-      if (phase.phase > 0) {
-        t_phase& prev = season.phases[phase.phase - 1];
-        // Если время наступило — закрываем предыдущую
-        if (!prev.is_closed && qap_time_diff(prev.scheduled_start_time, now) >= 0) {
-          // Но только если текущая фаза — это следующая после активной
-          if (active_phase && active_phase->phase == phase.phase - 1) {
-            prev.is_closed = true;
-            LOG("Phase " + prev.phase_name + " closed. Waiting for games to finish...");
-          }
-        }
-      } else {
-        // Первая фаза: активируем, если время пришло
-        if (qap_time_diff(phase.scheduled_start_time, now) >= 0) {
-          next_phase(season, phase.phase);
+    // 2. Обработка каждой фазы
+    for (size_t i = 0; i < season.phases.size(); ++i) {
+      t_phase& phase = season.phases[i];
+
+      // Пропускаем завершённые
+      if (phase.is_completed) continue;
+
+      // --- Закрытие предыдущей фазы ---
+      if (i > 0) {
+        t_phase& prev = season.phases[i - 1];
+        // Если время фазы i наступило — закрываем фазу i-1
+        if (!prev.is_closed && qap_time_diff(phase.scheduled_start_time, now) >= 0) {
+          prev.is_active = false;
+          prev.is_closed = true;
+          LOG("Phase " + prev.phase_name + " closed. Waiting for " +
+            to_string(prev.games.size() - prev.finished_games) + " games to finish.");
         }
       }
 
-      // Если предыдущая фаза закрыта и все игры завершены — активируем текущую
-      if (phase.phase == 0 || season.phases[phase.phase - 1].is_completed) {
-        if (qap_time_diff(phase.scheduled_start_time, now) >= 0) {
-          next_phase(season, phase.phase);
+      // --- Активация фазы ---
+      if (!phase.is_active && !phase.is_closed) {
+        bool can_activate = false;
+        if (i == 0) {
+          // Первая фаза — активируем по времени
+          can_activate = (qap_time_diff(phase.scheduled_start_time, now) >= 0);
+        } else {
+          // Последующие — только если предыдущая завершена
+          can_activate = season.phases[i - 1].is_completed &&
+                  (qap_time_diff(phase.scheduled_start_time, now) >= 0);
+        }
+        if (can_activate) {
+          next_phase(season, i);
+        }
+      }
+
+      // --- Завершение фазы (если закрыта и все игры сыграны) ---
+      if (phase.is_closed && !phase.is_completed) {
+        if (phase.finished_games == phase.games.size() && !phase.games.empty()) {
+          compute_ratings_for_phase(phase, season);
+          phase.is_completed = true;
+          LOG("Phase " + phase.phase_name + " COMPLETED.");
         }
       }
     }
-    
-    // Запускаем игры только если фаза активна И не закрыта
-    if (active_phase && !active_phase->is_closed) {
+
+    // 3. Запуск волн в активной фазе (если она не закрыта)
+    if (active_phase && active_phase->is_active && !active_phase->is_closed) {
       launch_missing_games_for_phase(*active_phase, season);
     }
   }
