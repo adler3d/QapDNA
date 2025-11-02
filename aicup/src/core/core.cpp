@@ -41,6 +41,11 @@ using namespace std;
 using namespace std::chrono;
 using json = nlohmann::json;
 #include "t_cdn.hpp"
+
+uint64_t sim_time_ms = 0; // симулированное время в миллисекундах
+double sim_speed = 10000.0; // 1 реальная секунда = 1000 симулированных секунд
+std::mutex sim_mtx;
+
 const string DOCKERFILE_PATH = "./docker/universal-runner/Dockerfile"; //TODO: check this file must exists!
 const string IMAGE_NAME = "universal-runner:latest";
 const string ARCHIVE_NAME = "/tmp/universal-runner.tar";
@@ -1280,6 +1285,7 @@ public:
     };
     vector<t_scheduled_transition> scheduled_transitions;
     //mutex participants_mtx;
+    bool is_finalized = false;
   };
   const t_phase* find_phase(const t_season& season, const string& phase_name)const{
     for (auto& p : season.phases) {
@@ -1470,6 +1476,20 @@ public:
     if (active_phase && active_phase->is_active && !active_phase->is_closed) {
       launch_missing_games_for_phase(*active_phase, season);
     }
+    // После обработки всех фаз:
+    if (!season.is_finalized) {
+      bool all_completed = true;
+      for (auto& p : season.phases) {
+        if (!p.is_completed) {
+          all_completed = false;
+          break;
+        }
+      }
+      if (all_completed) {
+        season.is_finalized = true;
+        LOG("Season " + season.season_name + " FINALIZED");
+      }
+    }
   }
   void seasons_main_loop(){
     for(;;){
@@ -1506,12 +1526,12 @@ public:
     // === Сохраняем игры в глобальный garr и в фазу ===
     vector<uint64_t> new_gids;
     {
-      lock_guard<mutex> lock(mtx);
+      //lock_guard<mutex> lock(mtx);
       for (auto& gd : wave) {
         gd.game_id = garr.size(); // присваиваем глобальный ID
         gd.season=season.season;
         gd.phase=phase.phase;
-        gd.wave=phase.type=="round"?phase.current_wave+1:0;
+        gd.wave=phase.type=="round"?phase.current_wave:0;
         t_game game;
         game.gd = gd;
         game.status = "scheduled";
@@ -1524,13 +1544,13 @@ public:
 
     // === Обновляем метаданные фазы ===
     if (phase.type == "round") {
+      phase.games.insert(phase.games.end(),new_gids.begin(),new_gids.end());
       phase.wave2gid.resize(phase.current_wave + 1);
       phase.wave2gid[phase.current_wave] = std::move(new_gids);
-      phase.games.insert(phase.games.end(), new_gids.begin(), new_gids.end());
       phase.current_wave++;
     } else {
+      phase.games.insert(phase.games.end(),new_gids.begin(),new_gids.end());
       phase.wave2gid.push_back(std::move(new_gids));
-      phase.games.insert(phase.games.end(), new_gids.begin(), new_gids.end());
       phase.last_wave_time = wave_start_time;
     }
 
@@ -1545,7 +1565,7 @@ public:
   default_random_engine dre{time(0)};
   vector<t_game_decl> generate_wave(t_phase& phase, t_season& season) {
     vector<t_game_decl> wave;
-    lock_guard<mutex> lock(mtx);
+    //lock_guard<mutex> lock(mtx);
 
     if (phase.uid2rec.empty()) return{};
     if (phase.num_players > carr.size()) return{};
@@ -1569,7 +1589,13 @@ public:
       uint64_t groups = (uids.size() + phase.num_players - 1) / phase.num_players;
       games_in_wave = groups * 3; // 3 игры на группу
     } else {
-      games_in_wave = min<uint64_t>(100, uids.size() * 2);
+      double hours_since_last = qap_time_diff(phase.last_wave_time, qap_time()) / (3600.0 * 1000.0);
+      double games_needed = 0;
+      for (auto& [uid, _] : phase.uid2rec) {
+        games_needed += phase.games_per_player_per_hour * hours_since_last;
+      }
+      games_in_wave = static_cast<uint64_t>(games_needed);
+      games_in_wave = max(1ULL, min(games_in_wave, 1000ULL)); // ограничение сверху
     }
 
     size_t next_idx = 0;
@@ -1979,6 +2005,223 @@ public:
       return false;
     }
   }
+public:
+  static void LOG(const string&str){cerr<<"["<<::qap_time()<<"]["<<qap_time()<<"] "<<(str)<<endl;}
+  static string get_json_cfg(){
+    const char* SIM_SEASON_CONFIG_JSON = R"({
+  "seasonName": "splinter_2025",
+  "startTime": "2025.11.01 00:00:00.000",
+  "phases": [
+    {
+      "phaseName": "S1",
+      "type": "sandbox",
+      "world": "t_splinter",
+      "playersPerGame": 4,
+      "startTime": "2025.11.01 00:00:00.000",
+      "gamesPerPlayerPerHour": 1.0
+    },
+    {
+      "phaseName": "R1",
+      "type": "round",
+      "world": "t_splinter",
+      "playersPerGame": 4,
+      "startTime": "2025.11.03 00:00:00.000",
+      "qualifyingFrom": [
+        { "fromPhaseName": "S1", "topN": 50 }
+      ]
+    },
+    {
+      "phaseName": "S2",
+      "type": "sandbox",
+      "world": "t_splinter",
+      "playersPerGame": 4,
+      "startTime": "2025.11.05 00:00:00.000",
+      "gamesPerPlayerPerHour": 1.0
+    },
+    {
+      "phaseName": "R2",
+      "type": "round",
+      "world": "t_splinter",
+      "playersPerGame": 4,
+      "startTime": "2025.11.07 00:00:00.000",
+      "qualifyingFrom": [
+        { "fromPhaseName": "R1", "topN": 20 },
+        { "fromPhaseName": "S2", "topN": 10 }
+      ]
+    }
+  ]
+})";
+    return SIM_SEASON_CONFIG_JSON;
+  }
+  // Внутри struct t_main:
+
+
+// Подмена qap_time()
+static string qap_time() {
+    lock_guard<mutex> lock(sim_mtx);
+    // Преобразуем sim_time_ms → строку вида "2025.11.02 12:34:56.789"
+    auto total_sec = sim_time_ms / 1000;
+    auto ms = sim_time_ms % 1000;
+
+    // Начинаем с 2025-11-01 00:00:00 UTC
+    time_t base = 1761955200; // 2025-11-01 00:00:00 UTC
+    time_t t = base + total_sec;
+    struct tm tm;
+#ifdef _WIN32
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y.%m.%d %H:%M:%S", &tm);
+    return string(buf) + "." + (ms < 10 ? "00" : ms < 100 ? "0" : "") + to_string(ms);
+}
+
+// Подмена qap_time_diff(a, b) → возвращает разницу в мс
+static int64_t qap_time_diff(const string& a, const string& b) {
+    // Для симулятора можно упростить: вернём sim_time_ms разницу
+    // Но проще: использовать sim_time_ms напрямую в логике
+    // Поэтому в симуляторе мы будем сравнивать через sim_time_ms
+    // Эта функция не используется в update_seasons в симуляторе
+    return ::qap_time_diff(a,b);
+}
+
+// Утилита: парсить строку времени → sim_time_ms (опционально)
+static uint64_t parse_time_to_ms(const string& s) {
+    // Для простоты: считаем, что s = "2025.11.02 12:34:56.789"
+    // Пропускаем парсинг — в симуляторе мы задаём время через sim_time_ms
+    return 0;
+}
+static void sim_sleep(uint64_t ms) {
+  //for(int i=0;i<10;i++)
+  {
+    // Ждём в реальном времени, но продвигаем sim_time_ms
+    this_thread::sleep_for(milliseconds(static_cast<int>(ms / sim_speed)));
+    {
+        lock_guard<mutex> lock(sim_mtx);
+        sim_time_ms += ms;
+    }
+  }
+}
+  void create_initial_season(const string& season_name) {
+    lock_guard<mutex> lock(mtx);
+    if (!seasons.empty()) return;
+
+    t_season s;
+    s.season = 0;
+    s.season_name = season_name;
+    s.title = season_name;
+
+    // Начальная песочница
+    t_phase sandbox;
+    sandbox.phase = 0;
+    sandbox.phase_name = "S1";
+    sandbox.type = "sandbox";
+    sandbox.world = "t_splinter";
+    sandbox.num_players = 4;
+    sandbox.scheduled_start_time = qap_time(); // сейчас
+    sandbox.sandbox_wave_interval_ms = 10 * 60 * 1000; // 10 минут
+    sandbox.is_active = true;
+    s.phases.push_back(sandbox);
+    s.cur_phase = 0;
+
+    seasons.push_back(s);
+    LOG("Initial season '" + season_name + "' created with sandbox S1");
+}
+void simulate_new_coders(int count, const string& phase_name) {
+    lock_guard<mutex> lock(mtx);
+    if (seasons.empty()) return;
+    t_season& s = seasons.back();
+
+    t_phase* target_phase = find_phase(s, phase_name);
+    if (!target_phase) return;
+
+    for (int i = 0; i < count; ++i) {
+        uint64_t uid = carr.size();
+        t_coder_rec coder;
+        coder.id = uid;
+        coder.sysname = "sim_coder_" + to_string(uid);
+        coder.visname = coder.sysname;
+        coder.email = coder.sysname + "@sim.test";
+        coder.token = generate_token(coder.sysname, qap_time());
+        coder.time = qap_time();
+        carr.push_back(coder);
+
+        // Добавить в сезон
+        auto&sc=s.uid2scoder[uid];
+        sc = t_season_coder{uid, coder.sysname, {}};
+        sc.sarr.push_back({});
+        auto&b=sc.sarr.back();
+        b.cdn_src_url=to_string(i);
+        b.status="ok:{\"success\":true,\"";
+        // Добавить в текущую фазу
+        if (target_phase->uid2rec.count(uid) == 0) {
+            target_phase->uid2rec[uid] = {1500, 0, 0};
+        }
+    }
+    LOG("Simulated " + to_string(count) + " new coders in phase " + phase_name);
+}
+  static void run_season_simulation(t_main& m) {
+    // 1. Создаём сезон
+    {
+      lock_guard<mutex> lock(m.mtx);
+      t_season s;
+      s.season = 0;
+      s.season_name = "splinter_2025";
+      s.title = "Splinter 2025";
+      m.seasons.push_back(s);
+    }
+
+    // 2. Парсим и применяем конфиг
+    try {
+      json j = json::parse(get_json_cfg());
+      TSeasonConfig cfg = j.get<TSeasonConfig>();
+      m.apply_config(cfg);
+    } catch (const exception& e) {
+      LOG("Failed to parse config: " + string(e.what()));
+      return;
+    }
+
+    // 3. Запускаем фоновый цикл обновления фаз
+    thread update_thread([&m]() {
+      while (true) {
+        m.update_seasons();
+        for(auto&ex:m.garr){
+          if(rand()%3==0){
+            auto&s=ex.status;
+            if(s=="finished")continue;
+            s="finished";
+            m.seasons[ex.gd.season].phases[ex.gd.phase].finished_games++;
+          }
+        }
+        this_thread::sleep_for(100ms);
+      }
+    });
+    update_thread.detach();
+
+    // 4. Симуляция времени и участников
+    LOG("Simulation started at " + m.qap_time());
+
+    // День 0: публикация статьи
+    m.sim_sleep(0); // старт в 2025.11.01 00:00:00.000
+    for(int d=1;d<24;d++)
+    for(int i=0;i<24;i++){
+      for(int i=0;i<60;i++)m.sim_sleep(60 * 1000);
+      m.simulate_new_coders(1, "S1");
+      //LOG("Day "+to_string(d)+": 1 coders joined");
+    }
+    LOG("Simulation completed");
+  }
+  static int sim_main() {
+    t_main m;
+    sim_speed = 10000.0; // 1 реальная секунда = 1000 симулированных
+
+    // Запускаем симуляцию
+    m.run_season_simulation(m);
+
+    // Ждём завершения (можно добавить флаг завершения)
+    for (;;) this_thread::sleep_for(1s);
+  }
 };
 
 #ifdef _WIN32
@@ -2129,6 +2372,7 @@ void setup_main(t_main&m){
 #include <signal.h>
 int main(int argc,char*argv[]){
   //main_test();//t_coder_rec::t_source
+  t_main::sim_main();
   return 0;
   signal(SIGPIPE, SIG_IGN);
   srand(time(0));
