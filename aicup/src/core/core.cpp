@@ -450,6 +450,7 @@ struct t_world{
   //bool finished(){return false;}
   vector<double> slot2score;
 };
+#include "t_config_structs.h"
 struct t_main : t_process,t_http_base {
   mutex mtx;
   vector<t_coder_rec> carr;//mutex carr_mtx;vector<size_t> ai2cid;
@@ -472,6 +473,12 @@ struct t_main : t_process,t_http_base {
           g.fg=result;
           g.status="finished";
           g.finished_at=qap_time();
+          if(qap_check_id(g.gd.season,seasons)){
+            auto&s=seasons[g.gd.season];
+            if(qap_check_id(s.phases,g.gd.phase)){
+              s.phases[g.gd.phase].finished_games++;
+            }
+          }
           sch.on_game_finished(node(client_id),g.gd.arr.size());
           LOG("game finished "+to_string(gid));
           //update_elo(result);
@@ -1236,9 +1243,13 @@ public:
     vector<t_qualification_rule> qualifying_from;
     t_uid2rec uid2rec;
     vector<uint64_t> games;
+    uint64_t finished_games=0;
 
     // === Управление волнами ===
-    string start_time="2025.10.31 19:08:07.120";
+    //string start_time="2025.10.31 19:08:07.120";
+    string scheduled_start_time="2025.11.02 16:36:37.447"; // из конфига — "не раньше этого времени"
+    bool is_closed=false;
+    bool is_completed = false;   // true, когда все игры завершены и рейтинги зафиксированы
     bool is_active = false;
 
     // Для round:
@@ -1249,6 +1260,8 @@ public:
     // Для sandbox:
     string last_wave_time="2025.10.31 19:08:07.120";
     uint64_t sandbox_wave_interval_ms = 5 * 60 * 1000; // 5 минут
+
+    double games_per_player_per_hour=1.0;
   };
 
   typedef map<uint64_t,t_season_coder> t_uid2scoder;
@@ -1268,12 +1281,38 @@ public:
     vector<t_scheduled_transition> scheduled_transitions;
     //mutex participants_mtx;
   };
-  const t_phase* find_phase(const t_season& season, const string& phase_name) {
+  const t_phase* find_phase(const t_season& season, const string& phase_name)const{
     for (auto& p : season.phases) {
       if (p.phase_name == phase_name) return &p;
     }
     return nullptr;
   }
+  t_phase* find_phase(t_season& season,const string&phase_name){
+    for (auto& p : season.phases) {
+      if (p.phase_name == phase_name) return &p;
+    }
+    return nullptr;
+  }
+  bool is_previous_phase_completed(const t_season& season, const t_phase& current) {
+    if (current.phase == 0) return true; // первая фаза — всегда готова
+
+    const t_phase& prev = season.phases[current.phase - 1];
+    return prev.is_completed;
+  }
+  void finalize_previous_phase(t_season& season, const t_phase& current) {
+    if (current.phase == 0) return;
+    t_phase& prev = season.phases[current.phase - 1];
+    if (prev.is_completed) return;
+    if (!prev.is_closed) return; // ждём только если закрыта
+
+    bool all_games_done = (prev.finished_games == prev.games.size());
+    if (!all_games_done) return;
+
+    compute_ratings_for_phase(prev, season);
+    prev.is_completed = true;
+    LOG("Phase " + prev.phase_name + " finalized.");
+  }
+  void compute_ratings_for_phase(const t_phase& current,t_season& season){}
 public:
   //vector<t_global_user> gus;
   vector<t_season> seasons;
@@ -1308,7 +1347,7 @@ public:
       p.type = type;
       p.num_players = num_players;
       // ...
-      s.phases.push_back(p);
+      s.phases.push_back(std::move(p));
     }
     //for (auto& [phase_id, type, num_players, rules] : phase_specs) {
     //  auto phase = make_unique<t_phase>();
@@ -1368,22 +1407,53 @@ public:
     LOG("Activated phase: "+to_string(phase)+" with "+to_string(target->uid2rec.size())+" participants");
   }
   void update_seasons() {
-    auto now=qap_time();
-    for (auto& season : seasons) {
-      if (season.cur_phase >= season.phases.size()) continue;
-      auto&phase=season.phases[season.cur_phase];
-      if (!phase.is_active) continue;
-      launch_missing_games_for_phase(phase,season);
-      for (auto&ex:season.scheduled_transitions)if(!ex.deaded){
-        if (qap_time_diff(ex.time,now)>0) {
-          auto*target=find_phase(season,ex.target_phase_name);
-          if (target) {
-            next_phase(season, target->phase);
+    lock_guard<mutex> lock(mtx);
+    if (seasons.empty()) return;
+    t_season& season = seasons.back();
+    auto now = qap_time();
+
+    // Сначала найдём активную фазу (если есть)
+    t_phase* active_phase = nullptr;
+    for (auto& p : season.phases) {
+      if (p.is_active) {
+        active_phase = &p;
+        break;
+      }
+    }
+    
+    // Проверяем возможность перехода к следующим фазам
+    for (auto& phase : season.phases) {
+      if (phase.is_active || phase.is_completed) continue;
+
+      // Можно ли закрыть предыдущую фазу?
+      if (phase.phase > 0) {
+        t_phase& prev = season.phases[phase.phase - 1];
+        // Если время наступило — закрываем предыдущую
+        if (!prev.is_closed && qap_time_diff(prev.scheduled_start_time, now) >= 0) {
+          // Но только если текущая фаза — это следующая после активной
+          if (active_phase && active_phase->phase == phase.phase - 1) {
+            prev.is_closed = true;
+            LOG("Phase " + prev.phase_name + " closed. Waiting for games to finish...");
           }
-          ex.deaded=true;
+        }
+      } else {
+        // Первая фаза: активируем, если время пришло
+        if (qap_time_diff(phase.scheduled_start_time, now) >= 0) {
+          next_phase(season, phase.phase);
         }
       }
-      qap_clean_if_deaded(season.scheduled_transitions);
+
+      // Если предыдущая фаза закрыта и все игры завершены — активируем текущую
+      if (phase.phase == 0 || season.phases[phase.phase - 1].is_completed) {
+        if (qap_time_diff(phase.scheduled_start_time, now) >= 0) {
+          next_phase(season, phase.phase);
+        }
+      }
+    }
+    
+    // Запускаем игры только если фаза активна И не закрыта
+    if (active_phase && !active_phase->is_closed) {
+      launch_missing_games_for_phase(*active_phase, season);
     }
   }
   void seasons_main_loop(){
@@ -1393,7 +1463,7 @@ public:
     }
   }
   void launch_missing_games_for_phase(t_phase& phase, t_season& season) {
-    if (!phase.is_active) return;
+    if (!phase.is_active || phase.is_closed) return;
 
     auto now = qap_time(); // предположим, у тебя есть такая функция
 
@@ -1441,9 +1511,11 @@ public:
     if (phase.type == "round") {
       phase.wave2gid.resize(phase.current_wave + 1);
       phase.wave2gid[phase.current_wave] = std::move(new_gids);
+      phase.games.insert(phase.games.end(), new_gids.begin(), new_gids.end());
       phase.current_wave++;
     } else {
       phase.wave2gid.push_back(std::move(new_gids));
+      phase.games.insert(phase.games.end(), new_gids.begin(), new_gids.end());
       phase.last_wave_time = wave_start_time;
     }
 
@@ -1522,6 +1594,375 @@ public:
     }
 
     return wave;
+  }
+public:
+  bool handle_set_phase_num_players(const string& phase_name, uint64_t num_players) {
+    lock_guard<mutex> lock(mtx);
+
+    if (seasons.empty()) return false;
+    t_season&season=seasons.back();
+
+    t_phase* target_phase=find_phase(season,phase_name);
+
+    if (!target_phase) {
+      LOG("handle_set_phase_num_players: phase '" + phase_name + "' not found");
+      return false;
+    }
+
+    if (num_players < 2 || num_players > 64) {
+      LOG("handle_set_phase_num_players: invalid num_players=" + to_string(num_players));
+      return false;
+    }
+
+    target_phase->num_players = num_players;
+    LOG("Updated phase '" + phase_name + "' num_players to " + to_string(num_players));
+    return true;
+  }
+  bool handle_schedule_transition(const string& from_phase_name, const string& to_phase_name, const string& time) {
+    if (seasons.empty()) return false;
+    t_season&season = seasons.back();
+
+    auto*target_phase=find_phase(season,to_phase_name);
+    if (!target_phase) {
+      LOG("handle_schedule_transition: target phase '" + to_phase_name + "' not found");
+      return false;
+    }
+    season.scheduled_transitions.push_back({false,to_phase_name,time});
+
+    LOG("Scheduled transition to '" + to_phase_name + "' at " + time);
+    return true;
+  }
+  bool handle_add_sandbox_wave(const t_season& season) {
+    return false;
+  }
+public:
+  struct t_dsl_cmd {
+    enum type {
+      unknown,
+      single_sandbox,
+      standard_phases,
+      set_num_players,
+      set_qualification,
+      add_phase,
+      remove_phase,
+      schedule_transition
+    } cmd = unknown;
+
+    // set_num_players
+    string phase_name;
+    uint64_t num_players = 0;
+
+    // set_qualification: qual_rules = {{"R1",300}, {"S2",60}}
+    vector<pair<string, uint64_t>> qual_rules;
+
+    // add_phase
+    string new_phase_name;
+    string new_phase_type; // "sandbox" or "round"
+    uint64_t new_num_players = 2;
+
+    // remove_phase
+    string phase_to_remove;
+
+    // schedule_transition
+    string from_phase;
+    string to_phase;
+    string at_time;
+  };
+
+  // Безопасный stoull с проверкой
+  bool safe_stoull(const string& s, uint64_t& out) {
+    if (s.empty()) return false;
+    for (char c : s) if (c < '0' || c > '9') return false;
+    try {
+      out = stoull(s);
+      return true;
+    } catch (...) { return false; }
+  }
+  t_dsl_cmd parse_dsl_command(const string& input) {
+    t_dsl_cmd cmd;
+
+    // 1. single_sandbox
+    if (input == "single_sandbox") {
+      cmd.cmd = t_dsl_cmd::single_sandbox;
+      return cmd;
+    }
+
+    // 2. standard_phases
+    if (input == "standard_phases") {
+      cmd.cmd = t_dsl_cmd::standard_phases;
+      return cmd;
+    }
+
+    // 3. schedule_transition: "S1->R1 at ..."
+    size_t arrow = input.find("->");
+    size_t at_kw = input.find(" at ");
+    if (arrow != string::npos && at_kw != string::npos && at_kw > arrow + 2) {
+      cmd.cmd = t_dsl_cmd::schedule_transition;
+      cmd.from_phase = input.substr(0, arrow);
+      cmd.to_phase  = input.substr(arrow + 2, at_kw - (arrow + 2));
+      cmd.at_time  = input.substr(at_kw + 4);
+      return cmd;
+    }
+
+    // 4. Остальные команды: PHASE_NAME(...)
+    size_t paren = input.find('(');
+    if (paren == string::npos || input.back() != ')') return cmd;
+
+    string phase = input.substr(0, paren);
+    string inner = input.substr(paren + 1, input.size() - paren - 2);
+
+    // 4a. set_num_players: "R2(players_per_game=4)"
+    if (inner.size() >= 18 && inner.substr(0, 18) == "players_per_game=") {
+      cmd.cmd = t_dsl_cmd::set_num_players;
+      cmd.phase_name = phase;
+      safe_stoull(inner.substr(18), cmd.num_players);
+      return cmd;
+    }
+
+    // 4b. set_qualification: "R2(qual_from=R1:300,S2:60)"
+    if (inner.size() >= 11 && inner.substr(0, 11) == "qual_from=") {
+      cmd.cmd = t_dsl_cmd::set_qualification;
+      cmd.phase_name = phase;
+      string rules_str = inner.substr(11);
+      vector<string> rules = split(rules_str, ",");
+      for (const string& rule : rules) {
+        size_t colon = rule.find(':');
+        if (colon == string::npos) continue;
+        string src_phase = rule.substr(0, colon);
+        string count_str = rule.substr(colon + 1);
+        uint64_t count;
+        if (safe_stoull(count_str, count)) {
+          cmd.qual_rules.push_back({src_phase, count});
+        }
+      }
+      return cmd;
+    }
+
+    // 4c. add_phase: "add_phase(S3,sandbox,8)"
+    if (phase == "add_phase") {
+      cmd.cmd = t_dsl_cmd::add_phase;
+      vector<string> args = split(inner, ",");
+      if (args.size() == 3) {
+        cmd.new_phase_name = args[0];
+        cmd.new_phase_type = args[1];
+        safe_stoull(args[2], cmd.new_num_players);
+      }
+      return cmd;
+    }
+
+    // 4d. remove_phase: "remove_phase(S3)"
+    if (phase == "remove_phase") {
+      cmd.cmd = t_dsl_cmd::remove_phase;
+      cmd.phase_to_remove = inner;
+      return cmd;
+    }
+
+    return cmd;
+  }
+  void apply_single_sandbox(t_season& s) {
+    s.phases.clear();
+    t_phase p;
+    p.phase = 0;
+    p.phase_name = "S1";
+    p.type = "sandbox";
+    p.num_players = 16;
+    p.game_config = "";
+    p.is_active = true;
+    s.phases.push_back(p);
+    s.cur_phase = 0;
+    LOG("Season reset to single sandbox (S1)");
+  }
+  void apply_standard_phases(t_season& s) {
+    s.phases.clear();
+
+    struct spec { string name; string type; uint64_t players; };
+    vector<spec> specs = {
+      {"S1", "sandbox", 16},
+      {"R1", "round",  16},
+      {"S2", "sandbox", 16},
+      {"R2", "round",  16},
+      {"SF", "sandbox", 16},
+      {"F", "round",  16},
+      {"S", "sandbox", 16}
+    };
+
+    for (size_t i = 0; i < specs.size(); ++i) {
+      t_phase p;
+      p.phase = i;
+      p.phase_name = specs[i].name;
+      p.type = specs[i].type;
+      p.num_players = specs[i].players;
+      p.game_config = "";
+      p.is_active = (i == 0); // only S1 active initially
+      s.phases.push_back(p);
+    }
+
+    // Квалификации (как в init_splinter_2025_season)
+    if (s.phases.size() > 1) {
+      s.phases[1].qualifying_from = {{0, 900}}; // R1 ← S1 top 900
+    }
+    if (s.phases.size() > 3) {
+      s.phases[3].qualifying_from = {{1, 300}, {2, 60}}; // R2 ← R1 top 300 + S2 top 60
+    }
+    if (s.phases.size() > 5) {
+      s.phases[5].qualifying_from = {{3, 50}, {4, 10}}; // F ← R2 top 50 + SF top 10
+    }
+
+    s.cur_phase = 0;
+    LOG("Season set to standard phases: S1-R1-S2-R2-SF-F-S");
+  }
+  bool apply_set_qualification(t_season& s, const string& target_phase_name, const vector<pair<string, uint64_t>>& rules) {
+    t_phase* target = find_phase(s, target_phase_name);
+    if (!target) return false;
+
+    target->qualifying_from.clear();
+    for (auto& [src_name, top_n] : rules) {
+      const t_phase* src = find_phase(s, src_name);
+      if (src) {
+        target->qualifying_from.push_back({src->phase, top_n});
+      }
+    }
+    return true;
+  }
+  bool apply_add_phase(t_season& s, const string& name, const string& type, uint64_t players) {
+    if (type != "sandbox" && type != "round") return false;
+    if (players < 2 || players > 64) return false;
+
+    // Проверка уникальности имени
+    for (auto& p : s.phases) {
+        if (p.phase_name == name) return false;
+    }
+
+    t_phase p;
+    p.phase = s.phases.size();
+    p.phase_name = name;
+    p.type = type;
+    p.num_players = players;
+    p.game_config = "";
+    //p.world
+    p.is_active = false;
+    s.phases.push_back(p);
+    return true;
+  }
+  void apply_dsl_command(const string& config_str) {
+    //lock_guard<mutex> lock(mtx);
+    if (seasons.empty()) return;
+    t_season& s = seasons.back();
+
+    auto cmd = parse_dsl_command(config_str);
+
+    switch (cmd.cmd) {
+      case t_dsl_cmd::single_sandbox:
+        apply_single_sandbox(s);
+        break;
+      case t_dsl_cmd::standard_phases:
+        apply_standard_phases(s);
+        break;
+      case t_dsl_cmd::set_num_players:
+        handle_set_phase_num_players(cmd.phase_name, cmd.num_players);
+        break;
+      case t_dsl_cmd::set_qualification:
+        apply_set_qualification(s, cmd.phase_name, cmd.qual_rules);
+        break;
+      case t_dsl_cmd::add_phase:
+        apply_add_phase(s, cmd.new_phase_name, cmd.new_phase_type, cmd.new_num_players);
+        break;
+      case t_dsl_cmd::remove_phase:
+        //apply_remove_phase(s, cmd.phase_to_remove);
+        break;
+      case t_dsl_cmd::schedule_transition:
+        handle_schedule_transition(cmd.from_phase, cmd.to_phase, cmd.at_time);
+        break;
+      default:
+        LOG("Unknown DSL command: " + config_str);
+    }
+  }
+public:
+  bool apply_config(const TSeasonConfig& cfg) {
+    //lock_guard<mutex> lock(mtx);
+
+    if (seasons.empty()) {
+      LOG("apply_config: no active season");
+      return false;
+    }
+
+    t_season& season = seasons.back();
+
+    // Карта: имя фазы → индекс в season.phases
+    unordered_map<string, size_t> name_to_index;
+    for (size_t i = 0; i < season.phases.size(); ++i) {
+      name_to_index[season.phases[i].phase_name] = i;
+    }
+
+    for (const auto& pc : cfg.phases) {
+      t_phase* target = nullptr;
+      bool is_new = false;
+
+      auto it = name_to_index.find(pc.phaseName);
+      if (it != name_to_index.end()) {
+        // Фаза уже существует — обновляем
+        target = &season.phases[it->second];
+      } else {
+        // Новая фаза — добавляем
+        t_phase new_phase;
+        new_phase.phase = season.phases.size(); // стабильный ID
+        new_phase.phase_name = pc.phaseName;
+        new_phase.type = pc.type;
+        season.phases.push_back(new_phase);
+        target = &season.phases.back();
+        name_to_index[pc.phaseName] = season.phases.size() - 1;
+        is_new = true;
+      }
+
+      // Обновляем параметры
+      target->world = pc.world;
+      target->num_players = pc.playersPerGame;
+      target->game_config = ""; // или передавай отдельно, если нужно
+      target->scheduled_start_time=pc.startTime;
+      //target->is_active = false;
+      // Песочница: обновляем частоту игр
+      if (pc.type == "sandbox") {
+         target->games_per_player_per_hour = pc.gamesPerPlayerPerHour;
+      }
+
+      // Раунд: обновляем правила квалификации
+      if (pc.type == "round") {
+        target->qualifying_from.clear();
+        for (const auto& rule : pc.qualifyingFrom) {
+          // Найдём phase_id по имени
+          uint64_t src_phase_id = kInvalidIndex;
+          for (const auto& p : season.phases) {
+            if (p.phase_name == rule.fromPhaseName) {
+              src_phase_id = p.phase;
+              break;
+            }
+          }
+          if (src_phase_id != kInvalidIndex) {
+            target->qualifying_from.push_back({src_phase_id, rule.topN});
+          }
+          // Если фаза ещё не создана — правило проигнорируется (или можно отложить)
+        }
+      }
+
+      if (is_new) {
+        LOG("Added new phase: " + pc.phaseName);
+      } else {
+        LOG("Updated phase: " + pc.phaseName);
+      }
+    }
+
+    return true;
+  }
+  // Пример обработчика POST /api/seasons/current/config
+  bool handle_config_update(const std::string& json_body) {
+    try {
+      json j = json::parse(json_body);
+      auto cfg = j.get<TSeasonConfig>();
+      return apply_config(cfg);
+    } catch (const std::exception& e) {
+      LOG("JSON parse error: " + std::string(e.what()));
+      return false;
+    }
   }
 };
 
