@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Season Admin Console</title>
+  <style>
+    body { font-family: monospace; max-width: 900px; margin: 20px auto; padding: 0 10px; }
+    h2 { margin-top: 30px; }
+    label { display: block; margin-top: 10px; }
+    input, textarea, button { width: 100%; padding: 6px; margin: 4px 0; box-sizing: border-box; }
+    textarea { height: 120px; }
+    button { background: #4CAF50; color: white; border: none; cursor: pointer; }
+    button:hover { background: #45a049; }
+    pre { background: #f4f4f4; padding: 10px; overflow-x: auto; white-space: pre-wrap; }
+    .error { color: red; }
+    .success { color: green; }
+    .token-input { background: #fffde7; }
+  </style>
+</head>
+<body>
+  <h1>🎯 Season Admin Console</h1>
+
+  <div>
+    <label>🔐 Admin Token:
+      <input type="password" id="adminToken" class="token-input" placeholder="Enter your bearer token" />
+    <!--</button>-->
+    <button onclick="saveToken()">💾 Save Token</button>
+    <button onclick="clearToken()">🗑️ Clear Token</button>
+    <div id="tokenStatus"></div>
+  </div>
+
+  <!-- 1. Submit source -->
+  <h2>📤 Submit Strategy</h2>
+  <label>Source code:</label>
+  <textarea id="sourceCode" placeholder="// Write your C++ strategy here...">return 0;</textarea>
+  <button onclick="submitSource()">🚀 Submit to Current Season</button>
+  <pre id="submitResult"></pre>
+
+  <!-- 2. Manual game -->
+  <h2>🎮 Create Manual Game</h2>
+  <label>Season name:</label>
+  <input type="text" id="manualSeason" value="splinter_2025" />
+  <label>Phase name (must be active sandbox):</label>
+  <input type="text" id="manualPhase" value="S1" />
+  <label>Players (one per line, format: coder_name):</label>
+  <textarea id="manualPlayers" placeholder="my_coder&#10;other_coder&#10;...">my_coder</textarea>
+  <button onclick="createManualGame()">🎲 Launch Manual Game</button>
+  <pre id="manualGameResult"></pre>
+
+  <!-- 3. Apply DSL config -->
+  <h2>⚙️ Apply DSL Command</h2>
+  <label>DSL command (e.g. "standard_phases", "R2(players_per_game=8)"):</label>
+  <input type="text" id="dslCommand" placeholder="standard_phases" />
+  <button onclick="applyDsl()">✅ Apply DSL</button>
+  <pre id="dslResult"></pre>
+
+  <!-- 4. Full config -->
+  <h2>🧩 Apply Full Season Config (JSON)</h2>
+  <textarea id="fullConfig" placeholder='{"seasonName":"test", "phases": [...]}'>{"seasonName":"test","phases":[]}</textarea>
+  <button onclick="applyFullConfig()">🔁 Apply Full Config</button>
+  <pre id="fullConfigResult"></pre>
+
+  <!-- 5. Get current season -->
+  <h2>📊 Get Current Season Info</h2>
+  <button onclick="getCurrentSeason()">📥 Fetch</button>
+  <pre id="currentSeasonResult"></pre>
+
+  <!-- 6. Get /me -->
+  <h2>👤 My Season Status</h2>
+  <button onclick="getMe()">🔍 Who am I in this season?</button>
+  <pre id="meResult"></pre>
+
+  <!-- 7. Leaderboard -->
+  <h2>🏆 Leaderboard</h2>
+  <label>Season:</label>
+  <input type="text" id="lbSeason" value="splinter_2025" />
+  <label>Phase:</label>
+  <input type="text" id="lbPhase" value="S1" />
+  <button onclick="getLeaderboard()">📈 Get Leaderboard</button>
+  <pre id="leaderboardResult"></pre>
+
+  <script>
+    const API_BASE = window.location.origin + '/api';
+
+    function getToken() {
+      return localStorage.getItem('adminToken') || '';
+    }
+
+    function setToken(token) {
+      localStorage.setItem('adminToken', token);
+      document.getElementById('adminToken').value = '';
+      updateTokenStatus();
+    }
+
+    function clearToken() {
+      localStorage.removeItem('adminToken');
+      updateTokenStatus();
+    }
+
+    function updateTokenStatus() {
+      const el = document.getElementById('tokenStatus');
+      const token = getToken();
+      el.innerHTML = token ? '<span class="success">✅ Token saved (hidden)</span>' : '<span class="error">❌ No token</span>';
+    }
+
+    function saveToken() {
+      const t = document.getElementById('adminToken').value.trim();
+      if (t) {
+        setToken(t);
+      } else {
+        alert('Token cannot be empty');
+      }
+    }
+
+    async function apiCall(method, path, body = null) {
+      const url = API_BASE + path;
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      const token = getToken();
+      if (token) {
+        headers['Authorization'] = 'Bearer ' + token;
+      }
+
+      const options = { method, headers };
+      if (body) options.body = JSON.stringify(body);
+
+      try {
+        const res = await fetch(url, options);
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          data = { raw: text, status: res.status };
+        }
+        return { ok: res.ok, status: res.status, data };
+      } catch (err) {
+        return { ok: false, error: err.message };
+      }
+    }
+
+    // === Submit Source ===
+    async function submitSource() {
+      const src = document.getElementById('sourceCode').value;
+      const res = await apiCall('POST', '/seasons/current/submit', { src });
+      const out = document.getElementById('submitResult');
+      out.className = res.ok ? 'success' : 'error';
+      out.textContent = JSON.stringify(res.data, null, 2);
+    }
+
+    // === Manual Game ===
+    async function createManualGame() {
+      const season = document.getElementById('manualSeason').value;
+      const phase = document.getElementById('manualPhase').value;
+      const playersRaw = document.getElementById('manualPlayers').value.split('\n')
+        .map(x => x.trim()).filter(x => x);
+      const players = playersRaw.map(name => ({ coder: name }));
+      const res = await apiCall('POST', `/seasons/${season}/phases/${phase}/manual_game`, {
+        players
+      });
+      const out = document.getElementById('manualGameResult');
+      out.className = res.ok ? 'success' : 'error';
+      out.textContent = JSON.stringify(res.data, null, 2);
+    }
+
+    // === DSL ===
+    async function applyDsl() {
+      const cmd = document.getElementById('dslCommand').value;
+      const res = await apiCall('POST', '/seasons/current/dsl', { command: cmd });
+      const out = document.getElementById('dslResult');
+      out.className = res.ok ? 'success' : 'error';
+      out.textContent = JSON.stringify(res.data, null, 2);
+    }
+
+    // === Full Config ===
+    async function applyFullConfig() {
+      try {
+        const cfg = JSON.parse(document.getElementById('fullConfig').value);
+        const res = await apiCall('POST', '/seasons/current/config', cfg);
+        const out = document.getElementById('fullConfigResult');
+        out.className = res.ok ? 'success' : 'error';
+        out.textContent = JSON.stringify(res.data, null, 2);
+      } catch (e) {
+        document.getElementById('fullConfigResult').className = 'error';
+        document.getElementById('fullConfigResult').textContent = 'Invalid JSON: ' + e.message;
+      }
+    }
+
+    // === Current Season ===
+    async function getCurrentSeason() {
+      const res = await apiCall('GET', '/seasons/current');
+      const out = document.getElementById('currentSeasonResult');
+      out.className = res.ok ? 'success' : 'error';
+      out.textContent = JSON.stringify(res.data, null, 2);
+    }
+
+    // === /me ===
+    async function getMe() {
+      const res = await apiCall('GET', '/seasons/current/me');
+      const out = document.getElementById('meResult');
+      out.className = res.ok ? 'success' : 'error';
+      out.textContent = JSON.stringify(res.data, null, 2);
+    }
+
+    // === Leaderboard ===
+    async function getLeaderboard() {
+      const season = document.getElementById('lbSeason').value;
+      const phase = document.getElementById('lbPhase').value;
+      const res = await apiCall('GET', `/seasons/${season}/phases/${phase}/leaderboard`);
+      const out = document.getElementById('leaderboardResult');
+      out.className = res.ok ? 'success' : 'error';
+      out.textContent = JSON.stringify(res.data, null, 2);
+    }
+
+    // Init
+    updateTokenStatus();
+  </script>
+</body>
+</html>

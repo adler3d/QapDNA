@@ -1498,6 +1498,106 @@ struct t_main : t_process,t_http_base {
       res.status = 200;
       res.set_content(j.dump(2), "application/json");
     });
+    srv.Get("/api/seasons/current/me", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
+      auto auth_header = req.get_header_value("Authorization");
+      if (auth_header.empty()) {
+        res.status = 401;
+        res.set_content("Authorization header is missing", "text/plain");
+        return;
+      }
+      const std::string prefix = "Bearer ";
+      if (auth_header.find(prefix) != 0) {
+        res.status = 400;
+        res.set_content("Authorization header must be of the form 'Bearer <token>'", "text/plain");
+        return;
+      }
+      std::string token = auth_header.substr(prefix.size());
+      if (token.empty()) {
+        res.status = 400;
+        res.set_content("Token is missing in Authorization header", "text/plain");
+        return;
+      }
+
+      uint64_t uid = UINT64_MAX;
+      string sysname;
+      {
+        lock_guard<mutex> lock(mtx);
+        for (size_t i = 0; i < carr.size(); ++i) {
+          if (carr[i].token == token) {
+            uid = i;
+            sysname = carr[i].sysname;
+            break;
+          }
+        }
+      }
+      if (uid == UINT64_MAX) {
+        res.status = 403;
+        res.set_content("Invalid token", "text/plain");
+        return;
+      }
+
+      lock_guard<mutex> lock(mtx);
+      if (seasons.empty()) {
+        res.status = 404;
+        res.set_content("No active season", "text/plain");
+        return;
+      }
+
+      const t_season& season = seasons.back();
+      json resp;
+      resp["uid"] = uid;
+      resp["sysname"] = sysname;
+
+      auto it = season.uid2scoder.find(uid);
+      bool in_season = (it != season.uid2scoder.end());
+      resp["in_season"] = in_season;
+
+      if (!in_season) {
+        resp["can_submit_now"] = false;
+        res.status = 200;
+        res.set_content(resp.dump(), "application/json");
+        return;
+      }
+
+      const t_season_coder& sc = it->second;
+      resp["last_submit_time"] = sc.sarr.empty() ? "" : sc.sarr.back().time;
+      resp["can_submit_now"] = sc.allowed_next_src_upload();
+
+      // Найти текущую активную фазу
+      const t_phase* active_phase = nullptr;
+      for (const auto& p : season.phases) {
+        if (p.is_active) {
+          active_phase = &p;
+          break;
+        }
+      }
+
+      if (active_phase && active_phase->uid2rec.count(uid)) {
+        const auto& rec = active_phase->uid2rec.at(uid);
+        vector<pair<double, uint64_t>> ranked;
+        for (const auto& [u, r] : active_phase->uid2rec) {
+          ranked.emplace_back(-r.score, u);
+        }
+        sort(ranked.begin(), ranked.end());
+        int rank = 1;
+        for (auto& [_, u] : ranked) {
+          if (u == uid) break;
+          rank++;
+        }
+        resp["current_phase"] = {
+          {"name", active_phase->phase_name},
+          {"type", active_phase->type},
+          {"rank", rank},
+          {"rank_of", ranked.size()},
+          {"score", rec.score},
+          {"games_played", rec.games}
+        };
+      }
+
+      res.status = 200;
+      res.set_content(resp.dump(), "application/json");
+    });
     srv.Get("/", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
       res.set_content(file_get_contents("index.html"), "text/html");
