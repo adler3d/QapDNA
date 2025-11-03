@@ -21,6 +21,7 @@ struct TPhaseConfig {
 
   vector<TQualRuleConfig> qualifyingFrom;
   string startTime;
+  string endTime;
 };
 
 struct TSeasonConfig {
@@ -35,7 +36,7 @@ void from_json(const json& j, TQualRuleConfig& r) {
 }
 
 void from_json(const json& j, TPhaseConfig& p) {
-  j.at("phaseName").get_to(p.phaseName);
+  j.at("name").get_to(p.phaseName);
   j.at("type").get_to(p.type);
   j.at("world").get_to(p.world);
 
@@ -55,6 +56,7 @@ void from_json(const json& j, TPhaseConfig& p) {
     j.at("qualifyingFrom").get_to(p.qualifyingFrom);
   }
   j.at("startTime").get_to(p.startTime);
+  j.at("endTime").get_to(p.endTime);
 }
 
 void from_json(const json& j, TSeasonConfig& cfg) {

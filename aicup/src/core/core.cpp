@@ -457,9 +457,11 @@ struct t_world{
 };
 #include "t_config_structs.h"
 struct t_main : t_process,t_http_base {
+  #include "waveman.h"
   mutex mtx;
   vector<t_coder_rec> carr;//mutex carr_mtx;vector<size_t> ai2cid;
   vector<t_game> garr;//mutex garr_mtx;
+  WaveManager waveman;
   //map<string, string> node2ipport;
   //t_net_api capi;
   map<int, emitter_on_data_decoder> client_decoders;mutex cds_mtx;//mutex n2i_mtx;
@@ -481,7 +483,9 @@ struct t_main : t_process,t_http_base {
           if(qap_check_id(g.gd.season,seasons)){
             auto&s=seasons[g.gd.season];
             if(qap_check_id(s.phases,g.gd.phase)){
-              s.phases[g.gd.phase].finished_games++;
+              auto&p=s.phases[g.gd.phase];
+              p.finished_games++;
+              p.on_prev_wave_end=p.prev_wave_done();
             }
           }
           sch.on_game_finished(node(client_id),g.gd.arr.size());
@@ -1249,18 +1253,20 @@ public:
     t_uid2rec uid2rec;
     vector<uint64_t> games;
     uint64_t finished_games=0;
-
+    bool prev_wave_done()const{return games.size()==finished_games;}
+    bool on_prev_wave_end=true;
     // === Управление волнами ===
     //string start_time="2025.10.31 19:08:07.120";
     string scheduled_start_time="2025.11.02 16:36:37.447"; // из конфига — "не раньше этого времени"
+    string scheduled_end_time="2025.11.03 09:46:51.632";
     bool is_closed=false;
     bool is_completed = false;   // true, когда все игры завершены и рейтинги зафиксированы
     bool is_active = false;
 
     // Для round:
-    uint64_t total_waves = 3;                // сколько волн сыграть
-    uint64_t current_wave = 0;               // какая волна сейчас (0 = не начата)
-    vector<vector<uint64_t>> wave2gid;           // games[wave2gid[wave_id][i]]
+    //uint64_t total_waves = 3;// сколько волн сыграть
+    //uint64_t current_wave = 0;
+    vector<vector<uint64_t>> wave2gid; // games[wave2gid[wave_id][i]]
 
     // Для sandbox:
     string last_wave_time="2025.10.31 19:08:07.120";
@@ -1278,14 +1284,21 @@ public:
     t_uid2scoder uid2scoder;
     vector<t_phase> phases;
     uint64_t cur_phase = 0;
-    struct t_scheduled_transition{
+    /*struct t_scheduled_transition{
       bool deaded=false;
       string target_phase_name;
       string time;
     };
-    vector<t_scheduled_transition> scheduled_transitions;
+    vector<t_scheduled_transition> scheduled_transitions;*/
     //mutex participants_mtx;
     bool is_finalized = false;
+    void sync(){
+      for(int i=1;i<phases.size();i++){
+        auto&prev=phases[i-1];
+        auto&cur=phases[i-0];
+        prev.scheduled_end_time=cur.scheduled_start_time;
+      }
+    }
   };
   const t_phase* find_phase(const t_season& season, const string& phase_name)const{
     for (auto& p : season.phases) {
@@ -1411,6 +1424,7 @@ public:
       }
     }
     LOG("Activated phase: "+to_string(phase)+" with "+to_string(target->uid2rec.size())+" participants");
+    waveman.startRound(qap_time_diff(target->scheduled_start_time,target->scheduled_end_time));
   }
   void update_seasons() {
     lock_guard<mutex> lock(mtx);
@@ -1443,6 +1457,14 @@ public:
           prev.is_closed = true;
           LOG("Phase " + prev.phase_name + " closed. Waiting for " +
             to_string(prev.games.size() - prev.finished_games) + " games to finish.");
+        }
+      }
+      if(i+1==season.phases.size()){
+        if(phase.is_active&&qap_time_diff(phase.scheduled_end_time,now)>=0){
+          phase.is_active = false;
+          phase.is_closed = true;
+          LOG("Phase " + phase.phase_name + " closed. Waiting for " +
+            to_string(phase.games.size() - phase.finished_games) + " games to finish.");
         }
       }
 
@@ -1500,64 +1522,54 @@ public:
   void launch_missing_games_for_phase(t_phase& phase, t_season& season) {
     if (!phase.is_active || phase.is_closed) return;
 
-    auto now = qap_time(); // предположим, у тебя есть такая функция
+    auto now = qap_time();
 
-    // === Определяем, нужно ли запускать новую волну ===
     bool should_launch_wave = false;
-    string wave_start_time;
+    string wave_start_time=qap_time();
 
     if (phase.type == "round") {
-      if (phase.current_wave >= phase.total_waves) return; // всё сделано
-      should_launch_wave = true;
-      wave_start_time = qap_time(); // время старта волны — сейчас
+      //if (phase.current_wave >= phase.total_waves) return; // всё сделано
+      should_launch_wave = phase.prev_wave_done()&&phase.on_prev_wave_end;
     } else if (phase.type == "sandbox") {
       if (qap_time_diff(phase.last_wave_time,now)>=phase.sandbox_wave_interval_ms) {
-        should_launch_wave = true;
-        wave_start_time = qap_time();
+        should_launch_wave = phase.prev_wave_done()&&phase.on_prev_wave_end;
       }
     }
 
-    if (!should_launch_wave) return;
+    if(!should_launch_wave)return;
+    if(!waveman.tryStartNextWave())return;
 
-    // === Генерация новой волны ===
     vector<t_game_decl> wave = generate_wave(phase, season);
     if (wave.empty()) return;
-
-    // === Сохраняем игры в глобальный garr и в фазу ===
+    
+    phase.on_prev_wave_end=false;
+    if(phase.games.size())waveman.markWaveEnd();
+    waveman.markWaveStart();
     vector<uint64_t> new_gids;
     {
       //lock_guard<mutex> lock(mtx);
       for (auto& gd : wave) {
-        gd.game_id = garr.size(); // присваиваем глобальный ID
+        gd.game_id = garr.size();
         gd.season=season.season;
         gd.phase=phase.phase;
-        gd.wave=phase.type=="round"?phase.current_wave:0;
+        gd.wave=phase.wave2gid.size();
         t_game game;
         game.gd = gd;
         game.status = "scheduled";
         game.ordered_at = wave_start_time;
-        game.author = "system:season:" + season.season_name + ":" + phase.phase_name + ":wave" + to_string(phase.current_wave);
+        game.author = "system";//:season:" + season.season_name + ":" + phase.phase_name + ":wave" + to_string(phase.current_wave);
         garr.push_back(std::move(game));
         new_gids.push_back(gd.game_id);
       }
     }
 
-    // === Обновляем метаданные фазы ===
-    if (phase.type == "round") {
-      phase.games.insert(phase.games.end(),new_gids.begin(),new_gids.end());
-      phase.wave2gid.resize(phase.current_wave + 1);
-      phase.wave2gid[phase.current_wave] = std::move(new_gids);
-      phase.current_wave++;
-    } else {
-      phase.games.insert(phase.games.end(),new_gids.begin(),new_gids.end());
-      phase.wave2gid.push_back(std::move(new_gids));
-      phase.last_wave_time = wave_start_time;
-    }
-
+    phase.games.insert(phase.games.end(),new_gids.begin(),new_gids.end());
+    phase.wave2gid.push_back(std::move(new_gids));
+    phase.last_wave_time = wave_start_time;
+    //phase.current_wave++;
     LOG("Launched wave for " + phase.phase_name +
       " (" + phase.type + ") with " + to_string(wave.size()) + " games");
 
-    // === Отправляем в scheduler ===
     for (auto& gd : wave) {
       sch.add_game_decl(gd);
     }
@@ -1573,7 +1585,7 @@ public:
     // Проверка: все ли uid корректны?
     for (auto&[uid,rec]:phase.uid2rec) {
       if (uid >= carr.size()) {
-        LOG("launch_missing_games_for_phase: invalid uid " + to_string(uid) + " >= carr.size()");
+        LOG("generate_wave: invalid uid " + to_string(uid) + " >= carr.size()");
         return{};
       }
     }
@@ -1583,21 +1595,14 @@ public:
     }
     shuffle(uids.begin(), uids.end(), dre);
 
-    // Сколько игр в волне?
     uint64_t games_in_wave = 0;
     if (phase.type == "round") {
-      uint64_t groups = (uids.size() + phase.num_players - 1) / phase.num_players;
-      games_in_wave = groups * 3; // 3 игры на группу
+      games_in_wave = double(phase.uid2rec.size())/(phase.num_players?phase.num_players:2);
     } else {
-      double hours_since_last = qap_time_diff(phase.last_wave_time, qap_time()) / (3600.0 * 1000.0);
-      double games_needed = 0;
-      for (auto& [uid, _] : phase.uid2rec) {
-        games_needed += phase.games_per_player_per_hour * hours_since_last;
-      }
-      games_in_wave = static_cast<uint64_t>(games_needed);
-      games_in_wave = max(1ULL, min(games_in_wave, 1000ULL)); // ограничение сверху
+      //double hours_since_last = qap_time_diff(phase.last_wave_time, qap_time()) / (3600.0 * 1000.0);
+      games_in_wave = double(phase.uid2rec.size())/(phase.num_players?phase.num_players:2);
     }
-
+    // ниже код создаст games_in_wave игр.
     size_t next_idx = 0;
     for (uint64_t g = 0; g < games_in_wave; ++g) {
       vector<t_game_slot> slots;
@@ -1659,20 +1664,20 @@ public:
     LOG("Updated phase '" + phase_name + "' num_players to " + to_string(num_players));
     return true;
   }
-  bool handle_schedule_transition(const string& from_phase_name, const string& to_phase_name, const string& time) {
-    if (seasons.empty()) return false;
-    t_season&season = seasons.back();
-
-    auto*target_phase=find_phase(season,to_phase_name);
-    if (!target_phase) {
-      LOG("handle_schedule_transition: target phase '" + to_phase_name + "' not found");
-      return false;
-    }
-    season.scheduled_transitions.push_back({false,to_phase_name,time});
-
-    LOG("Scheduled transition to '" + to_phase_name + "' at " + time);
-    return true;
-  }
+  //bool handle_schedule_transition(const string& from_phase_name, const string& to_phase_name, const string& time) {
+  //  if (seasons.empty()) return false;
+  //  t_season&season = seasons.back();
+  //
+  //  auto*target_phase=find_phase(season,to_phase_name);
+  //  if (!target_phase) {
+  //    LOG("handle_schedule_transition: target phase '" + to_phase_name + "' not found");
+  //    return false;
+  //  }
+  //  season.scheduled_transitions.push_back({false,to_phase_name,time});
+  //
+  //  LOG("Scheduled transition to '" + to_phase_name + "' at " + time);
+  //  return true;
+  //}
   bool handle_add_sandbox_wave(const t_season& season) {
     return false;
   }
@@ -1912,7 +1917,7 @@ public:
         //apply_remove_phase(s, cmd.phase_to_remove);
         break;
       case t_dsl_cmd::schedule_transition:
-        handle_schedule_transition(cmd.from_phase, cmd.to_phase, cmd.at_time);
+        //handle_schedule_transition(cmd.from_phase, cmd.to_phase, cmd.at_time);
         break;
       default:
         LOG("Unknown DSL command: " + config_str);
@@ -1960,10 +1965,12 @@ public:
       target->num_players = pc.playersPerGame;
       target->game_config = ""; // или передавай отдельно, если нужно
       target->scheduled_start_time=pc.startTime;
+      target->scheduled_end_time=pc.endTime;
       //target->is_active = false;
       // Песочница: обновляем частоту игр
       if (pc.type == "sandbox") {
          target->games_per_player_per_hour = pc.gamesPerPlayerPerHour;
+         target->sandbox_wave_interval_ms = pc.gamesPerPlayerPerHour?3600*1000/pc.gamesPerPlayerPerHour:5*60*1000;
       }
 
       // Раунд: обновляем правила квалификации
@@ -1991,7 +1998,7 @@ public:
         LOG("Updated phase: " + pc.phaseName);
       }
     }
-
+    season.sync();
     return true;
   }
   // Пример обработчика POST /api/seasons/current/config
@@ -2008,6 +2015,137 @@ public:
 public:
   static void LOG(const string&str){cerr<<"["<<::qap_time()<<"]["<<qap_time()<<"] "<<(str)<<endl;}
   static string get_json_cfg(){
+    const char* v2=R"({
+  "machineTypes": [
+    {
+      "cores": 4,
+      "pricePerDay": 50
+    }
+  ],
+  "diskPricePerGBPerDay": 0.4,
+  "seasonName": "splinter_2025",
+  "startTime": "2025.11.02 00:00:00.000",
+  "phases1": [],
+  "phases2": [],
+  "phases": [
+    {
+      "name": "S1",
+      "type": "sandbox",
+      "durationDays": 3,
+      "activePlayers": 1000,
+      "gamesPerPlayerPerHour": 1,
+      "ticksPerGame": 7500,
+      "msPerTick": 35,
+      "playersPerGame": 4,
+      "stderrKB": 16,
+      "replayBytesPerTick": 100,
+      "world": "t_splinter",
+      "startTime": "2025.11.02 00:00:00.000",
+      "endTime": "2025.11.05 00:00:00.000"
+    },
+    {
+      "name": "R1",
+      "type": "round",
+      "durationHours": 24,
+      "participants": 900,
+      "gamesPerParticipant": 48,
+      "ticksPerGame": 7500,
+      "msPerTick": 35,
+      "playersPerGame": 4,
+      "stderrKB": 16,
+      "replayBytesPerTick": 100,
+      "world": "t_splinter",
+      "qualifyingFrom": [
+        {
+          "fromPhaseName": "S1",
+          "topN": 900
+        }
+      ],
+      "startTime": "2025.11.05 00:00:00.000",
+      "endTime": "2025.11.06 00:00:00.000"
+    },
+    {
+      "name": "S2",
+      "type": "sandbox",
+      "durationDays": 3,
+      "activePlayers": 500,
+      "gamesPerPlayerPerHour": 1,
+      "ticksPerGame": 7500,
+      "msPerTick": 35,
+      "playersPerGame": 4,
+      "stderrKB": 16,
+      "replayBytesPerTick": 100,
+      "world": "t_splinter",
+      "startTime": "2025.11.06 00:00:00.000",
+      "endTime": "2025.11.09 00:00:00.000"
+    },
+    {
+      "name": "R2",
+      "type": "round",
+      "durationHours": 24,
+      "participants": 360,
+      "gamesPerParticipant": 96,
+      "ticksPerGame": 7500,
+      "msPerTick": 35,
+      "playersPerGame": 4,
+      "stderrKB": 16,
+      "replayBytesPerTick": 100,
+      "world": "t_splinter",
+      "qualifyingFrom": [
+        {
+          "fromPhaseName": "R1",
+          "topN": 300
+        },
+        {
+          "fromPhaseName": "S2",
+          "topN": 60
+        }
+      ],
+      "startTime": "2025.11.09 00:00:00.000",
+      "endTime": "2025.11.10 00:00:00.000"
+    },
+    {
+      "name": "SF",
+      "type": "sandbox",
+      "durationDays": 3,
+      "activePlayers": 250,
+      "gamesPerPlayerPerHour": 1,
+      "ticksPerGame": 7500,
+      "msPerTick": 35,
+      "playersPerGame": 4,
+      "stderrKB": 16,
+      "replayBytesPerTick": 100,
+      "world": "t_splinter",
+      "startTime": "2025.11.10 00:00:00.000",
+      "endTime": "2025.11.13 00:00:00.000"
+    },
+    {
+      "name": "F",
+      "type": "round",
+      "durationHours": 24,
+      "participants": 60,
+      "gamesPerParticipant": 250,
+      "ticksPerGame": 7500,
+      "msPerTick": 35,
+      "playersPerGame": 4,
+      "stderrKB": 16,
+      "replayBytesPerTick": 100,
+      "world": "t_splinter",
+      "qualifyingFrom": [
+        {
+          "fromPhaseName": "R2",
+          "topN": 50
+        },
+        {
+          "fromPhaseName": "SF",
+          "topN": 10
+        }
+      ],
+      "startTime": "2025.11.13 00:00:00.000",
+      "endTime": "2025.11.14 00:00:00.000"
+    }
+  ]
+})";
     const char* SIM_SEASON_CONFIG_JSON = R"({
   "seasonName": "splinter_2025",
   "startTime": "2025.11.01 00:00:00.000",
@@ -2051,7 +2189,7 @@ public:
     }
   ]
 })";
-    return SIM_SEASON_CONFIG_JSON;
+    return v2;//SIM_SEASON_CONFIG_JSON;
   }
   // Внутри struct t_main:
 
@@ -2186,12 +2324,17 @@ void simulate_new_coders(int count, const string& phase_name) {
     thread update_thread([&m]() {
       while (true) {
         m.update_seasons();
-        for(auto&ex:m.garr){
-          if(rand()%3==0){
-            auto&s=ex.status;
-            if(s=="finished")continue;
-            s="finished";
-            m.seasons[ex.gd.season].phases[ex.gd.phase].finished_games++;
+        {
+          lock_guard<mutex> lock(m.mtx);
+          for(auto&ex:m.garr){
+            if(rand()%3==0){
+              auto&s=ex.status;
+              if(s=="finished")continue;
+              s="finished";
+              auto&p=m.seasons[ex.gd.season].phases[ex.gd.phase];
+              p.finished_games++;
+              p.on_prev_wave_end=p.prev_wave_done();
+            }
           }
         }
         this_thread::sleep_for(100ms);
@@ -2204,10 +2347,13 @@ void simulate_new_coders(int count, const string& phase_name) {
 
     // День 0: публикация статьи
     m.sim_sleep(0); // старт в 2025.11.01 00:00:00.000
+    m.simulate_new_coders(4, "S1");
     for(int d=1;d<24;d++)
     for(int i=0;i<24;i++){
       for(int i=0;i<60;i++)m.sim_sleep(60 * 1000);
-      m.simulate_new_coders(1, "S1");
+      auto&s=m.seasons.back();
+      auto&p=s.phases[s.cur_phase];
+      if(p.phase_name[0]=='S')m.simulate_new_coders(1,p.phase_name);
       //LOG("Day "+to_string(d)+": 1 coders joined");
     }
     LOG("Simulation completed");

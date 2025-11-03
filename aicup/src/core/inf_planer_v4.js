@@ -20,28 +20,37 @@ let config = {
     { name: "SF", type: "sandbox", durationDays:   7, activePlayers: 25, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
     { name: "F",  type: "round",   durationHours: 24, participants:  10, gamesPerParticipant: 250, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 }
   ],
-  phases: [
+  phases2: [
     { name: "S1", type: "sandbox", durationDays:  14, activePlayers: 1000, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
     { name: "R1", type: "round",   durationHours: 24, participants:   900, gamesPerParticipant: 2*24, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
     { name: "S2", type: "sandbox", durationDays:   7, activePlayers:  500, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
     { name: "R2", type: "round",   durationHours: 24, participants:   360, gamesPerParticipant: 2*48, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
     { name: "SF", type: "sandbox", durationDays:   7, activePlayers:  250, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
     { name: "F",  type: "round",   durationHours: 24, participants:    60, gamesPerParticipant: 250, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 }
+  ],
+  phases: [
+    { name: "S1", type: "sandbox", durationDays:  3, activePlayers: 1000, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "R1", type: "round",   durationHours: 24, participants:   900, gamesPerParticipant: 2*24, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "S2", type: "sandbox", durationDays:   3, activePlayers:  500, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "R2", type: "round",   durationHours: 24, participants:   360, gamesPerParticipant: 2*48, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "SF", type: "sandbox", durationDays:   3, activePlayers:  250, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "F",  type: "round",   durationHours: 24, participants:    60, gamesPerParticipant: 250, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 }
   ]
 };
 config.phases1=[];
+config.phases2=[];
 config.phases.map(e=>e.world="t_splinter");
 let get_phase=p=>config.phases.filter(e=>e.name===p)[0];
 get_phase("R1").qualifyingFrom=[{"fromPhaseName":"S1","topN":900}];
 get_phase("R2").qualifyingFrom=[{"fromPhaseName":"R1","topN":300},{"fromPhaseName":"S2","topN":60}];
 get_phase("F").qualifyingFrom=[{"fromPhaseName":"R2","topN":50},{"fromPhaseName":"SF","topN":10}];
 
-let config2=buildAbsoluteConfig("2025-11-03T21:00:00.000Z",config.phases);
+let config2=buildAbsoluteConfig("2025-11-01T21:00:00.000Z",config.phases);
 delete config.phases;
 config={...config,...config2};
 function buildAbsoluteConfig(seasonStart, phases) {
   let currentTime = new Date(seasonStart); // например, "2025-11-03T00:00:00.000Z"
-
+  let endTime=currentTime;
   const result = {
     seasonName: "splinter_2025",
     startTime: formatDate(currentTime),
@@ -50,17 +59,17 @@ function buildAbsoluteConfig(seasonStart, phases) {
 
   for (const p of phases) {
     const phaseStart = new Date(currentTime);
-    result.phases.push({
-      ...p,
-      startTime: formatDate(phaseStart)
-    });
-
     // Сдвинуть currentTime вперёд
     if (p.type === 'sandbox') {
       currentTime.setDate(currentTime.getDate() + p.durationDays);
     } else {
       currentTime.setHours(currentTime.getHours() + p.durationHours);
     }
+    result.phases.push({
+      ...p,
+      startTime: formatDate(phaseStart),
+      endTime: formatDate(new Date(currentTime)),
+    });
   }
 
   return result;
