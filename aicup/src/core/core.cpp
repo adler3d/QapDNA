@@ -2300,7 +2300,6 @@ void simulate_new_coders(int count, const string& phase_name) {
     LOG("Simulated " + to_string(count) + " new coders in phase " + phase_name);
 }
   static void run_season_simulation(t_main& m) {
-    // 1. Создаём сезон
     {
       lock_guard<mutex> lock(m.mtx);
       t_season s;
@@ -2309,8 +2308,6 @@ void simulate_new_coders(int count, const string& phase_name) {
       s.title = "Splinter 2025";
       m.seasons.push_back(s);
     }
-
-    // 2. Парсим и применяем конфиг
     try {
       json j = json::parse(get_json_cfg());
       TSeasonConfig cfg = j.get<TSeasonConfig>();
@@ -2319,8 +2316,6 @@ void simulate_new_coders(int count, const string& phase_name) {
       LOG("Failed to parse config: " + string(e.what()));
       return;
     }
-
-    // 3. Запускаем фоновый цикл обновления фаз
     thread update_thread([&m]() {
       while (true) {
         m.update_seasons();
@@ -2341,12 +2336,9 @@ void simulate_new_coders(int count, const string& phase_name) {
       }
     });
     update_thread.detach();
-
-    // 4. Симуляция времени и участников
     LOG("Simulation started at " + m.qap_time());
 
-    // День 0: публикация статьи
-    m.sim_sleep(0); // старт в 2025.11.01 00:00:00.000
+    m.sim_sleep(0);
     m.simulate_new_coders(4, "S1");
     for(int d=1;d<24;d++)
     for(int i=0;i<24;i++){
@@ -2354,18 +2346,13 @@ void simulate_new_coders(int count, const string& phase_name) {
       auto&s=m.seasons.back();
       auto&p=s.phases[s.cur_phase];
       if(p.phase_name[0]=='S')m.simulate_new_coders(1,p.phase_name);
-      //LOG("Day "+to_string(d)+": 1 coders joined");
     }
     LOG("Simulation completed");
   }
   static int sim_main() {
     t_main m;
-    sim_speed = 10000.0; // 1 реальная секунда = 1000 симулированных
-
-    // Запускаем симуляцию
+    sim_speed = 10000.0;
     m.run_season_simulation(m);
-
-    // Ждём завершения (можно добавить флаг завершения)
     for (;;) this_thread::sleep_for(1s);
   }
 };
