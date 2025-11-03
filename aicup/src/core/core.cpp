@@ -1248,6 +1248,11 @@ public:
     string world;
     string game_config;
     uint64_t num_players = 2;
+
+    uint64_t ticksPerGame = 7500;
+    uint64_t msPerTick = 35;
+    uint64_t stderrKb = 16;
+
     //bool is_active = false;
     vector<t_qualification_rule> qualifying_from;
     t_uid2rec uid2rec;
@@ -1272,7 +1277,7 @@ public:
     string last_wave_time="2025.10.31 19:08:07.120";
     uint64_t sandbox_wave_interval_ms = 5 * 60 * 1000; // 5 минут
 
-    double games_per_player_per_hour=1.0;
+    double games_per_coder_per_hour=1.0;
   };
 
   typedef map<uint64_t,t_season_coder> t_uid2scoder;
@@ -1635,6 +1640,10 @@ public:
         gd.arr = slots;
         gd.config = phase.game_config;
         gd.world = phase.world;
+        gd.stderr_max=phase.stderrKb;
+        gd.TL=phase.msPerTick;
+        gd.TL0=std::max(gd.TL0,gd.TL);
+        gd.maxtick=phase.ticksPerGame;
         wave.push_back(gd);
       }
     }
@@ -1946,10 +1955,8 @@ public:
 
       auto it = name_to_index.find(pc.phaseName);
       if (it != name_to_index.end()) {
-        // Фаза уже существует — обновляем
         target = &season.phases[it->second];
       } else {
-        // Новая фаза — добавляем
         t_phase new_phase;
         new_phase.phase = season.phases.size(); // стабильный ID
         new_phase.phase_name = pc.phaseName;
@@ -1960,24 +1967,25 @@ public:
         is_new = true;
       }
 
-      // Обновляем параметры
       target->world = pc.world;
       target->num_players = pc.playersPerGame;
       target->game_config = ""; // или передавай отдельно, если нужно
       target->scheduled_start_time=pc.startTime;
       target->scheduled_end_time=pc.endTime;
+
+      target->ticksPerGame=pc.ticksPerGame;
+      target->msPerTick=pc.msPerTick;
+      target->stderrKb=pc.stderrKb;
+
       //target->is_active = false;
-      // Песочница: обновляем частоту игр
       if (pc.type == "sandbox") {
-         target->games_per_player_per_hour = pc.gamesPerPlayerPerHour;
-         target->sandbox_wave_interval_ms = pc.gamesPerPlayerPerHour?3600*1000/pc.gamesPerPlayerPerHour:5*60*1000;
+         target->games_per_coder_per_hour = pc.gamesPerCoderPerHour;
+         target->sandbox_wave_interval_ms = pc.gamesPerCoderPerHour?3600*1000/pc.gamesPerCoderPerHour:5*60*1000;
       }
 
-      // Раунд: обновляем правила квалификации
       if (pc.type == "round") {
         target->qualifying_from.clear();
         for (const auto& rule : pc.qualifyingFrom) {
-          // Найдём phase_id по имени
           uint64_t src_phase_id = kInvalidIndex;
           for (const auto& p : season.phases) {
             if (p.phase_name == rule.fromPhaseName) {
@@ -2031,9 +2039,9 @@ public:
     {
       "name": "S1",
       "type": "sandbox",
-      "durationDays": 3,
-      "activePlayers": 1000,
-      "gamesPerPlayerPerHour": 1,
+      "durationHours": 72,
+      "coders": 1000,
+      "gamesPerCoderPerHour": 1,
       "ticksPerGame": 7500,
       "msPerTick": 35,
       "playersPerGame": 4,
@@ -2047,8 +2055,8 @@ public:
       "name": "R1",
       "type": "round",
       "durationHours": 24,
-      "participants": 900,
-      "gamesPerParticipant": 48,
+      "coders": 900,
+      "gamesPerCoder": 48,
       "ticksPerGame": 7500,
       "msPerTick": 35,
       "playersPerGame": 4,
@@ -2067,9 +2075,9 @@ public:
     {
       "name": "S2",
       "type": "sandbox",
-      "durationDays": 3,
-      "activePlayers": 500,
-      "gamesPerPlayerPerHour": 1,
+      "durationHours": 72,
+      "coders": 500,
+      "gamesPerCoderPerHour": 1,
       "ticksPerGame": 7500,
       "msPerTick": 35,
       "playersPerGame": 4,
@@ -2083,8 +2091,8 @@ public:
       "name": "R2",
       "type": "round",
       "durationHours": 24,
-      "participants": 360,
-      "gamesPerParticipant": 96,
+      "coders": 360,
+      "gamesPerCoder": 96,
       "ticksPerGame": 7500,
       "msPerTick": 35,
       "playersPerGame": 4,
@@ -2107,9 +2115,9 @@ public:
     {
       "name": "SF",
       "type": "sandbox",
-      "durationDays": 3,
-      "activePlayers": 250,
-      "gamesPerPlayerPerHour": 1,
+      "durationHours": 72,
+      "coders": 250,
+      "gamesPerCoderPerHour": 1,
       "ticksPerGame": 7500,
       "msPerTick": 35,
       "playersPerGame": 4,
@@ -2123,8 +2131,8 @@ public:
       "name": "F",
       "type": "round",
       "durationHours": 24,
-      "participants": 60,
-      "gamesPerParticipant": 250,
+      "coders": 60,
+      "gamesPerCoder": 250,
       "ticksPerGame": 7500,
       "msPerTick": 35,
       "playersPerGame": 4,
@@ -2146,50 +2154,7 @@ public:
     }
   ]
 })";
-    const char* SIM_SEASON_CONFIG_JSON = R"({
-  "seasonName": "splinter_2025",
-  "startTime": "2025.11.01 00:00:00.000",
-  "phases": [
-    {
-      "phaseName": "S1",
-      "type": "sandbox",
-      "world": "t_splinter",
-      "playersPerGame": 4,
-      "startTime": "2025.11.01 00:00:00.000",
-      "gamesPerPlayerPerHour": 1.0
-    },
-    {
-      "phaseName": "R1",
-      "type": "round",
-      "world": "t_splinter",
-      "playersPerGame": 4,
-      "startTime": "2025.11.03 00:00:00.000",
-      "qualifyingFrom": [
-        { "fromPhaseName": "S1", "topN": 50 }
-      ]
-    },
-    {
-      "phaseName": "S2",
-      "type": "sandbox",
-      "world": "t_splinter",
-      "playersPerGame": 4,
-      "startTime": "2025.11.05 00:00:00.000",
-      "gamesPerPlayerPerHour": 1.0
-    },
-    {
-      "phaseName": "R2",
-      "type": "round",
-      "world": "t_splinter",
-      "playersPerGame": 4,
-      "startTime": "2025.11.07 00:00:00.000",
-      "qualifyingFrom": [
-        { "fromPhaseName": "R1", "topN": 20 },
-        { "fromPhaseName": "S2", "topN": 10 }
-      ]
-    }
-  ]
-})";
-    return v2;//SIM_SEASON_CONFIG_JSON;
+    return v2;
   }
   // Внутри struct t_main:
 

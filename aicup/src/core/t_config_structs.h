@@ -7,17 +7,13 @@ struct TPhaseConfig {
   string phaseName;
   string type; // "sandbox" or "round"
   string world;
-  uint64_t durationDays = 7;
-  uint64_t durationHours = 24;
-  uint64_t activePlayers = 0;
-  uint64_t participants = 0;
-  uint64_t gamesPerParticipant = 0;
+  uint64_t gamesPerCoder = 0;
   uint64_t ticksPerGame = 7500;
   uint64_t msPerTick = 35;
   uint64_t playersPerGame = 4;
   uint64_t stderrKb = 16;
   uint64_t replayBytesPerTick = 100;
-  double gamesPerPlayerPerHour = 1.0;
+  double gamesPerCoderPerHour = 1.0;
 
   vector<TQualRuleConfig> qualifyingFrom;
   string startTime;
@@ -40,17 +36,13 @@ void from_json(const json& j, TPhaseConfig& p) {
   j.at("type").get_to(p.type);
   j.at("world").get_to(p.world);
 
-  if (j.contains("durationDays")) j.at("durationDays").get_to(p.durationDays);
-  if (j.contains("durationHours")) j.at("durationHours").get_to(p.durationHours);
-  if (j.contains("activePlayers")) j.at("activePlayers").get_to(p.activePlayers);
-  if (j.contains("participants")) j.at("participants").get_to(p.participants);
-  if (j.contains("gamesPerParticipant")) j.at("gamesPerParticipant").get_to(p.gamesPerParticipant);
+  if (j.contains("gamesPerCoder")) j.at("gamesPerCoder").get_to(p.gamesPerCoder);
   if (j.contains("ticksPerGame")) j.at("ticksPerGame").get_to(p.ticksPerGame);
   if (j.contains("msPerTick")) j.at("msPerTick").get_to(p.msPerTick);
   if (j.contains("playersPerGame")) j.at("playersPerGame").get_to(p.playersPerGame);
   if (j.contains("stderrKb")) j.at("stderrKb").get_to(p.stderrKb);
   if (j.contains("replayBytesPerTick")) j.at("replayBytesPerTick").get_to(p.replayBytesPerTick);
-  if (j.contains("gamesPerPlayerPerHour")) j.at("gamesPerPlayerPerHour").get_to(p.gamesPerPlayerPerHour);
+  if (j.contains("gamesPerCoderPerHour")) j.at("gamesPerCoderPerHour").get_to(p.gamesPerCoderPerHour);
 
   if (j.contains("qualifyingFrom")) {
     j.at("qualifyingFrom").get_to(p.qualifyingFrom);

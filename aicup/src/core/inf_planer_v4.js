@@ -13,28 +13,28 @@ let config = {
   seasonName: "splinter_2025",
   startTime: "2025.11.03 00:00:00.000",
   phases1: [
-    { name: "S1", type: "sandbox", durationDays:   7, activePlayers: 75, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "R1", type: "round",   durationHours: 24, participants:  50, gamesPerParticipant: 2*24, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "S2", type: "sandbox", durationDays:   7, activePlayers: 50, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "R2", type: "round",   durationHours: 24, participants:  25, gamesPerParticipant: 2*48, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "SF", type: "sandbox", durationDays:   7, activePlayers: 25, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "F",  type: "round",   durationHours: 24, participants:  10, gamesPerParticipant: 250, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 }
+    { name: "S1", type: "sandbox", durationHours: 24*7, coders:  75, gamesPerCoderPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "R1", type: "round",   durationHours: 24,   coders:  50, gamesPerCoder: 2*24,     ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "S2", type: "sandbox", durationHours: 24*7, coders:  50, gamesPerCoderPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "R2", type: "round",   durationHours: 24,   coders:  25, gamesPerCoder: 2*48,     ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "SF", type: "sandbox", durationHours: 24*7, coders:  25, gamesPerCoderPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "F",  type: "round",   durationHours: 24,   coders:  10, gamesPerCoder: 250,      ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 }
   ],
   phases2: [
-    { name: "S1", type: "sandbox", durationDays:  14, activePlayers: 1000, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "R1", type: "round",   durationHours: 24, participants:   900, gamesPerParticipant: 2*24, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "S2", type: "sandbox", durationDays:   7, activePlayers:  500, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "R2", type: "round",   durationHours: 24, participants:   360, gamesPerParticipant: 2*48, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "SF", type: "sandbox", durationDays:   7, activePlayers:  250, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "F",  type: "round",   durationHours: 24, participants:    60, gamesPerParticipant: 250, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 }
+    { name: "S1", type: "sandbox", durationHours: 24*14,coders:  1000, gamesPerCoderPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "R1", type: "round",   durationHours: 24,   coders:   900, gamesPerCoder: 2*24,     ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "S2", type: "sandbox", durationHours: 24*7, coders:   500, gamesPerCoderPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "R2", type: "round",   durationHours: 24,   coders:   360, gamesPerCoder: 2*48,     ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "SF", type: "sandbox", durationHours: 24*7, coders:   250, gamesPerCoderPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "F",  type: "round",   durationHours: 24,   coders:    60, gamesPerCoder: 250,      ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 }
   ],
   phases: [
-    { name: "S1", type: "sandbox", durationDays:  3, activePlayers: 1000, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "R1", type: "round",   durationHours: 24, participants:   900, gamesPerParticipant: 2*24, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "S2", type: "sandbox", durationDays:   3, activePlayers:  500, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "R2", type: "round",   durationHours: 24, participants:   360, gamesPerParticipant: 2*48, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "SF", type: "sandbox", durationDays:   3, activePlayers:  250, gamesPerPlayerPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
-    { name: "F",  type: "round",   durationHours: 24, participants:    60, gamesPerParticipant: 250, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 }
+    { name: "S1", type: "sandbox", durationHours: 24*3, coders:  1000, gamesPerCoderPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "R1", type: "round",   durationHours: 24,   coders:   900, gamesPerCoder: 2*24,     ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "S2", type: "sandbox", durationHours: 24*3, coders:   500, gamesPerCoderPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "R2", type: "round",   durationHours: 24,   coders:   360, gamesPerCoder: 2*48,     ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "SF", type: "sandbox", durationHours: 24*3, coders:   250, gamesPerCoderPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 },
+    { name: "F",  type: "round",   durationHours: 24,   coders:    60, gamesPerCoder: 250,      ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB: 16, replayBytesPerTick: 100 }
   ]
 };
 config.phases1=[];
@@ -59,12 +59,7 @@ function buildAbsoluteConfig(seasonStart, phases) {
 
   for (const p of phases) {
     const phaseStart = new Date(currentTime);
-    // Сдвинуть currentTime вперёд
-    if (p.type === 'sandbox') {
-      currentTime.setDate(currentTime.getDate() + p.durationDays);
-    } else {
-      currentTime.setHours(currentTime.getHours() + p.durationHours);
-    }
+    currentTime.setHours(currentTime.getHours() + p.durationHours);
     result.phases.push({
       ...p,
       startTime: formatDate(phaseStart),
@@ -122,20 +117,20 @@ function planHybrid(config) {
     if (phase.type === "sandbox") {
       // Fixed duration: 7 days
       // Compute peak concurrent games
-      const gamesPerSecond = (phase.activePlayers * phase.gamesPerPlayerPerHour) / 3600;
+      const gamesPerSecond = (phase.coders * phase.gamesPerCoderPerHour) / 3600;
       const concurrentGames = gamesPerSecond * wallSecondsPerGame(phase);
       requiredCores = /*Math.ceil*/(concurrentGames * phase.playersPerGame).toFixed(2); // each player = 1 core
-      totalGames = (phase.activePlayers * phase.gamesPerPlayerPerHour * 24 * phase.durationDays) / phase.playersPerGame;
+      totalGames = (phase.coders * phase.gamesPerCoderPerHour * phase.durationHours) / phase.playersPerGame;
     } else {
       // Round: must finish in fixed time
-      totalGames = (phase.participants * phase.gamesPerParticipant) / phase.playersPerGame;
+      totalGames = (phase.coders * phase.gamesPerCoder) / phase.playersPerGame;
       const totalCpuSec = totalGames * cpuSecondsPerGame(phase);
       const availableSec = phase.durationHours * 3600;
       requiredCores = /*Math.ceil*/(totalCpuSec / availableSec).toFixed(2);
     }
 
     const machine = chooseMachine(requiredCores, config.machineTypes);
-    const durationDays = phase.type === "sandbox" ? phase.durationDays : phase.durationHours / 24;
+    const durationDays = phase.durationHours / 24;
     const computeCost = machine.pricePerDay * durationDays*Math.ceil(requiredCores/machine.cores);
     const storageBytes = totalGames * storagePerGame(phase);
 
