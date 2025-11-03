@@ -20,15 +20,16 @@ struct WaveManager {
     return remainingTimeMS >= predictedDurationMS;
   }
   void addWaveAndUpdateWindow(const WaveStats& wave) {
-    if (last3Count == 3) {
+    int limit=30;
+    if (last3Count == limit) {
       last3SumMS -= waveHistory[0].durationMS; // remove oldest
     }
     waveHistory.push_back(wave);
-    if (waveHistory.size() > 3) {
+    if (waveHistory.size() > limit) {
       waveHistory.erase(waveHistory.begin());
     }
     last3SumMS += wave.durationMS;
-    last3Count = std::min(last3Count + 1, 3);
+    last3Count = std::min(last3Count + 1, limit);
   }
   void startRound(double ms) {
     roundDurationMS=ms;
