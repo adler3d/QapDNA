@@ -603,62 +603,52 @@ struct t_main : t_process,t_http_base {
   t_coder_rec*coder2rec(const string&coder){for(auto&ex:carr){if(ex.sysname!=coder)continue;return &ex;}return nullptr;}
   t_coder_rec*email2rec(const string&email){for(auto&ex:carr){if(ex.email!=email)continue;return &ex;}return nullptr;}
   // t_site->t_main
-  //CompileJob new_source_job(uint64_t uid,const string&src){
-  //  CompileJob out;
-  //  t_coder_rec*p=nullptr;
-  //  {
-  //    lock_guard<mutex> lock(carr_mtx);
-  //    p=coder2rec(coder);
-  //    if(!p)return out;
-  //  }
-  //  int src_id=-1;
-  //  {
-  //    lock_guard<mutex> lock(*p->sarr_mtx);
-  //    src_id=p->sarr.size();
-  //  }
-  //  string v=to_string(src_id);
-  //  t_coder_rec::t_source b;
-  //  b.time=qap_time();
-  //  b.cdn_src_url="source/"+to_string(p->id)+"_"+v+".cpp";
-  //  b.cdn_bin_url="binary/"+to_string(p->id)+"_"+v+".elf";
-  //  b.size=src.size();
-  //  {lock_guard<mutex> lock(*p->sarr_mtx);p->sarr.push_back(b);}
-  //  json body_json;
-  //  body_json["coder_id"] = p->id;
-  //  body_json["elf_version"] = v;
-  //  body_json["source_code"] = src;
-  //  body_json["timeout_ms"] = 20000;
-  //  body_json["memory_limit_mb"] = 512;
-  //  out.cdn_src_url=b.cdn_src_url;
-  //  out.src=src;
-  //  out.json=body_json.dump();
-  //  out.on_uploaderror=[&,p,src_id](int s){
-  //    if(s==200)return;
-  //    lock_guard<mutex> lock(*p->sarr_mtx);
-  //    auto&src=p->sarr[src_id];
-  //    src.status="http_upload_err:"+to_string(s);
-  //    src.prod_time=qap_time();
-  //  };
-  //  out.on_complete=[&,p,src_id](t_post_resp&resp){
-  //    lock_guard<mutex> lock(*p->sarr_mtx);
-  //    if(resp.status!=200){
-  //      auto&src=p->sarr[src_id];
-  //      src.status="compile_err:"+resp.body;
-  //      src.prod_time=qap_time();
-  //      return;
-  //    }
-  //    auto&src=p->sarr[src_id];
-  //    src.status="ok:"+resp.body;
-  //    src.prod_time=qap_time();
-  //    lock_guard<mutex> lock2(carr_mtx);
-  //    for(int i=0;i<ai2cid.size();i++){
-  //      auto&ex=ai2cid[i];
-  //      if(ex==p->id)return;
-  //    }
-  //    ai2cid.push_back(p->id);
-  //  };
-  //  return std::move(out);
-  //}
+  CompileJob new_source_job(uint64_t uid,const string&src){
+    CompileJob out;
+    if(!qap_check_id(carr,uid)||seasons.empty())return out;
+    t_coder_rec&c=carr[uid];
+    auto&s=seasons.back();auto sid=(uint64_t)seasons.size()-1;
+    auto it=s.uid2scoder.find(uid);
+    if(it==s.uid2scoder.end())return out;
+    auto&sc=it->second;
+    auto src_id=sc.sarr.size();
+    string v=to_string(src_id);
+    t_coder_rec::t_source b;
+    b.time=qap_time();
+    b.cdn_src_url="source/"+to_string(s.season)+"_"+to_string(uid)+"_"+v+".cpp";
+    b.cdn_bin_url="binary/"+to_string(s.season)+"_"+to_string(uid)+"_"+v+".elf";
+    b.size=src.size();
+    sc.sarr.push_back(b);
+    json body_json;
+    body_json["coder_id"] = uid;
+    body_json["elf_version"] = v;
+    body_json["source_code"] = src;
+    body_json["timeout_ms"] = 20000;
+    body_json["memory_limit_mb"] = 512;
+    body_json["season"] = to_string(s.season);
+    out.cdn_src_url=b.cdn_src_url;
+    out.src=src;
+    out.json=body_json.dump();
+    out.on_uploaderror=[this,uid,sid,src_id](int s){
+      if(s==200)return;
+      lock_guard<mutex> lock(mtx);
+      auto&src=seasons[sid].uid2scoder[uid].sarr[src_id];
+      src.status="http_upload_err:"+to_string(s);
+      src.prod_time=qap_time();
+    };
+    out.on_complete=[this,uid,sid,src_id](t_post_resp&resp){
+      lock_guard<mutex> lock(mtx);
+      auto&src=seasons[sid].uid2scoder[uid].sarr[src_id];
+      if(resp.status!=200){
+        src.status="compile_err:"+resp.body;
+        src.prod_time=qap_time();
+        return;
+      }
+      src.status="ok:"+resp.body;
+      src.prod_time=qap_time();
+    };
+    return std::move(out);
+  }
   struct t_sch_api:i_sch_api{
     t_main*pmain=nullptr;
     bool assign_game(const t_game_decl&game,const string&node)override{
@@ -771,6 +761,21 @@ struct t_main : t_process,t_http_base {
           b.token = sha256(b.time + name + email + to_string((rand() << 16) + rand()) + "2025.08.23 15:10:42.466");
 
           carr.push_back(std::move(b));
+
+          uint64_t uid = carr.back().id;
+          if (!seasons.empty() && !seasons.back().is_finalized) {
+            t_season& s = seasons.back();
+            if (s.uid2scoder.count(uid) == 0) {
+              s.uid2scoder[uid] = t_season_coder{uid, sysname, {}};
+              if (!s.phases.empty()) {
+                t_phase& active = s.phases[s.cur_phase];
+                if (active.type == "sandbox") {
+                  active.uid2rec[uid] = {1500, 0, 0};
+                }
+              }
+            }
+          }
+
         }
 
         // Возвращаем информацию о новом кодере
@@ -783,6 +788,95 @@ struct t_main : t_process,t_http_base {
         res.set_content(resp_json.dump(), "application/json");
       }
       catch (const exception& e) {
+        res.status = 500;
+        res.set_content(string("Exception: ") + e.what(), "text/plain");
+      }
+    });
+    srv.Post("/api/seasons/current/submit", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(10);
+      try {
+        if (req.body.size() >= 1024 * 512) {
+          res.status = 409;
+          res.set_content("max request size is 512KB", "text/plain");
+          return;
+        }
+        auto j = json::parse(req.body);
+        string token = j.value("token", "");
+        string src = j.value("src", "");
+        if (token.empty() || src.empty()) {
+          res.status = 400;
+          res.set_content("Missing 'token' or 'src'", "text/plain");
+          return;
+        }
+        if (src.size() > 1024 * 256) {
+          res.status = 409;
+          res.set_content("max source size is 256KB", "text/plain");
+          return;
+        }
+
+        uint64_t uid = UINT64_MAX;
+        {
+          lock_guard<mutex> lock(mtx);
+          for (size_t i = 0; i < carr.size(); ++i) {
+            if (carr[i].token == token) {
+              uid = i;
+              break;
+            }
+          }
+        }
+        if (uid == UINT64_MAX) {
+          res.status = 403;
+          res.set_content("Invalid token", "text/plain");
+          return;
+        }
+
+        lock_guard<mutex> lock(mtx);
+        if (seasons.empty()) {
+          res.status = 400;
+          res.set_content("No active season", "text/plain");
+          return;
+        }
+        t_season& season = seasons.back();auto season_id=to_string((int64_t)seasons.size()-1);
+        if (season.is_finalized) {
+          res.status = 400;
+          res.set_content("Season is finalized", "text/plain");
+          return;
+        }
+        auto it = season.uid2scoder.find(uid);
+        auto curp=season.cur_phase;
+        if (it == season.uid2scoder.end()) {
+          bool can_auto_join = false;
+          if (!season.phases.empty()) {
+            for(;curp<season.phases.size();curp++){
+              t_phase& cur = season.phases[curp];
+              if (cur.type == "sandbox" && !cur.is_closed) {
+                can_auto_join = true;break;
+              }
+            }
+          }
+          if (!can_auto_join) {
+            res.status = 403;
+            res.set_content("You are not a participant of this season", "text/plain");
+            return;
+          }
+          season.uid2scoder[uid] = t_season_coder{uid, carr[uid].sysname};
+          if (!season.phases.empty()) {
+            t_phase& cur = season.phases[curp];
+            cur.uid2rec[uid] = {};
+          }
+          it = season.uid2scoder.find(uid);
+        }
+
+        t_season_coder& sc = it->second;
+        if (!sc.allowed_next_src_upload()) {
+          res.status = 429;
+          res.set_content("Rate limit: wait 60 seconds between submissions", "text/plain");
+          return;
+        }
+        compq.push_job(std::move(new_source_job(uid,src)));
+        res.status = 200;
+        res.set_content("["+qap_time()+"] - ok // size = "+to_string(src.size()),"text/plain");
+      } catch (const exception& e) {
         res.status = 500;
         res.set_content(string("Exception: ") + e.what(), "text/plain");
       }
@@ -1161,12 +1255,255 @@ struct t_main : t_process,t_http_base {
       res.status = 200;
       res.set_content(status.dump(2), "application/json");
     });*/
+    srv.Get(R"(/api/seasons/([^/]+)/phases/([^/]+)/leaderboard)", [this](const httplib::Request& req, httplib::Response& res) {
+      string season_name = req.matches[1];
+      string phase_name = req.matches[2];
+      RATE_LIMITER(15);
+      lock_guard<mutex> lock(mtx);
+      const t_season* season = find_season(season_name);
+      if (!season) {
+        res.status = 404;
+        res.set_content("Season not found", "text/plain");
+        return;
+      }
+      const t_phase* phase = find_phase(*season, phase_name);
+      if (!phase) {
+        res.status = 404;
+        res.set_content("Phase not found", "text/plain");
+        return;
+      }
+      vector<pair<double, uint64_t>> ranked;
+      for (const auto& [uid, rec] : phase->uid2rec) {
+        ranked.emplace_back(-rec.score, uid);
+      }
+      sort(ranked.begin(), ranked.end());
+      json lb = json::array();
+      int rank = 1;
+      for (auto& [neg_score, uid] : ranked) {
+        if (uid >= carr.size()) continue;
+        lb.push_back({
+          {"rank", rank++},
+          {"uid", uid},
+          {"coder", carr[uid].sysname},
+          {"score", -neg_score},
+          {"games", phase->uid2rec.at(uid).games}
+        });
+      }
+      json resp = {
+        {"season", season_name},
+        {"phase", phase_name},
+        {"is_completed", phase->is_completed},
+        {"leaderboard", lb}
+      };
+      res.status = 200;
+      res.set_content(resp.dump(2), "application/json");
+    });
+
+    srv.Post(R"(/api/seasons/([^/]+)/phases/([^/]+)/manual_game)", [this](const httplib::Request& req, httplib::Response& res) {
+      string season_name = req.matches[1];
+      string phase_name = req.matches[2];
+      RATE_LIMITER(10);
+      try {
+        auto j = json::parse(req.body);
+        string token = j.value("token", "");
+        if (token.empty()) {
+          res.status = 400;
+          res.set_content("Missing token", "text/plain");
+          return;
+        }
+        // Найти uid по токену
+        uint64_t uid = UINT64_MAX;
+        {
+          lock_guard<mutex> lock(mtx);
+          for (size_t i = 0; i < carr.size(); ++i) {
+            if (carr[i].token == token) {
+              uid = i;
+              break;
+            }
+          }
+        }
+        if (uid == UINT64_MAX) {
+          res.status = 403;
+          res.set_content("Invalid token", "text/plain");
+          return;
+        }
+        lock_guard<mutex> lock(mtx);
+        t_season* season = find_season(season_name);
+        if (!season || season->is_finalized) {
+          res.status = 404;
+          res.set_content("Season not found or finalized", "text/plain");
+          return;
+        }
+        t_phase* phase = find_phase(*season, phase_name);
+        if (!phase || phase->type != "sandbox" || !phase->is_active) {
+          res.status = 400;
+          res.set_content("Manual games allowed only in active sandbox phases", "text/plain");
+          return;
+        }
+        if (season->uid2scoder.count(uid) == 0) {
+          res.status = 403;
+          res.set_content("You are not a participant of this season", "text/plain");
+          return;
+        }
+        auto players_json = j.value("players", json::array());
+        if (players_json.empty()) {
+          res.status = 400;
+          res.set_content("Invalid players list", "text/plain");
+          return;
+        }
+        vector<t_game_slot> slots;
+        for (auto& pj : players_json) {
+          t_game_slot slot;
+          if (pj.contains("coder")) {
+            string coder_name = LowerStr(pj["coder"]);
+            string version = pj.value("version", "latest");
+            t_coder_rec* coder = nullptr;
+            for (auto& c : carr) {
+              if (c.sysname == coder_name) {
+                coder = &c;
+                break;
+              }
+            }
+            if (!coder) {
+              res.status = 404;
+              res.set_content("Coder not found: " + coder_name, "text/plain");
+              return;
+            }
+            auto it = season->uid2scoder.find(coder->id);
+            if (it == season->uid2scoder.end()) {
+              res.status = 403;
+              res.set_content("Coder not in this season: " + coder_name, "text/plain");
+              return;
+            }
+            auto& sc = it->second;
+            int ver = (version == "latest") ? (int)sc.sarr.size() - 1 : stoi(version);
+            ver = sc.try_get_last_valid_ver(ver);
+            if (ver < 0) {
+              res.status = 400;
+              res.set_content("No valid version for coder: " + coder_name, "text/plain");
+              return;
+            }
+            slot.uid = coder->id;
+            slot.coder = coder->sysname;
+            slot.v = ver;
+            slot.cdn_bin_file = sc.sarr[ver].cdn_bin_url;
+          } else {
+            res.status = 400;
+            res.set_content("Each player must have 'coder'", "text/plain");
+            return;
+          }
+          slots.push_back(slot);
+        }
+        uint64_t maxtick = min<uint64_t>(j.value("maxtick", phase->ticksPerGame), 20000);
+        double msPerTick = min<double>(j.value("msPerTick", (double)phase->msPerTick), 100.0);
+        uint64_t stderrKb = min<uint64_t>(j.value("stderrKb", phase->stderrKb), 64);
+
+        t_game_decl gd;
+        gd.arr = slots;
+        gd.world = phase->world;
+        gd.config = phase->game_config;
+        gd.maxtick = maxtick;
+        gd.TL = msPerTick;
+        gd.TL0 = max(gd.TL0, msPerTick);
+        gd.stderr_max = stderrKb * 1024;
+
+        {
+          gd.game_id = garr.size();
+          gd.season = season->season;
+          gd.phase = phase->phase;
+          gd.wave = kInvalidIndex;
+          t_game game;
+          game.gd = gd;
+          game.status = "manual";
+          game.ordered_at = qap_time();
+          game.author = "manual:" + carr[uid].sysname;
+          garr.push_back(std::move(game));
+        }
+
+        sch.add_game_decl(gd);
+
+        json resp = {
+          {"game_id", gd.game_id},
+          {"status", "scheduled"},
+          {"time", qap_time()}
+        };
+        res.status = 200;
+        res.set_content(resp.dump(), "application/json");
+      } catch (const exception& e) {
+        res.status = 500;
+        res.set_content("Exception: " + string(e.what()), "text/plain");
+      }
+    });
+    srv.Post("/api/seasons/current/config", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(10);
+      try {
+        if (req.body.empty()) {
+          res.status = 400;
+          res.set_content("Empty request body", "text/plain");
+          return;
+        }
+        json j = json::parse(req.body);
+        auto cfg = j.get<TSeasonConfig>();
+        res.status=apply_config(cfg)?200:400;
+        res.set_content((res.status==200?"ok:":"fail:")+qap_time(),"text/plain");
+      } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content("Exception: " + std::string(e.what()), "text/plain");
+      }
+    });
+    srv.Get("/api/seasons/current", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(10);
+      lock_guard<mutex> lock(mtx);
+      if (seasons.empty()) {
+        res.status = 404;
+        res.set_content("No active season", "text/plain");
+        return;
+      }
+      const auto& s = seasons.back();
+      json j;
+      j["season_name"] = s.season_name;
+      j["title"] = s.title;
+      j["cur_phase"] = s.cur_phase;
+      j["is_finalized"] = s.is_finalized;
+      json phases = json::array();
+      for (const auto& p : s.phases) {
+        json pj;
+        pj["phase"] = p.phase;
+        pj["name"] = p.phase_name;
+        pj["type"] = p.type;
+        pj["playersPerGame"] = p.num_players;
+        pj["world"] = p.world;
+        pj["startTime"] = p.scheduled_start_time;
+        pj["endTime"] = p.scheduled_end_time;
+        pj["is_active"] = p.is_active;
+        pj["is_closed"] = p.is_closed;
+        pj["is_completed"] = p.is_completed;
+        pj["games_count"] = p.games.size();
+        pj["finished_games"] = p.finished_games;
+
+        pj["ticksPerGame"] = p.ticksPerGame;
+        pj["msPerTick"] = p.msPerTick;
+        pj["stderrKb"] = p.stderrKb;
+
+        if (p.type == "round") {
+          json rules = json::array();
+          for (const auto& r : p.qualifying_from) {
+            rules.push_back({{"fromPhaseName", s.phases[r.from_phase].phase_name}, {"topN", r.top_n}});
+          }
+          pj["qualifyingFrom"] = rules;
+        }
+        phases.push_back(pj);
+      }
+      j["phases"] = phases;
+      res.status = 200;
+      res.set_content(j.dump(2), "application/json");
+    });
     srv.Get("/", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
       res.set_content(file_get_contents("index.html"), "text/html");
     });
     srv.set_logger([](const httplib::Request& req, const httplib::Response& res) {
-        std::cout <<"t_site["<<qap_time()<<"]: "<< "Request: " << req.method << " " << req.path;
+        std::cout <<"["<<qap_time()<<"]t_site: "<< "Request: " << req.method << " " << req.path;
         if (!req.remote_addr.empty()) {
             std::cout << " from " << req.remote_addr;
         }
@@ -1200,9 +1537,9 @@ public:
     vector<t_coder_rec::t_source> sarr;//unique_ptr<mutex> sarr_mtx=make_unique<mutex>();
     string last_submit_time;
     bool hide = false;
-    bool is_meta = false;               // true, если это из meta_pack
-    string meta_name;                   // например, "Pure Farmer"
-    t_phase2rank phase2rank;        // "R1" → 42, "R2" → 15, ...
+    bool is_meta = false;
+    string meta_name;
+    t_phase2rank phase2rank;
     optional<t_tracked_info> tracked;
     int try_get_last_valid_ver(int v)const{
       auto fail=[&](int v){return v<0||v>=(int)sarr.size();};
@@ -1305,6 +1642,8 @@ public:
       }
     }
   };
+  const t_season*find_season(const string&name)const{for(auto&p:seasons)if(p.season_name==name)return &p;return nullptr;}
+  t_season*find_season(const string&name){for(auto&p:seasons)if(p.season_name==name)return &p;return nullptr;}
   const t_phase* find_phase(const t_season& season, const string& phase_name)const{
     for (auto& p : season.phases) {
       if (p.phase_name == phase_name) return &p;
@@ -2008,17 +2347,6 @@ public:
     }
     season.sync();
     return true;
-  }
-  // Пример обработчика POST /api/seasons/current/config
-  bool handle_config_update(const std::string& json_body) {
-    try {
-      json j = json::parse(json_body);
-      auto cfg = j.get<TSeasonConfig>();
-      return apply_config(cfg);
-    } catch (const std::exception& e) {
-      LOG("JSON parse error: " + std::string(e.what()));
-      return false;
-    }
   }
 public:
   static void LOG(const string&str){cerr<<"["<<::qap_time()<<"]["<<qap_time()<<"] "<<(str)<<endl;}
