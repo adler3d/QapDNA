@@ -411,80 +411,230 @@ struct t_world{
   vector<double> slot2score;
 };
 struct t_vote{
-  uint64_t from_uid;
-  int64_t delta=0;
-  string time;
-  string reason;
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_vote
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(uint64_t,from_uid,{})\
+  ADD(int64_t,delta,0)\
+  ADD(string,time,{})\
+  ADD(string,reason,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+  static t_vote mk(uint64_t f,int64_t d,const string&t,const string&r){
+    t_vote out;
+    out.from_uid=f;
+    out.delta=d;
+    out.time=t;
+    out.reason=r;
+    return out;
+  }
 };
 struct t_votes{
-  vector<t_vote> arr;
-  int64_t up=0;
-  int64_t down=0;
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_votes
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(vector<t_vote>,arr,{})\
+  ADD(int64_t,up,0)\
+  ADD(int64_t,down,0)\
+  //===
+  #include "defprovar.inl"
+  //===
   void add(const t_vote&v){up+=v.delta>0?v.delta:0;down+=v.delta<0?-v.delta:0;arr.push_back(v);}
   int64_t tot()const{return up-down;}
 };
 struct t_coder_rec{
   struct t_source{
-    string cdn_src_url;
-    string cdn_bin_url;
-    string time;
-    string prod_time;
-    string status;
-    uint64_t size=0;
+    #define DEF_PRO_COPYABLE()
+    #define DEF_PRO_CLASSNAME()t_source
+    #define DEF_PRO_VARIABLE(ADD)\
+    ADD(string,cdn_src_url,{})\
+    ADD(string,cdn_bin_url,{})\
+    ADD(string,time,{})\
+    ADD(string,prod_time,{})\
+    ADD(string,status,{})\
+    ADD(uint64_t,size,0)\
+    //===
+    #include "defprovar.inl"
+    //===
     bool ok()const{return status.find("ok:{\"success\":true,\"")==0;}
   };
-  uint64_t id;
-  string last_ip;
-  string sysname;
-  string visname;
-  string token;
-  string email;
-  string time;
-  //unique_ptr<mutex> sarr_mtx;
-  //vector<t_source> sarr;
-  //uint64_t total_games=0;
-  //double elo=1500;
-  //bool allowed_next_src_upload()const{
-  //  lock_guard<mutex> lock(*sarr_mtx);
-  //  if(sarr.empty())return true;
-  //  if(sarr.back().prod_time.empty())return false;
-  //  return qap_time_diff(sarr.back().time,qap_time())>60*1000;
-  //}
-  //t_coder_rec&set(uint64_t id,string u,string e,string t){
-  //  this->id=id;sysname=LowerStr(u);visname=u;email=e;token=t;time=qap_time();
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_coder_rec
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(uint64_t,id,0)\
+  ADD(string,last_ip,{})\
+  ADD(string,sysname,{})\
+  ADD(string,visname,{})\
+  ADD(string,token,{})\
+  ADD(string,email,{})\
+  ADD(string,time,{})\
+  ADD(t_votes,karma,{})\
+  ADD(bool,banned,false)\
+  //===
+  #include "defprovar.inl"
+  //===
+};
+typedef map<uint64_t,uint64_t> t_phase2rank;
+typedef map<uint64_t,uint64_t> t_phase2rank;
+struct t_season_coder{
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_season_coder
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(uint64_t,uid,{})\
+  ADD(string,sysname,{})\
+  ADD(vector<t_coder_rec::t_source>,sarr,{})\
+  ADD(string,last_submit_time,{})\
+  ADD(bool,hide,false)\
+  ADD(bool,is_meta,false)\
+  ADD(string,meta_name,{})\
+  ADD(t_phase2rank,phase2rank,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+  int try_get_last_valid_ver(int v)const{
+    auto fail=[&](int v){return v<0||v>=(int)sarr.size();};
+    if(fail(v))return -1;
+    while(!fail(v)&&!sarr[v].ok())v--;
+    return v;
+  }
+  bool allowed_next_src_upload()const{
+    //lock_guard<mutex> lock(*sarr_mtx);
+    if(sarr.empty())return true;
+    if(sarr.back().prod_time.empty())return false;
+    return qap_time_diff(sarr.back().time,qap_time())>60*1000;
+  }
+  //t_season_coder&set(uint64_t id){
+  //  user_id=id;sysname=LowerStr(u);reg_time=qap_time();
   //  sarr_mtx=make_unique<mutex>();
   //  return *this;
   //}
-  //int try_get_last_valid_ver(int v)const{
-  //  auto fail=[&](int v){return v<0||v>=(int)sarr.size();};
-  //  if(fail(v))return -1;
-  //  while(!fail(v)&&!sarr[v].ok())v--;
-  //  return v;
-  //}
-  t_votes karma;
-  bool banned=false;
+};
+typedef map<uint64_t,double> t_uid2score;
+typedef map<uint64_t,uint64_t> t_uid2games;
+typedef map<uint64_t,string> t_uid2source_phase;
+struct t_phase {
+  struct t_qr_decl {
+    #define DEF_PRO_COPYABLE()
+    #define DEF_PRO_CLASSNAME()t_qr_decl
+    #define DEF_PRO_VARIABLE(ADD)\
+    ADD(string,from_phase,{})\
+    ADD(uint64_t,top_n,50)\
+    //===
+    #include "defprovar.inl"
+    //===
+  };
+  struct t_qualification_rule {
+    #define DEF_PRO_COPYABLE()
+    #define DEF_PRO_CLASSNAME()t_qualification_rule
+    #define DEF_PRO_VARIABLE(ADD)\
+    ADD(uint64_t,from_phase,{})\
+    ADD(uint64_t,top_n,50)\
+    //===
+    #include "defprovar.inl"
+    //===
+  };
+  struct t_uid_rec{
+    #define DEF_PRO_COPYABLE()
+    #define DEF_PRO_CLASSNAME()t_uid_rec
+    #define DEF_PRO_VARIABLE(ADD)\
+    ADD(double,score,1500)\
+    ADD(uint64_t,games,0)\
+    ADD(uint64_t,source_phase,0)\
+    //===
+    #include "defprovar.inl"
+    //===
+  };
+  typedef map<uint64_t,t_uid_rec> t_uid2rec;
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_phase
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(uint64_t,phase,0)\
+  ADD(string,type,{})\
+  ADD(string,phase_name,{})\
+  ADD(string,world,{})\
+  ADD(string,game_config,{})\
+  ADD(uint64_t,num_players,2)\
+  ADD(uint64_t,ticksPerGame,7500)\
+  ADD(uint64_t,msPerTick,35)\
+  ADD(uint64_t,stderrKB,16)\
+  ADD(vector<t_qualification_rule>,qualifying_from,{})\
+  ADD(t_uid2rec,uid2rec,{})\
+  ADD(vector<uint64_t>,games,{})\
+  ADD(uint64_t,finished_games,0)\
+  ADD(bool,on_prev_wave_end,true)\
+  ADD(string,scheduled_start_time,"2025.11.02,16:36:37.447")\
+  ADD(string,scheduled_end_time,"2025.11.03,09:46:51.632")\
+  ADD(bool,is_active,false)\
+  ADD(bool,is_closed,false)\
+  ADD(bool,is_completed,false)\
+  ADD(vector<vector<uint64_t>>,wave2gid,{})\
+  ADD(string,last_wave_time,"2025.10.31,19:08:07.120")\
+  ADD(uint64_t,sandbox_wave_interval_ms,5*60*1000)\
+  ADD(double,games_per_coder_per_hour,1.0)\
+  //===
+  #include "defprovar.inl"
+  //===
+  bool prev_wave_done()const{return games.size()==finished_games;}
+};
+typedef map<uint64_t,t_season_coder> t_uid2scoder;
+struct t_season {
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_season
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(uint64_t,season,0)\
+  ADD(string,season_name,{})\
+  ADD(string,title,{})\
+  ADD(t_uid2scoder,uid2scoder,{})\
+  ADD(vector<t_phase>,phases,{})\
+  ADD(uint64_t,cur_phase,0)\
+  ADD(bool,is_finalized,false)\
+  //===
+  #include "defprovar.inl"
+  //===
+  void sync(){
+    for(int i=1;i<phases.size();i++){
+      auto&prev=phases[i-1];
+      auto&cur=phases[i-0];
+      prev.scheduled_end_time=cur.scheduled_start_time;
+    }
+  }
 };
 struct t_comment {
-  uint64_t id;
-  uint64_t parent_id=0;
-  uint64_t author_uid;
-  string url;
-  string title;
-  string content;
-  string created_at;
-  t_votes votes;
-  vector<uint64_t> comments;
-  bool hidden = false;
-  bool is_pinned = false;
+#define DEF_PRO_COPYABLE()
+#define DEF_PRO_CLASSNAME()t_comment
+#define DEF_PRO_VARIABLE(ADD)\
+ADD(uint64_t,id,0)\
+ADD(uint64_t,parent_id,0)\
+ADD(uint64_t,game_id,0)\
+ADD(uint64_t,author_uid,0)\
+ADD(string,url,{})\
+ADD(string,title,{})\
+ADD(string,content,{})\
+ADD(string,created_at,{})\
+ADD(t_votes,votes,{})\
+ADD(vector<uint64_t>,comments,{})\
+ADD(bool,hidden,false)\
+ADD(bool,is_pinned,false)\
+//===
+#include "defprovar.inl"
+//===
 };
 #include "t_config_structs.h"
 struct t_main : t_http_base {
   #include "waveman.h"
-  mutex mtx;
-  vector<t_coder_rec> carr;//mutex carr_mtx;vector<size_t> ai2cid;
-  vector<t_game> garr;//mutex garr_mtx;
-  vector<t_comment> comments;
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_main
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(vector<t_coder_rec>,carr,{})\
+  ADD(vector<t_game>,garr,{})\
+  ADD(vector<t_comment>,comments,{})\
+  ADD(vector<t_season>,seasons,{})\
+  //===
+  #include "defprovar.inl"
+  //===
   WaveManager waveman;
+  mutex mtx;
   //map<string, string> node2ipport;
   //t_net_api capi;
   map<int, emitter_on_data_decoder> client_decoders;mutex cds_mtx;//mutex n2i_mtx;
@@ -808,7 +958,7 @@ struct t_main : t_http_base {
           b.email = sysemail;
           b.token = sha256(b.time + name + email + to_string((rand() << 16) + rand()) + "2025.08.23 15:10:42.466");
 
-          if(b.id<64)b.karma.add({0,+1,qap_time(),"init"});
+          if(b.id<64)b.karma.add(t_vote::mk(0,+1,qap_time(),"init"));
 
           carr.push_back(std::move(b));
 
@@ -816,11 +966,13 @@ struct t_main : t_http_base {
           if (!seasons.empty() && !seasons.back().is_finalized) {
             t_season& s = seasons.back();
             if (s.uid2scoder.count(uid) == 0) {
-              s.uid2scoder[uid] = t_season_coder{uid, sysname, {}};
+              auto&sc=s.uid2scoder[uid];
+              sc.uid=uid;
+              sc.sysname=sysname;
               if (!s.phases.empty()) {
                 t_phase& active = s.phases[s.cur_phase];
                 if (active.type == "sandbox") {
-                  active.uid2rec[uid] = {1500, 0, 0};
+                  active.uid2rec[uid]={};
                 }
               }
             }
@@ -910,7 +1062,9 @@ struct t_main : t_http_base {
             res.set_content("You are not a participant of this season", "text/plain");
             return;
           }
-          season.uid2scoder[uid] = t_season_coder{uid, carr[uid].sysname};
+          auto&sc=season.uid2scoder[uid];
+          sc.uid=uid;
+          sc.sysname=carr[uid].sysname;
           if (!season.phases.empty()) {
             t_phase& cur = season.phases[curp];
             cur.uid2rec[uid] = {};
@@ -1443,7 +1597,7 @@ struct t_main : t_http_base {
         }
         uint64_t maxtick = min<uint64_t>(j.value("maxtick", phase->ticksPerGame), 20000);
         double msPerTick = min<double>(j.value("msPerTick", (double)phase->msPerTick), 100.0);
-        uint64_t stderrKb = min<uint64_t>(j.value("stderrKb", phase->stderrKb), 64);
+        uint64_t stderrKB = min<uint64_t>(j.value("stderrKB", phase->stderrKB), 64);
 
         t_game_decl gd;
         gd.arr = slots;
@@ -1452,7 +1606,7 @@ struct t_main : t_http_base {
         gd.maxtick = maxtick;
         gd.TL = msPerTick;
         gd.TL0 = max(gd.TL0, msPerTick);
-        gd.stderr_max = stderrKb * 1024;
+        gd.stderr_max = stderrKB * 1024;
 
         {
           gd.game_id = garr.size();
@@ -1530,7 +1684,7 @@ struct t_main : t_http_base {
 
         pj["ticksPerGame"] = p.ticksPerGame;
         pj["msPerTick"] = p.msPerTick;
-        pj["stderrKb"] = p.stderrKb;
+        pj["stderrKB"] = p.stderrKB;
 
         if (p.type == "round") {
           json rules = json::array();
@@ -1851,9 +2005,9 @@ struct t_main : t_http_base {
       string title = j.value("title", "");
       string url = j.value("url", "");
       string content = j.value("content", "");
-      title=sanitizeHtml(title,false);
-      url=sanitizeHtml(url,false);
-      content=sanitizeHtml(content);
+      title=sanitizeHtml(title,true);
+      url=sanitizeHtml(url,true);
+      content=sanitizeHtml(content,false);
       // Для корневого поста: требуем title и url
       if (parent_id == 0 && (title.empty() || url.empty() || url.find("http") != 0)) {
         res.status = 400;
@@ -1891,6 +2045,14 @@ struct t_main : t_http_base {
       }
       json tree = build_comment_tree(id, comments, carr,uid);
       res.set_content(tree.dump(2), "application/json");
+    });
+    srv.Get("/save", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(15);
+      auto [uid, ok] = auth_by_bearer(req);
+      if (!ok||uid) { res.status = 404; return; }
+      auto s=QapSaveToStr(*this);
+      file_put_contents("save.qap",s);
+      res.set_content("["+qap_time()+"]: size="+to_string(s.size()/1024.0/1024.0)+"MB", "text/plain");
     });
     srv.Post(R"(/api/vote/comment/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(15);
@@ -1967,134 +2129,6 @@ struct t_main : t_http_base {
 public:
 //---T_MAIN_TEST---
 public:
-  //typedef t_coder_rec t_global_user;
-  //struct t_global_user{
-  //  uint64_t user_id;
-  //  string email;
-  //  string sysname;
-  //  string visname;
-  //  string token;
-  //  string created_at;
-  //};
-  typedef map<uint64_t,uint64_t> t_phase2rank;
-  struct t_tracked_info {
-    string label;           // "Pure Farmer", "R1-Winner-1", "S2-TOP3-5", ...
-    uint64_t source_phase;    // фаза, в которой был отмечен
-    uint64_t source_rank;        // место в той фазе
-    t_phase2rank phase2rank; // история рангов по фазам
-  };
-  typedef map<uint64_t,uint64_t> t_phase2rank;
-  struct t_season_coder{
-    uint64_t uid;
-    string sysname;
-    vector<t_coder_rec::t_source> sarr;//unique_ptr<mutex> sarr_mtx=make_unique<mutex>();
-    string last_submit_time;
-    bool hide = false;
-    bool is_meta = false;
-    string meta_name;
-    t_phase2rank phase2rank;
-    optional<t_tracked_info> tracked;
-    int try_get_last_valid_ver(int v)const{
-      auto fail=[&](int v){return v<0||v>=(int)sarr.size();};
-      if(fail(v))return -1;
-      while(!fail(v)&&!sarr[v].ok())v--;
-      return v;
-    }
-    bool allowed_next_src_upload()const{
-      //lock_guard<mutex> lock(*sarr_mtx);
-      if(sarr.empty())return true;
-      if(sarr.back().prod_time.empty())return false;
-      return qap_time_diff(sarr.back().time,qap_time())>60*1000;
-    }
-    //t_season_coder&set(uint64_t id){
-    //  user_id=id;sysname=LowerStr(u);reg_time=qap_time();
-    //  sarr_mtx=make_unique<mutex>();
-    //  return *this;
-    //}
-  };
-  typedef map<uint64_t,double> t_uid2score;
-  typedef map<uint64_t,uint64_t> t_uid2games;
-  typedef map<uint64_t,string> t_uid2source_phase;
-
-  struct t_phase {
-    struct t_qr_decl {
-      string from_phase;
-      uint64_t top_n=50;
-    };
-    struct t_qualification_rule {
-      uint64_t from_phase;
-      uint64_t top_n=50;
-    };
-    struct t_uid_rec{
-      double score=1500;
-      uint64_t games=0;
-      uint64_t source_phase=0;
-    };
-    typedef map<uint64_t,t_uid_rec> t_uid2rec;
-    uint64_t phase=0;
-    // type=="sandbox"|"round"
-    string type;
-    string phase_name;
-    string world;
-    string game_config;
-    uint64_t num_players = 2;
-
-    uint64_t ticksPerGame = 7500;
-    uint64_t msPerTick = 35;
-    uint64_t stderrKb = 16;
-
-    //bool is_active = false;
-    vector<t_qualification_rule> qualifying_from;
-    t_uid2rec uid2rec;
-    vector<uint64_t> games;
-    uint64_t finished_games=0;
-    bool prev_wave_done()const{return games.size()==finished_games;}
-    bool on_prev_wave_end=true;
-    // === Управление волнами ===
-    //string start_time="2025.10.31 19:08:07.120";
-    string scheduled_start_time="2025.11.02 16:36:37.447"; // из конфига — "не раньше этого времени"
-    string scheduled_end_time="2025.11.03 09:46:51.632";
-    bool is_closed=false;
-    bool is_completed = false;   // true, когда все игры завершены и рейтинги зафиксированы
-    bool is_active = false;
-
-    // Для round:
-    //uint64_t total_waves = 3;// сколько волн сыграть
-    //uint64_t current_wave = 0;
-    vector<vector<uint64_t>> wave2gid; // games[wave2gid[wave_id][i]]
-
-    // Для sandbox:
-    string last_wave_time="2025.10.31 19:08:07.120";
-    uint64_t sandbox_wave_interval_ms = 5 * 60 * 1000; // 5 минут
-
-    double games_per_coder_per_hour=1.0;
-  };
-
-  typedef map<uint64_t,t_season_coder> t_uid2scoder;
-  struct t_season {
-    uint64_t season=0;
-    string season_name; // "splinter_2025"
-    //string world; // "t_splinter"
-    string title;
-    t_uid2scoder uid2scoder;
-    vector<t_phase> phases;
-    uint64_t cur_phase = 0;
-    /*struct t_scheduled_transition{
-      bool deaded=false;
-      string target_phase_name;
-      string time;
-    };
-    vector<t_scheduled_transition> scheduled_transitions;*/
-    //mutex participants_mtx;
-    bool is_finalized = false;
-    void sync(){
-      for(int i=1;i<phases.size();i++){
-        auto&prev=phases[i-1];
-        auto&cur=phases[i-0];
-        prev.scheduled_end_time=cur.scheduled_start_time;
-      }
-    }
-  };
   const t_season*find_season(const string&name)const{for(auto&p:seasons)if(p.season_name==name)return &p;return nullptr;}
   t_season*find_season(const string&name){for(auto&p:seasons)if(p.season_name==name)return &p;return nullptr;}
   const t_phase* find_phase(const t_season& season, const string& phase_name)const{
@@ -2130,51 +2164,49 @@ public:
   }
   void compute_ratings_for_phase(const t_phase& current,t_season& season){}
 public:
-  //vector<t_global_user> gus;
-  vector<t_season> seasons;
-  void ensure_user_in_season(t_season& season, uint64_t user_id) {
-    t_phase* active =&season.phases[season.cur_phase];
-    if (season.uid2scoder.count(user_id) == 0) {
-      season.uid2scoder[user_id] = t_season_coder{user_id, "", {}};
-      active->uid2rec[user_id]={};
-    }
-  }
-  void init_splinter_2025_season(t_season& s) {
-    s.season_name = "splinter_2025";
-    //s.world = "t_splinter";
-    s.title = "Splinter 2025";
-
-    // Определяем фазы в порядке их появления
-    vector<tuple<string, string, uint64_t, vector<t_phase::t_qr_decl>>> phase_specs = {
-      // {phase_id, type, num_players, qualifying_from}
-      {"S1", "sandbox", 16, {}},
-      {"R1", "round",   16, {{"S1", 900}}},
-      {"S2", "sandbox", 16, {}},
-      {"R2", "round",   16, {{"R1", 300}, {"S2", 60}}},
-      {"SF", "sandbox", 16, {}},
-      {"F",  "round",   16, {{"R2", 50},  {"SF", 10}}},
-      {"S",  "sandbox", 16, {}}
-    };
-    for (size_t i = 0; i < phase_specs.size(); ++i) {
-      auto& [phase_name, type, num_players, rules] = phase_specs[i];
-      t_phase p;
-      p.phase = i;              // ← критично для ссылок из игр
-      p.phase_name = phase_name;
-      p.type = type;
-      p.num_players = num_players;
-      // ...
-      s.phases.push_back(std::move(p));
-    }
-    //for (auto& [phase_id, type, num_players, rules] : phase_specs) {
-    //  auto phase = make_unique<t_phase>();
-    //  phase->phase_id = phase_id;
-    //  phase->type = type;
-    //  phase->num_players = num_players;
-    //  //phase->qualifying_from = rules;
-    //  // uids и uid2score заполнятся позже при активации
-    //  s.phases.push_back(std::move(phase));
-    //}
-  }
+  //void ensure_user_in_season(t_season& season, uint64_t user_id) {
+  //  t_phase* active =&season.phases[season.cur_phase];
+  //  if (season.uid2scoder.count(user_id) == 0) {
+  //    season.uid2scoder[user_id] = t_season_coder{user_id, "", {}};
+  //    active->uid2rec[user_id]={};
+  //  }
+  //}
+  //void init_splinter_2025_season(t_season& s) {
+  //  s.season_name = "splinter_2025";
+  //  //s.world = "t_splinter";
+  //  s.title = "Splinter 2025";
+  //
+  //  // Определяем фазы в порядке их появления
+  //  vector<tuple<string, string, uint64_t, vector<t_phase::t_qr_decl>>> phase_specs = {
+  //    // {phase_id, type, num_players, qualifying_from}
+  //    {"S1", "sandbox", 16, {}},
+  //    {"R1", "round",   16, {{"S1", 900}}},
+  //    {"S2", "sandbox", 16, {}},
+  //    {"R2", "round",   16, {{"R1", 300}, {"S2", 60}}},
+  //    {"SF", "sandbox", 16, {}},
+  //    {"F",  "round",   16, {{"R2", 50},  {"SF", 10}}},
+  //    {"S",  "sandbox", 16, {}}
+  //  };
+  //  for (size_t i = 0; i < phase_specs.size(); ++i) {
+  //    auto& [phase_name, type, num_players, rules] = phase_specs[i];
+  //    t_phase p;
+  //    p.phase = i;              // ← критично для ссылок из игр
+  //    p.phase_name = phase_name;
+  //    p.type = type;
+  //    p.num_players = num_players;
+  //    // ...
+  //    s.phases.push_back(std::move(p));
+  //  }
+  //  //for (auto& [phase_id, type, num_players, rules] : phase_specs) {
+  //  //  auto phase = make_unique<t_phase>();
+  //  //  phase->phase_id = phase_id;
+  //  //  phase->type = type;
+  //  //  phase->num_players = num_players;
+  //  //  //phase->qualifying_from = rules;
+  //  //  // uids и uid2score заполнятся позже при активации
+  //  //  s.phases.push_back(std::move(phase));
+  //  //}
+  //}
   void next_phase(t_season& season,uint64_t phase) {
     t_phase*target=&season.phases[phase];
 
@@ -2190,7 +2222,7 @@ public:
     if (target->type == "sandbox") {
       // В песочницу — все, кто есть в сезоне
       for (const auto& [uid, _] : season.uid2scoder) {
-        target->uid2rec[uid]={1500,0,0};
+        target->uid2rec[uid]={};
       }
     } else if (target->type == "round") {
       set<uint64_t> already_qualified;
@@ -2214,7 +2246,8 @@ public:
         uint64_t added = 0;
         for (auto& [neg_score, uid] : ranked) {
           if (added >= rule.top_n) break;
-          target->uid2rec[uid]={0,0,rule.from_phase};
+          auto&rec=target->uid2rec[uid];
+          rec.source_phase=rule.from_phase;
           already_qualified.insert(uid);
           added++;
         }
@@ -2334,6 +2367,7 @@ public:
     }
 
     if(!should_launch_wave)return;
+    waveman.roundDurationMS=qap_time_diff(phase.scheduled_start_time,phase.scheduled_end_time);
     if(!waveman.tryStartNextWave())return;
 
     vector<t_game_decl> wave = generate_wave(phase, season);
@@ -2432,7 +2466,7 @@ public:
         gd.arr = slots;
         gd.config = phase.game_config;
         gd.world = phase.world;
-        gd.stderr_max=phase.stderrKb;
+        gd.stderr_max=phase.stderrKB;
         gd.TL=phase.msPerTick;
         gd.TL0=std::max(gd.TL0,gd.TL);
         gd.maxtick=phase.ticksPerGame;
@@ -2620,55 +2654,55 @@ public:
     LOG("Season reset to single sandbox (S1)");
   }
   void apply_standard_phases(t_season& s) {
-    s.phases.clear();
-
-    struct spec { string name; string type; uint64_t players; };
-    vector<spec> specs = {
-      {"S1", "sandbox", 16},
-      {"R1", "round",  16},
-      {"S2", "sandbox", 16},
-      {"R2", "round",  16},
-      {"SF", "sandbox", 16},
-      {"F", "round",  16},
-      {"S", "sandbox", 16}
-    };
-
-    for (size_t i = 0; i < specs.size(); ++i) {
-      t_phase p;
-      p.phase = i;
-      p.phase_name = specs[i].name;
-      p.type = specs[i].type;
-      p.num_players = specs[i].players;
-      p.game_config = "";
-      p.is_active = (i == 0); // only S1 active initially
-      s.phases.push_back(p);
-    }
-
-    // Квалификации (как в init_splinter_2025_season)
-    if (s.phases.size() > 1) {
-      s.phases[1].qualifying_from = {{0, 900}}; // R1 ← S1 top 900
-    }
-    if (s.phases.size() > 3) {
-      s.phases[3].qualifying_from = {{1, 300}, {2, 60}}; // R2 ← R1 top 300 + S2 top 60
-    }
-    if (s.phases.size() > 5) {
-      s.phases[5].qualifying_from = {{3, 50}, {4, 10}}; // F ← R2 top 50 + SF top 10
-    }
-
-    s.cur_phase = 0;
-    LOG("Season set to standard phases: S1-R1-S2-R2-SF-F-S");
+    //s.phases.clear();
+    //
+    //struct spec { string name; string type; uint64_t players; };
+    //vector<spec> specs = {
+    //  {"S1", "sandbox", 16},
+    //  {"R1", "round",  16},
+    //  {"S2", "sandbox", 16},
+    //  {"R2", "round",  16},
+    //  {"SF", "sandbox", 16},
+    //  {"F", "round",  16},
+    //  {"S", "sandbox", 16}
+    //};
+    //
+    //for (size_t i = 0; i < specs.size(); ++i) {
+    //  t_phase p;
+    //  p.phase = i;
+    //  p.phase_name = specs[i].name;
+    //  p.type = specs[i].type;
+    //  p.num_players = specs[i].players;
+    //  p.game_config = "";
+    //  p.is_active = (i == 0); // only S1 active initially
+    //  s.phases.push_back(p);
+    //}
+    //
+    //// Квалификации (как в init_splinter_2025_season)
+    //if (s.phases.size() > 1) {
+    //  s.phases[1].qualifying_from = {{0, 900}}; // R1 ← S1 top 900
+    //}
+    //if (s.phases.size() > 3) {
+    //  s.phases[3].qualifying_from = {{1, 300}, {2, 60}}; // R2 ← R1 top 300 + S2 top 60
+    //}
+    //if (s.phases.size() > 5) {
+    //  s.phases[5].qualifying_from = {{3, 50}, {4, 10}}; // F ← R2 top 50 + SF top 10
+    //}
+    //
+    //s.cur_phase = 0;
+    //LOG("Season set to standard phases: S1-R1-S2-R2-SF-F-S");
   }
   bool apply_set_qualification(t_season& s, const string& target_phase_name, const vector<pair<string, uint64_t>>& rules) {
-    t_phase* target = find_phase(s, target_phase_name);
-    if (!target) return false;
-
-    target->qualifying_from.clear();
-    for (auto& [src_name, top_n] : rules) {
-      const t_phase* src = find_phase(s, src_name);
-      if (src) {
-        target->qualifying_from.push_back({src->phase, top_n});
-      }
-    }
+    //t_phase* target = find_phase(s, target_phase_name);
+    //if (!target) return false;
+    //
+    //target->qualifying_from.clear();
+    //for (auto& [src_name, top_n] : rules) {
+    //  const t_phase* src = find_phase(s, src_name);
+    //  if (src) {
+    //    target->qualifying_from.push_back({src->phase, top_n});
+    //  }
+    //}
     return true;
   }
   bool apply_add_phase(t_season& s, const string& name, const string& type, uint64_t players) {
@@ -2767,7 +2801,7 @@ public:
 
       target->ticksPerGame=pc.ticksPerGame;
       target->msPerTick=pc.msPerTick;
-      target->stderrKb=pc.stderrKb;
+      target->stderrKB=pc.stderrKB;
 
       //target->is_active = false;
       if (pc.type == "sandbox") {
@@ -2786,7 +2820,9 @@ public:
             }
           }
           if (src_phase_id != kInvalidIndex) {
-            target->qualifying_from.push_back({src_phase_id, rule.topN});
+            auto&b=qap_add_back(target->qualifying_from);
+            b.from_phase=src_phase_id;
+            b.top_n=rule.topN;
           }
           // Если фаза ещё не создана — правило проигнорируется (или можно отложить)
         }
@@ -2997,7 +3033,7 @@ static void sim_sleep(uint64_t ms) {
     seasons.push_back(s);
     LOG("Initial season '" + season_name + "' created with sandbox S1");
 }
-void simulate_new_coders(int count, const string& phase_name) {
+  void simulate_new_coders(int count, const string& phase_name) {
     lock_guard<mutex> lock(mtx);
     if (seasons.empty()) return;
     t_season& s = seasons.back();
@@ -3006,30 +3042,30 @@ void simulate_new_coders(int count, const string& phase_name) {
     if (!target_phase) return;
 
     for (int i = 0; i < count; ++i) {
-        uint64_t uid = carr.size();
-        t_coder_rec coder;
-        coder.id = uid;
-        coder.sysname = "sim_coder_" + to_string(uid);
-        coder.visname = coder.sysname;
-        coder.email = coder.sysname + "@sim.test";
-        coder.token = generate_token(coder.sysname, qap_time());
-        coder.time = qap_time();
-        carr.push_back(coder);
+      uint64_t uid = carr.size();
+      t_coder_rec coder;
+      coder.id = uid;
+      coder.sysname = "sim_coder_" + to_string(uid);
+      coder.visname = coder.sysname;
+      coder.email = coder.sysname + "@sim.test";
+      coder.token = generate_token(coder.sysname, qap_time());
+      coder.time = qap_time();
+      carr.push_back(coder);
 
-        // Добавить в сезон
-        auto&sc=s.uid2scoder[uid];
-        sc = t_season_coder{uid, coder.sysname, {}};
-        sc.sarr.push_back({});
-        auto&b=sc.sarr.back();
-        b.cdn_src_url=to_string(i);
-        b.status="ok:{\"success\":true,\"";
-        // Добавить в текущую фазу
-        if (target_phase->uid2rec.count(uid) == 0) {
-            target_phase->uid2rec[uid] = {1500, 0, 0};
-        }
+      // Добавить в сезон
+      auto&sc=s.uid2scoder[uid];
+      sc.uid=uid;
+      sc.sysname=coder.sysname;
+      auto&b=qap_add_back(sc.sarr);
+      b.cdn_src_url=to_string(i);
+      b.status="ok:{\"success\":true,\"";
+      // Добавить в текущую фазу
+      if (target_phase->uid2rec.count(uid) == 0) {
+        target_phase->uid2rec[uid]={};
+      }
     }
     LOG("Simulated " + to_string(count) + " new coders in phase " + phase_name);
-}
+  }
   static void run_season_simulation(t_main& m) {
     {
       lock_guard<mutex> lock(m.mtx);
@@ -3216,11 +3252,16 @@ bool ensure_runner_image() {
 
 #include "t_node.hpp"
 void setup_main(t_main&m){
-  t_main::t_season s;
-  s.season = 0;
-  s.season_name = "splinter_2025";
-  s.title = "Splinter 2025";
-  m.seasons.push_back(s);
+  auto mem=file_get_contents("save.qap");
+  bool ok=QapLoadFromStr(m,mem);
+  if(!ok){
+    m={};
+    t_season s;
+    s.season = 0;
+    s.season_name = "splinter_2025";
+    s.title = "Splinter 2025";
+    m.seasons.push_back(s);
+  }
   //auto&b=qap_add_back(m.carr);
   //b.
   /*

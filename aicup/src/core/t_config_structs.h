@@ -11,7 +11,7 @@ struct TPhaseConfig {
   uint64_t ticksPerGame = 7500;
   uint64_t msPerTick = 35;
   uint64_t playersPerGame = 4;
-  uint64_t stderrKb = 16;
+  uint64_t stderrKB = 16;
   uint64_t replayBytesPerTick = 100;
   double gamesPerCoderPerHour = 1.0;
 
@@ -40,7 +40,7 @@ void from_json(const json& j, TPhaseConfig& p) {
   if (j.contains("ticksPerGame")) j.at("ticksPerGame").get_to(p.ticksPerGame);
   if (j.contains("msPerTick")) j.at("msPerTick").get_to(p.msPerTick);
   if (j.contains("playersPerGame")) j.at("playersPerGame").get_to(p.playersPerGame);
-  if (j.contains("stderrKb")) j.at("stderrKb").get_to(p.stderrKb);
+  if (j.contains("stderrKB")) j.at("stderrKB").get_to(p.stderrKB);
   if (j.contains("replayBytesPerTick")) j.at("replayBytesPerTick").get_to(p.replayBytesPerTick);
   if (j.contains("gamesPerCoderPerHour")) j.at("gamesPerCoderPerHour").get_to(p.gamesPerCoderPerHour);
 
