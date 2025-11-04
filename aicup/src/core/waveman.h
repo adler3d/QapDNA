@@ -46,7 +46,7 @@ struct WaveManager {
       return false;
     }
  
-    LOG("Preparing to start wave #" + std::to_string(currentWaveNumber+1));
+    //LOG("Preparing to start wave #" + std::to_string(currentWaveNumber+1));
     //markWaveStart();
     return true;
   }

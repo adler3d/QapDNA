@@ -664,6 +664,10 @@ struct t_main : t_process,t_http_base {
   int main(int port=MAIN_PORT){
     sch.api=&sch_api;sch_api.pmain=this;
     thread([this]{sch.main();}).detach();
+    thread update_seasons_thread([this]() {
+      seasons_main_loop();
+    });
+    update_seasons_thread.detach();
     client_killer();
     carr.reserve(31456*3);
     server.port=port;
@@ -701,6 +705,27 @@ struct t_main : t_process,t_http_base {
     }).detach();
   }
   RateLimiter rate_limiter;
+  static string get_token_from_request(const httplib::Request& req, httplib::Response& res){
+    auto auth_header = req.get_header_value("Authorization");
+    if (auth_header.empty()) {
+      res.status = 401;
+      res.set_content("Authorization header is missing", "text/plain");
+      return {};
+    }
+    const string prefix = "Bearer ";
+    if (auth_header.find(prefix) != 0) {
+      res.status = 400;
+      res.set_content("Authorization header must be of the form 'Bearer <token>'", "text/plain");
+      return {};
+    }
+    string token = auth_header.substr(prefix.size());
+    if (token.empty()) {
+      res.status = 400;
+      res.set_content("Token is missing in Authorization header", "text/plain");
+      return {};
+    }
+    return token;
+  };
   void setup_routes(){
     #define RATE_LIMITER(LIMIT)\
       if (!rate_limiter.is_allowed(req.remote_addr,req.matched_route,LIMIT)) {\
@@ -794,6 +819,8 @@ struct t_main : t_process,t_http_base {
     });
     srv.Post("/api/seasons/current/submit", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(10);
+      string token=get_token_from_request(req,res);
+      if(token.empty())return;
       try {
         if (req.body.size() >= 1024 * 512) {
           res.status = 409;
@@ -801,11 +828,10 @@ struct t_main : t_process,t_http_base {
           return;
         }
         auto j = json::parse(req.body);
-        string token = j.value("token", "");
         string src = j.value("src", "");
-        if (token.empty() || src.empty()) {
+        if (src.empty()) {
           res.status = 400;
-          res.set_content("Missing 'token' or 'src'", "text/plain");
+          res.set_content("Missing 'src'", "text/plain");
           return;
         }
         if (src.size() > 1024 * 256) {
@@ -1303,14 +1329,10 @@ struct t_main : t_process,t_http_base {
       string season_name = req.matches[1];
       string phase_name = req.matches[2];
       RATE_LIMITER(10);
+      string token=get_token_from_request(req,res);
+      if(token.empty())return;
       try {
         auto j = json::parse(req.body);
-        string token = j.value("token", "");
-        if (token.empty()) {
-          res.status = 400;
-          res.set_content("Missing token", "text/plain");
-          return;
-        }
         // Найти uid по токену
         uint64_t uid = UINT64_MAX;
         {
@@ -1448,7 +1470,7 @@ struct t_main : t_process,t_http_base {
         res.set_content((res.status==200?"ok:":"fail:")+qap_time(),"text/plain");
       } catch (const std::exception& e) {
         res.status = 500;
-        res.set_content("Exception: " + std::string(e.what()), "text/plain");
+        res.set_content("Exception: " + string(e.what()), "text/plain");
       }
     });
     srv.Get("/api/seasons/current", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1500,25 +1522,8 @@ struct t_main : t_process,t_http_base {
     });
     srv.Get("/api/seasons/current/me", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
-      auto auth_header = req.get_header_value("Authorization");
-      if (auth_header.empty()) {
-        res.status = 401;
-        res.set_content("Authorization header is missing", "text/plain");
-        return;
-      }
-      const std::string prefix = "Bearer ";
-      if (auth_header.find(prefix) != 0) {
-        res.status = 400;
-        res.set_content("Authorization header must be of the form 'Bearer <token>'", "text/plain");
-        return;
-      }
-      std::string token = auth_header.substr(prefix.size());
-      if (token.empty()) {
-        res.status = 400;
-        res.set_content("Token is missing in Authorization header", "text/plain");
-        return;
-      }
-
+      string token=get_token_from_request(req,res);
+      if(token.empty())return;
       uint64_t uid = UINT64_MAX;
       string sysname;
       {
@@ -1601,6 +1606,10 @@ struct t_main : t_process,t_http_base {
     srv.Get("/", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
       res.set_content(file_get_contents("index.html"), "text/html");
+    });
+    srv.Get("/admin.html", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
+      res.set_content(file_get_contents("admin.html"), "text/html");
     });
     srv.set_logger([](const httplib::Request& req, const httplib::Response& res) {
         std::cout <<"["<<qap_time()<<"]t_site: "<< "Request: " << req.method << " " << req.path;
@@ -1944,7 +1953,7 @@ public:
     }
     // После обработки всех фаз:
     if (!season.is_finalized) {
-      bool all_completed = true;
+      bool all_completed = season.phases.size();
       for (auto& p : season.phases) {
         if (!p.is_completed) {
           all_completed = false;
@@ -2449,7 +2458,7 @@ public:
     return true;
   }
 public:
-  static void LOG(const string&str){cerr<<"["<<::qap_time()<<"]["<<qap_time()<<"] "<<(str)<<endl;}
+  static void LOG2(const string&str){cerr<<"["<<::qap_time()<<"]["<<qap_time()<<"] "<<(str)<<endl;}
   static string get_json_cfg(){
     const char* v2=R"({
   "machineTypes": [
@@ -2588,7 +2597,7 @@ public:
 
 
 // Подмена qap_time()
-static string qap_time() {
+static string qap_time_off() {
     lock_guard<mutex> lock(sim_mtx);
     // Преобразуем sim_time_ms → строку вида "2025.11.02 12:34:56.789"
     auto total_sec = sim_time_ms / 1000;
@@ -2608,21 +2617,6 @@ static string qap_time() {
     return string(buf) + "." + (ms < 10 ? "00" : ms < 100 ? "0" : "") + to_string(ms);
 }
 
-// Подмена qap_time_diff(a, b) → возвращает разницу в мс
-static int64_t qap_time_diff(const string& a, const string& b) {
-    // Для симулятора можно упростить: вернём sim_time_ms разницу
-    // Но проще: использовать sim_time_ms напрямую в логике
-    // Поэтому в симуляторе мы будем сравнивать через sim_time_ms
-    // Эта функция не используется в update_seasons в симуляторе
-    return ::qap_time_diff(a,b);
-}
-
-// Утилита: парсить строку времени → sim_time_ms (опционально)
-static uint64_t parse_time_to_ms(const string& s) {
-    // Для простоты: считаем, что s = "2025.11.02 12:34:56.789"
-    // Пропускаем парсинг — в симуляторе мы задаём время через sim_time_ms
-    return 0;
-}
 static void sim_sleep(uint64_t ms) {
   //for(int i=0;i<10;i++)
   {
@@ -2729,7 +2723,7 @@ void simulate_new_coders(int count, const string& phase_name) {
       }
     });
     update_thread.detach();
-    LOG("Simulation started at " + m.qap_time());
+    LOG("Simulation started at " + qap_time());
 
     m.sim_sleep(0);
     m.simulate_new_coders(4, "S1");
@@ -2878,6 +2872,11 @@ bool ensure_runner_image() {
 
 #include "t_node.hpp"
 void setup_main(t_main&m){
+  t_main::t_season s;
+  s.season = 0;
+  s.season_name = "splinter_2025";
+  s.title = "Splinter 2025";
+  m.seasons.push_back(s);
   //auto&b=qap_add_back(m.carr);
   //b.
   /*
@@ -2898,8 +2897,8 @@ void setup_main(t_main&m){
 #include <signal.h>
 int main(int argc,char*argv[]){
   //main_test();//t_coder_rec::t_source
-  t_main::sim_main();
-  return 0;
+  //t_main::sim_main();
+  //return 0;
   signal(SIGPIPE, SIG_IGN);
   srand(time(0));
   if(bool prod=true){
