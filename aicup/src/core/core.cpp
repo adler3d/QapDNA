@@ -40,6 +40,7 @@ using namespace std;
 using namespace std;
 using namespace std::chrono;
 using json = nlohmann::json;
+#include "html_stuff.h"
 #include "t_cdn.hpp"
 
 uint64_t sim_time_ms = 0; // симулированное время в миллисекундах
@@ -1850,7 +1851,9 @@ struct t_main : t_http_base {
       string title = j.value("title", "");
       string url = j.value("url", "");
       string content = j.value("content", "");
-
+      title=sanitizeHtml(title,false);
+      url=sanitizeHtml(url,false);
+      content=sanitizeHtml(content);
       // Для корневого поста: требуем title и url
       if (parent_id == 0 && (title.empty() || url.empty() || url.find("http") != 0)) {
         res.status = 400;

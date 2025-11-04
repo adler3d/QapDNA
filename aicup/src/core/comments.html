@@ -14,6 +14,7 @@
       border-left: 3px solid #ddd;
       padding: 8px 0 8px 12px;
       margin: 10px 0;
+      position: relative;
     }
     .comment.depth-0 { border-left: none; padding-left: 0; }
     .vote { color: #888; cursor: pointer; user-select: none; }
@@ -22,132 +23,189 @@
     .author:hover { color: #0077cc; }
     textarea { width: 100%; height: 80px; padding: 6px; box-sizing: border-box; margin: 8px 0; }
     button { padding: 6px 12px; }
+
+    .reply-btn {
+      font-size: 0.9em;
+      color: #555;
+      background: none;
+      border: none;
+      cursor: pointer;
+      margin-left: 8px;
+    }
+    .reply-form {
+      margin-top: 8px;
+      display: none;
+    }
+    .reply-form textarea {
+      width: 100%;
+      height: 60px;
+      padding: 6px;
+      box-sizing: border-box;
+    }
+    .reply-form button {
+      margin-top: 4px;
+      padding: 4px 8px;
+    }
     .error { color: red; }
     .success { color: green; }
   </style>
 </head>
 <body>
-  <div class="post-header" id="postHeader"></div>
+    <div class="post-header" id="postHeader"></div>
 
-  <h3>Comments</h3>
-  <div id="commentsTree"></div>
+    <h3>Comments</h3>
+    <div id="commentsTree"></div>
 
-  <h3>Add a comment</h3>
-  <textarea id="newCommentContent" placeholder="Write your comment..."></textarea><br>
-  <button onclick="submitComment()">Submit</button>
-  <div id="commentStatus"></div>
+    <h3>Add a comment</h3>
+    <textarea id="newCommentContent" placeholder="Write your comment..."></textarea><br>
+    <button onclick="submitComment()">Submit</button>
+    <div id="commentStatus"></div>
 
-  <script>
-    // === Вспомогательные функции ===
-    let token = localStorage.getItem('token') || prompt('Enter your token:');
-    if (token) localStorage.setItem('token', token);
+    <script>
+        let token = localStorage.getItem('token') || prompt('Enter your token:');
+        if (token) localStorage.setItem('token', token);
 
-    function api(method, path, body = null) {
-      return fetch('/api' + path, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token
-        },
-        body: body ? JSON.stringify(body) : null
-      }).then(r => r.ok ? r.json() : Promise.reject(r.status));
-    }
-
-    function renderPost(post) {
-      const el = document.getElementById('postHeader');
-      el.innerHTML = `
-        <h2><a href="${post.url}" target="_blank">${post.title}</a></h2>
-        <div>
-          by <span class="author" data-uid="${post.author_uid}">${post.author}</span>
-          | ${post.upvotes - post.downvotes} points
-          | <span class="vote" onclick="vote('comment', ${post.id}, 1)">▲</span>
-            <span class="vote" onclick="vote('comment', ${post.id}, -1)">▼</span>
-        </div>
-      `;
-      attachAuthorHandlers();
-    }
-
-    function renderComment(comment, depth = 0) {
-      const div = document.createElement('div');
-      div.className = `comment depth-${depth}`;
-      div.innerHTML = `
-        <div>
-          <span class="vote" onclick="vote('comment', ${comment.id}, 1)">▲</span>
-          <span class="vote" onclick="vote('comment', ${comment.id}, -1)">▼</span>
-          <strong class="author" data-uid="${comment.author_uid}">${comment.author}</strong>
-          (${comment.upvotes - comment.downvotes})
-        </div>
-        <div>${comment.content || '<i>No content</i>'}</div>
-      `;
-      if (comment.replies && comment.replies.length) {
-        const repliesDiv = document.createElement('div');
-        repliesDiv.style.marginLeft = '20px';
-        for (const reply of comment.replies) {
-          repliesDiv.appendChild(renderComment(reply, depth + 1));
+        function api(method, path, body = null) {
+            return fetch('/api' + path, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: body ? JSON.stringify(body) : null
+            }).then(r => r.ok ? r.json() : Promise.reject(r.status));
         }
-        div.appendChild(repliesDiv);
-      }
-      return div;
-    }
 
-    function attachAuthorHandlers() {
-      document.querySelectorAll('.author').forEach(el => {
-        el.onclick = () => {
-          const dir = confirm('Upvote this user’s karma? (Cancel = downvote)');
-          vote('user', el.dataset.uid, dir ? 1 : -1);
-        };
-      });
-    }
+        function renderPost(post) {
+            const el = document.getElementById('postHeader');
+            el.innerHTML = `
+            <h2><a href="${post.url}" target="_blank">${post.title}</a></h2>
+            <div>
+              by <span class="author" data-uid="${post.author_uid}">${post.author}</span>
+              | ${post.upvotes - post.downvotes} points
+              | <span class="vote" onclick="vote('comment', ${post.id}, 1)">▲</span>
+                <span class="vote" onclick="vote('comment', ${post.id}, -1)">▼</span>
+            </div>
+          `;
+            attachAuthorHandlers();
+        }
 
-    async function vote(type, id, dir) {
-      try {
-        await api('POST', `/vote/${type}/${id}`, { dir });
-        loadComments(); // перезагрузить для обновления счётчиков
-      } catch (e) {
-        alert('Vote failed: ' + e);
-      }
-    }
+        function renderComment(comment, depth = 0) {
+            const div = document.createElement('div');
+            div.className = `comment depth-${depth}`;
+            div.dataset.commentId = comment.id;
 
-    async function submitComment() {
-      const content = document.getElementById('newCommentContent').value.trim();
-      if (!content) return;
-      const urlParams = new URLSearchParams(window.location.search);
-      const postId = urlParams.get('post');
-      try {
-        await api('POST', '/comments', { parent_id: parseInt(postId), content });
-        document.getElementById('commentStatus').textContent = '✅ Comment posted!';
-        document.getElementById('newCommentContent').value = '';
+            div.innerHTML = `
+            <div>
+              <span class="vote" onclick="vote('comment', ${comment.id}, 1)">▲</span>
+              <span class="vote" onclick="vote('comment', ${comment.id}, -1)">▼</span>
+              <strong class="author" data-uid="${comment.author_uid}">${comment.author}</strong>
+              (${comment.upvotes - comment.downvotes})
+              <small style="color:#888; margin-left:8px;">${(comment.created_at)}</small>
+              <button class="reply-btn" onclick="toggleReplyForm(${comment.id})">Reply</button>
+            </div>
+            <div>${comment.content || '<i>No content</i>'}</div>
+            <div class="reply-form" style="display:none" id="reply-form-${comment.id}">
+              <textarea placeholder="Write your reply..."></textarea><br>
+              <button onclick="submitReply(${comment.id})">Submit Reply</button>
+              <span class="status"></span>
+            </div>
+          `;
+
+            if (comment.replies && comment.replies.length) {
+                const repliesDiv = document.createElement('div');
+                repliesDiv.style.marginLeft = '20px';
+                for (const reply of comment.replies) {
+                    repliesDiv.appendChild(renderComment(reply, depth + 1));
+                }
+                div.appendChild(repliesDiv);
+            }
+            return div;
+        }
+
+        function attachAuthorHandlers() {
+            document.querySelectorAll('.author').forEach(el => {
+                el.onclick = () => {
+                    const dir = confirm('Upvote this user’s karma? (Cancel = downvote)');
+                    vote('user', el.dataset.uid, dir ? 1 : -1);
+                };
+            });
+        }
+
+        function toggleReplyForm(commentId) {
+            const form = document.getElementById(`reply-form-${commentId}`);
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+            if (form.style.display === 'block') {
+                form.querySelector('textarea').focus();
+            }
+        }
+
+        async function submitReply(parentId) {
+            const form = document.getElementById(`reply-form-${parentId}`);
+            const textarea = form.querySelector('textarea');
+            const status = form.querySelector('.status');
+            const content = textarea.value.trim();
+            if (!content) return;
+
+            try {
+                await api('POST', '/comments', { parent_id: parentId, content });
+                status.textContent = '✅ Posted!';
+                textarea.value = '';
+                form.style.display = 'none';
+                loadComments(); // перезагрузить дерево
+            } catch (e) {
+                status.textContent = '❌ Failed: ' + e;
+            }
+        }
+
+        async function vote(type, id, dir) {
+            try {
+                await api('POST', `/vote/${type}/${id}`, { dir });
+                loadComments();
+            } catch (e) {
+                alert('Vote failed: ' + e);
+            }
+        }
+
+        async function submitComment() {
+            const content = document.getElementById('newCommentContent').value.trim();
+            if (!content) return;
+            const urlParams = new URLSearchParams(window.location.search);
+            const postId = urlParams.get('post');
+            try {
+                await api('POST', '/comments', { parent_id: parseInt(postId), content });
+                document.getElementById('commentStatus').textContent = '✅ Comment posted!';
+                document.getElementById('newCommentContent').value = '';
+                loadComments();
+            } catch (e) {
+                document.getElementById('commentStatus').textContent = '❌ Failed: ' + e;
+            }
+        }
+
+        async function loadComments() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const postId = urlParams.get('post');
+            if (!postId) {
+                document.getElementById('commentsTree').innerHTML = '<div class="error">No post ID</div>';
+                return;
+            }
+            try {
+                const tree = await api('GET', `/comments/${postId}`);
+                renderPost(tree);
+                const commentsEl = document.getElementById('commentsTree');
+                commentsEl.innerHTML = '';
+                if (tree.replies) {
+                    for (const reply of tree.replies) {
+                        commentsEl.appendChild(renderComment(reply, 0));
+                    }
+                }
+                attachAuthorHandlers();
+            } catch (e) {
+                document.getElementById('commentsTree').innerHTML = `<div class="error">Load error: ${e}</div>`;
+            }
+        }
+
         loadComments();
-      } catch (e) {
-        document.getElementById('commentStatus').textContent = '❌ Failed: ' + e;
-      }
-    }
-
-    async function loadComments() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const postId = urlParams.get('post');
-      if (!postId) {
-        document.getElementById('commentsTree').innerHTML = '<div class="error">No post ID in URL</div>';
-        return;
-      }
-      try {
-        const tree = await api('GET', `/comments/${postId}`);
-        renderPost(tree);
-        const commentsEl = document.getElementById('commentsTree');
-        commentsEl.innerHTML = '';
-        if (tree.replies) {
-          for (const reply of tree.replies) {
-            commentsEl.appendChild(renderComment(reply, 0));
-          }
-        }
-        attachAuthorHandlers();
-      } catch (e) {
-        document.getElementById('commentsTree').innerHTML = `<div class="error">Failed to load comments: ${e}</div>`;
-      }
-    }
-
-    // Запуск
-    loadComments();
-  </script>
+    </script>
 </body>
 </html>

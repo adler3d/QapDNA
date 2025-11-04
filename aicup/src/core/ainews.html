@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -47,6 +47,19 @@
       });
       return res.ok ? await res.json() : null;
     }
+    const timeAgo = (dateStr) => {
+      return dateStr;
+      const now = new Date();
+      const then = new Date(dateStr.replace(' ', 'T').replace(/\./g, '-'));
+      const diffMs = now - then;
+      const diffSec = Math.floor(diffMs / 1000);
+      if (diffSec < 60) return `${diffSec}s ago`;
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffHr = Math.floor(diffMin / 60);
+      if (diffHr < 24) return `${diffHr}h ago`;
+      return then.toLocaleDateString();
+    };
 
     function renderPosts(posts) {
       const el = document.getElementById('posts');
@@ -61,6 +74,7 @@
             by <span class="author" data-uid="${p.author_uid}">${p.author}</span>
             | <a href="/comments.html?post=${p.id}">${p.comment_count} comments</a>
             | ${p.upvotes - p.downvotes} points
+            | <small>${timeAgo(p.created_at)}</small>
           </div>
         </div>
       `).join('');
