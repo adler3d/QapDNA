@@ -203,7 +203,7 @@ struct t_player_packet_decoder {
     return buffer.size() < sizeof(uint32_t) + len;
   }
 };
-struct t_node:t_process,t_node_cache{
+struct t_node:t_node_cache{
   struct t_runned_game;
   struct t_qaplr_process {
       pid_t pid = -1;

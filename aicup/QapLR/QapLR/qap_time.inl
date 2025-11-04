@@ -35,3 +35,9 @@ long long qap_time_diff(const std::string&t1,const std::string&t2){
   auto tp2=parse_qap_time(t2);
   return chrono::duration_cast<chrono::milliseconds>(tp2-tp1).count();
 }
+
+double qap_time_parse(const string&s){
+  static const auto tp1=parse_qap_time("2025.11.04 15:12:26.288");
+  auto tp2=parse_qap_time(s);
+  return chrono::duration_cast<chrono::milliseconds>(tp2-tp1).count();
+}

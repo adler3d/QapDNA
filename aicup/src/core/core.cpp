@@ -402,13 +402,26 @@ private:
   }
 };
 
-
-struct t_process{
-  string machine;
-  string name;
-  //string main;
+//struct t_cmd{bool valid=true;};
+struct t_world{
+  //void use(int player_id,const t_cmd&cmd){}
+  //void step(){};
+  //bool finished(){return false;}
+  vector<double> slot2score;
 };
-
+struct t_vote{
+  uint64_t from_uid;
+  int64_t delta=0;
+  string time;
+  string reason;
+};
+struct t_votes{
+  vector<t_vote> arr;
+  int64_t up=0;
+  int64_t down=0;
+  void add(const t_vote&v){up+=v.delta>0?v.delta:0;down+=v.delta<0?-v.delta:0;arr.push_back(v);}
+  int64_t tot()const{return up-down;}
+};
 struct t_coder_rec{
   struct t_source{
     string cdn_src_url;
@@ -447,20 +460,29 @@ struct t_coder_rec{
   //  while(!fail(v)&&!sarr[v].ok())v--;
   //  return v;
   //}
+  t_votes karma;
+  bool banned=false;
 };
-//struct t_cmd{bool valid=true;};
-struct t_world{
-  //void use(int player_id,const t_cmd&cmd){}
-  //void step(){};
-  //bool finished(){return false;}
-  vector<double> slot2score;
+struct t_comment {
+  uint64_t id;
+  uint64_t parent_id=0;
+  uint64_t author_uid;
+  string url;
+  string title;
+  string content;
+  string created_at;
+  t_votes votes;
+  vector<uint64_t> comments;
+  bool hidden = false;
+  bool is_pinned = false;
 };
 #include "t_config_structs.h"
-struct t_main : t_process,t_http_base {
+struct t_main : t_http_base {
   #include "waveman.h"
   mutex mtx;
   vector<t_coder_rec> carr;//mutex carr_mtx;vector<size_t> ai2cid;
   vector<t_game> garr;//mutex garr_mtx;
+  vector<t_comment> comments;
   WaveManager waveman;
   //map<string, string> node2ipport;
   //t_net_api capi;
@@ -784,6 +806,8 @@ struct t_main : t_process,t_http_base {
           b.sysname = sysname;
           b.email = sysemail;
           b.token = sha256(b.time + name + email + to_string((rand() << 16) + rand()) + "2025.08.23 15:10:42.466");
+
+          if(b.id<64)b.karma.add({0,+1,qap_time(),"init"});
 
           carr.push_back(std::move(b));
 
@@ -1603,13 +1627,123 @@ struct t_main : t_process,t_http_base {
       res.status = 200;
       res.set_content(resp.dump(), "application/json");
     });
+    srv.Get(R"(/api/seasons/([^/]+)/coders/(\w+)/versions)", [this](const httplib::Request& req, httplib::Response& res) {
+      string season_name = req.matches[1];
+      string coder_name = LowerStr(req.matches[2]);
+      RATE_LIMITER(15);
+      lock_guard<mutex> lock(mtx);
+
+      const t_season* season = find_season(season_name);
+      if (!season) {
+        res.status = 404;
+        res.set_content("Season not found", "text/plain");
+        return;
+      }
+
+      const t_coder_rec* coder = nullptr;
+      for (const auto& c : carr) {
+        if (c.sysname == coder_name) {
+          coder = &c;
+          break;
+        }
+      }
+      if (!coder) {
+        res.status = 404;
+        res.set_content("Coder not found", "text/plain");
+        return;
+      }
+
+      auto it = season->uid2scoder.find(coder->id);
+      if (it == season->uid2scoder.end()) {
+        res.status = 404;
+        res.set_content("Coder not in this season", "text/plain");
+        return;
+      }
+
+      const t_season_coder& sc = it->second;
+      json versions = json::array();
+      for (size_t i = 0; i < sc.sarr.size(); ++i) {
+        const auto& v = sc.sarr[i];
+        versions.push_back({
+          {"version", i},
+          {"time", v.time},
+          {"prod_time", v.prod_time},
+          {"status", v.status},
+          {"size", v.size},
+          {"cdn_src_url", v.cdn_src_url},
+          {"cdn_bin_url", v.cdn_bin_url}
+        });
+      }
+
+      json resp = {
+        {"season", season_name},
+        {"coder", coder_name},
+        {"uid", coder->id},
+        {"versions", versions}
+      };
+      res.status = 200;
+      res.set_content(resp.dump(2), "application/json");
+    });
+    srv.Get(R"(/api/seasons/([^/]+)/strategies/latest)", [this](const httplib::Request& req, httplib::Response& res) {
+      string season_name = req.matches[1];
+      int n = req.has_param("n") ? stoi(req.get_param_value("n")) : 20;
+      n = max(1, min(n, 1000));
+      RATE_LIMITER(15);
+      lock_guard<mutex> lock(mtx);
+      const t_season* season = find_season(season_name);
+      if (!season) {
+        res.status = 404;
+        res.set_content("Season not found", "text/plain");
+        return;
+      }
+      vector<tuple<string, uint64_t, uint64_t, string>> versions; // {time, uid, ver, status}
+      for (const auto& [uid, sc] : season->uid2scoder) {
+        for (size_t v = 0; v < sc.sarr.size(); ++v) {
+          const auto& ver = sc.sarr[v];
+          if (ver.time.empty()) continue;
+          versions.emplace_back(ver.time, uid, v, ver.status);
+        }
+      }
+      sort(versions.begin(), versions.end(), [](const auto& a, const auto& b) {
+        return get<0>(a) > get<0>(b);
+      });
+      if ((int)versions.size() > n) versions.resize(n);
+      json out = json::array();
+      for (auto& [time, uid, ver, status] : versions) {
+        if (uid >= carr.size()) continue;
+        auto&src=season->uid2scoder.at(uid).sarr[ver];
+        out.push_back({
+          {"time", time},
+          {"uid", uid},
+          {"coder", carr[uid].sysname},
+          {"version", ver},
+          {"status", status},
+          {"size", src.size},
+          {"cdn_src_url", src.cdn_src_url}
+        });
+      }
+      res.status = 200;
+      res.set_content(out.dump(2), "application/json");
+    });
     srv.Get("/", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
       res.set_content(file_get_contents("index.html"), "text/html");
     });
+    srv.Get("/comments.html", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
+      res.set_content(file_get_contents("comments.html"), "text/html");
+    });
+    srv.Get("/ainews.html", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
+      res.set_content(file_get_contents("ainews.html"), "text/html");
+    });
     srv.Get("/admin.html", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
       res.set_content(file_get_contents("admin.html"), "text/html");
+    });
+    srv.Get("/strategies.html", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
+      res.set_content(file_get_contents("strategies.html"), "text/html");
     });
     srv.set_logger([](const httplib::Request& req, const httplib::Response& res) {
         std::cout <<"["<<qap_time()<<"]t_site: "<< "Request: " << req.method << " " << req.path;
@@ -1617,6 +1751,213 @@ struct t_main : t_process,t_http_base {
             std::cout << " from " << req.remote_addr;
         }
         std::cout << " | Response Status: " << res.status << std::endl;
+    });
+    setup_routes_v2();
+  }
+  pair<uint64_t, bool> auth_by_bearer(const httplib::Request& req) {
+    string auth = req.get_header_value("Authorization");
+    if (auth.substr(0, 7) != "Bearer ") return {0, false};
+    string token = auth.substr(7);
+    for (size_t i = 0; i < carr.size(); ++i) {
+      if (carr[i].token == token) return {i, true};
+    }
+    return {0, false};
+  }
+  int64_t get_karma(uint64_t uid) {
+    if (uid >= carr.size()) return -1;
+    if (carr[uid].banned) return -999999;
+    return carr[uid].karma.tot();
+  }
+  json comment_to_json(const t_comment& c, const vector<t_coder_rec>& carr,bool user) {
+    json j = {
+      {"id", c.id},
+      {"parent_id", c.parent_id},
+      {"author", c.author_uid < carr.size() ? carr[c.author_uid].sysname : "deleted"},
+      {"author_uid", c.author_uid},
+      {"title", c.hidden&&user?"":c.title},
+      {"url", c.hidden&&user?"":c.url},
+      {"content", c.hidden&&user?"":c.content},
+      {"created_at", c.created_at},
+      {"upvotes", c.votes.up},
+      {"downvotes", c.votes.down},
+      {"comment_count", c.comments.size()},
+      {"hidden", c.hidden},
+      {"is_pinned", c.is_pinned}
+    };
+    return j;
+  }
+
+  json build_comment_tree(uint64_t id, const vector<t_comment>& comments, const vector<t_coder_rec>& carr, bool user) {
+    if (id >= comments.size()) return nullptr;
+    json node = comment_to_json(comments[id], carr,user);
+    json replies = json::array();
+    for (uint64_t child_id : comments[id].comments) {
+      replies.push_back(build_comment_tree(child_id, comments, carr,user));
+    };
+    node["replies"] = replies;
+    return node;
+  }
+  void setup_routes_v2(){
+    srv.Get("/api/comments", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(20);
+      string sort = req.get_param_value("sort");
+      if (sort != "new") sort = "hot";
+      int n = min(100, max(1, req.has_param("n") ? stoi(req.get_param_value("n")) : 30));
+
+      lock_guard<mutex> lock(mtx);
+      vector<pair<double, const t_comment*>> scored;
+      auto now=qap_time();
+      for (const auto& c : comments) {
+        if (c.parent_id != 0 || c.hidden) continue;
+        double score = (sort == "new")
+          ? qap_time_parse(c.created_at)
+          : (c.votes.tot() - 1) / pow(qap_time_diff(c.created_at, now) / (3600.0 * 1000.0) + 2, 1.5);
+        scored.emplace_back(score, &c);
+      }
+      std::sort(scored.begin(), scored.end(), [](auto& a, auto& b) { return a.first > b.first; });
+      if ((int)scored.size() > n) scored.resize(n);
+
+      json out = json::array();
+      for (auto& [_, c] : scored) {
+        if (c->author_uid >= carr.size()) continue;
+        out.push_back({
+          {"id", c->id},
+          {"author", carr[c->author_uid].sysname},
+          {"author_uid", c->author_uid},
+          {"title", c->title},
+          {"url", c->url},
+          {"content", c->content},
+          {"created_at", c->created_at},
+          {"upvotes", c->votes.up},
+          {"downvotes", c->votes.down},
+          {"comment_count", c->comments.size()}
+        });
+      }
+      res.set_content(out.dump(), "application/json");
+    });
+    srv.Post("/api/comments", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(5);
+      auto [uid, ok] = auth_by_bearer(req);
+      if (!ok) { res.status = 401; return; }
+      if (get_karma(uid) < 0) {
+        res.status = 403;
+        res.set_content("Karma too low", "text/plain");
+        return;
+      }
+
+      auto j = json::parse(req.body);
+      uint64_t parent_id = j.value("parent_id", uint64_t(0));
+      string title = j.value("title", "");
+      string url = j.value("url", "");
+      string content = j.value("content", "");
+
+      // Для корневого поста: требуем title и url
+      if (parent_id == 0 && (title.empty() || url.empty() || url.find("http") != 0)) {
+        res.status = 400;
+        res.set_content("Root posts require non-empty title and valid URL", "text/plain");
+        return;
+      }
+
+      lock_guard<mutex> lock(mtx);
+      t_comment c;
+      c.id = comments.size();
+      c.parent_id = parent_id;
+      c.author_uid = uid;
+      c.title = title;
+      c.url = url;
+      c.content = content;
+      c.created_at = qap_time();
+      comments.push_back(c);
+
+      // Связываем с родителем
+      if (parent_id != 0 && parent_id < comments.size()) {
+        comments[parent_id].comments.push_back(c.id);
+      }
+
+      res.status = 201;
+      res.set_content("\""+qap_time()+"\"", "application/json");
+    });
+    srv.Get(R"(/api/comments/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(15);
+      auto [uid, ok] = auth_by_bearer(req);
+      uint64_t id = stoull(req.matches[1]);
+      lock_guard<mutex> lock(mtx);
+      if (id >= comments.size() || comments[id].hidden) {
+        res.status = 404;
+        return;
+      }
+      json tree = build_comment_tree(id, comments, carr,uid);
+      res.set_content(tree.dump(2), "application/json");
+    });
+    srv.Post(R"(/api/vote/comment/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(15);
+      uint64_t id = stoull(req.matches[1]);
+      auto [uid, ok] = auth_by_bearer(req);
+      if (!ok || get_karma(uid) <= 0) { res.status = 401; return; }
+      if (uid == comments[id].author_uid) { res.status = 400; return; } // нельзя голосовать за себя
+
+      auto j = json::parse(req.body);
+      int dir = j.value("dir", 0);
+      if (dir != 1 && dir != -1) { res.status = 400; return; }
+
+      lock_guard<mutex> lock(mtx);
+      if (id >= comments.size() || comments[id].hidden) { res.status = 404; return; }
+
+      t_vote v;
+      v.from_uid = uid;
+      v.delta = dir;
+      v.time = qap_time();
+      v.reason = "comment_vote";
+      comments[id].votes.add(v);
+      auto&target_uid=comments[id].author_uid;
+      if (target_uid < carr.size()) {
+        t_vote kv;
+        kv.from_uid = uid;
+        kv.delta = dir;
+        kv.time = qap_time();
+        kv.reason = "karma_from_comment";
+        carr[target_uid].karma.add(kv);
+      }
+
+      res.set_content(R"({"ok":true})", "application/json");
+    });
+    srv.Post(R"(/api/vote/user/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+      uint64_t target_uid = stoull(req.matches[1]);
+      auto [voter_uid, ok] = auth_by_bearer(req);
+      if (!ok || get_karma(voter_uid) <= 0) { res.status = 401; return; }
+      if (voter_uid == target_uid) { res.status = 400; return; }
+
+      auto j = json::parse(req.body);
+      int dir = j.value("dir", 0);
+      if (dir != 1 && dir != -1) { res.status = 400; return; }
+
+      lock_guard<mutex> lock(mtx);
+      if (target_uid >= carr.size()) { res.status = 404; return; }
+
+      t_vote v;
+      v.from_uid = voter_uid;
+      v.delta = dir;
+      v.time = qap_time();
+      v.reason = "manual_karma";
+      carr[target_uid].karma.add(v);
+
+      res.set_content(R"({"ok":true})", "application/json");
+    });
+    srv.Post(R"(/api/mod/ban/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+      uint64_t target_uid = stoull(req.matches[1]);
+      auto [mod_uid, ok] = auth_by_bearer(req);
+      if (!ok || mod_uid != 0) { // только uid=0 — модератор
+        res.status = 403;
+        return;
+      }
+      lock_guard<mutex> lock(mtx);
+      if (target_uid >= carr.size()) { res.status = 404; return; }
+      carr[target_uid].banned = true;
+
+      for (auto& c : comments) {
+        if (c.author_uid == target_uid) c.hidden = true;
+      }
+      res.set_content(R"({"ok":true})", "application/json");
     });
   }
   string main_start_time=qap_time();

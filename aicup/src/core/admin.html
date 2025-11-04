@@ -78,7 +78,16 @@
   <input type="text" id="lbPhase" value="S1" />
   <button onclick="getLeaderboard()">📈 Get Leaderboard</button>
   <pre id="leaderboardResult"></pre>
-
+  
+  <!-- 8. List coder versions in season -->
+  <h2>📂 Coder Versions in Season</h2>
+  <label>Season:</label>
+  <input type="text" id="versionsSeason" value="splinter_2025" />
+  <label>Coder name (sysname):</label>
+  <input type="text" id="versionsCoder" placeholder="adler" />
+  <button onclick="fetchCoderVersions()">🔍 Fetch Versions</button>
+  <pre id="versionsResult"></pre>
+  
   <script>
     const API_BASE = window.location.origin + '/api';
 
@@ -212,7 +221,19 @@
       out.className = res.ok ? 'success' : 'error';
       out.textContent = JSON.stringify(res.data, null, 2);
     }
-
+    
+    async function fetchCoderVersions() {
+      const season = document.getElementById('versionsSeason').value;
+      const coder = document.getElementById('versionsCoder').value.trim();
+      if (!coder) {
+        document.getElementById('versionsResult').textContent = 'Enter coder name';
+        return;
+      }
+      const res = await apiCall('GET', `/seasons/${season}/coders/${coder}/versions`);
+      const out = document.getElementById('versionsResult');
+      out.className = res.ok ? 'success' : 'error';
+      out.textContent = JSON.stringify(res.data, null, 2);
+    }
     // Init
     updateTokenStatus();
   </script>

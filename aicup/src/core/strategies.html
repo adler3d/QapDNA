@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>🔍 Strategy Viewer</title>
+  <style>
+    body { font-family: monospace; max-width: 1200px; margin: 20px auto; padding: 0 10px; }
+    input, button, select { padding: 6px; margin: 4px 0; width: 100%; box-sizing: border-box; }
+    button { background: #2196F3; color: white; border: none; cursor: pointer; }
+    button:hover { background: #0b7dda; }
+    pre { background: #2d2d2d; color: #f8f8f2; padding: 15px; overflow: auto; border-radius: 4px; }
+    .list-item { padding: 8px; border-bottom: 1px solid #eee; cursor: pointer; }
+    .list-item:hover { background: #f0f8ff; }
+    .token-input { background: #fffde7; }
+    .error { color: red; }
+    .success { color: green; }
+    .status-ok { color: green; }
+    .status-err { color: red; }
+  </style>
+</head>
+<body>
+  <h1>🔍 Strategy Viewer</h1>
+
+  <label>🔐 CDN Token (for source download):</label>
+  <input type="password" id="cdnToken" class="token-input" placeholder="Enter UPLOAD_TOKEN" />
+  <button onclick="saveCdnToken()">💾 Save Token</button>
+  <div id="tokenStatus"></div>
+
+  <label>📅 Season:</label>
+  <input type="text" id="seasonName" value="splinter_2025" />
+  <button onclick="fetchLatestStrategies()">🔄 Load Latest Strategies</button>
+
+  <label>🔢 How many? (1–100):</label>
+  <input type="number" id="strategyCount" value="20" min="1" max="100" />
+
+  <h2>📜 Latest Strategies</h2>
+  <div id="strategyList"></div>
+
+  <h2>📄 Source Code</h2>
+  <pre id="sourceCode">Select a strategy to view its source.</pre>
+
+  <script>
+    const API_BASE = window.location.origin + '/api';
+
+    function getCdnToken() {
+      return localStorage.getItem('cdnToken') || '';
+    }
+
+    function saveCdnToken() {
+      const t = document.getElementById('cdnToken').value.trim();
+      if (t) {
+        localStorage.setItem('cdnToken', t);
+        updateTokenStatus();
+        document.getElementById('cdnToken').value = '';
+      }
+    }
+
+    function updateTokenStatus() {
+      const el = document.getElementById('tokenStatus');
+      const token = getCdnToken();
+      el.innerHTML = token ? '<span class="success">✅ CDN token saved (hidden)</span>' : '<span class="error">❌ No CDN token — cannot fetch sources</span>';
+    }
+
+    async function fetchLatestStrategies() {
+      const season = document.getElementById('seasonName').value.trim();
+      const n = document.getElementById('strategyCount').value;
+      if (!season) return;
+      try {
+        const resp = await fetch(`${API_BASE}/seasons/${season}/strategies/latest?n=${n}`);
+        if (!resp.ok) {
+          document.getElementById('strategyList').innerHTML = `<div class="error">Error: ${resp.status} ${resp.statusText}</div>`;
+          return;
+        }
+        const data = await resp.json();
+        const listEl = document.getElementById('strategyList');
+        listEl.innerHTML = '';
+        data.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'list-item';
+          const statusClass = item.status.startsWith('ok:') ? 'status-ok' : 'status-err';
+          div.innerHTML = `
+            <strong>${item.coder}</strong> / v${item.version} 
+            <span>size:(${item.size})</span>
+            <span class="${statusClass}">(${item.status/*.split(':')[0]*/})</span>
+            <br><small>${item.time}</small>
+          `;
+          div.onclick = () => viewSource(season, item.cdn_src_url);
+          listEl.appendChild(div);
+        });
+      } catch (e) {
+        document.getElementById('strategyList').innerHTML = `<div class="error">Fetch error: ${e.message}</div>`;
+      }
+    }
+
+    async function viewSource(season, cdnPath) {
+      const token = getCdnToken();
+      if (!token) {
+        document.getElementById('sourceCode').textContent = '❌ CDN token is required to view source.';
+        return;
+      }
+      try {
+        const resp = await fetch(`${window.location.origin}:12346/${cdnPath}`, {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!resp.ok) {
+          document.getElementById('sourceCode').textContent = `❌ Failed to load source: ${resp.status} ${resp.statusText}`;
+          return;
+        }
+        const src = await resp.text();
+        document.getElementById('sourceCode').textContent = src;
+      } catch (e) {
+        document.getElementById('sourceCode').textContent = `❌ Error: ${e.message}`;
+      }
+    }
+
+    updateTokenStatus();
+  </script>
+</body>
+</html>

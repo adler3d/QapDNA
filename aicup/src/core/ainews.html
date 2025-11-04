@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AI Arena News</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 20px auto; }
+    .post { border-bottom: 1px solid #eee; padding: 10px 0; }
+    .vote { color: #888; cursor: pointer; user-select: none; }
+    .vote:hover { color: #000; }
+    .karma { font-size: 0.9em; color: #666; }
+    .new-post { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+    input, textarea { width: 100%; padding: 5px; margin: 4px 0; box-sizing: border-box; }
+    button { padding: 6px 12px; }
+  </style>
+</head>
+<body>
+  <h1>🔥 AI Arena News</h1>
+
+  <div class="new-post">
+    <h3>Submit a post</h3>
+    <input id="postTitle" placeholder="Title" />
+    <input id="postUrl" placeholder="URL (https://...)" />
+    <button onclick="submitPost()">Submit</button>
+    <div id="postStatus"></div>
+  </div>
+
+  <div>
+    <button onclick="loadPosts('hot')">🔥 Hot</button>
+    <button onclick="loadPosts('new')">🆕 New</button>
+  </div>
+
+  <div id="posts"></div>
+
+  <script>
+    let token = localStorage.getItem('token') || prompt('Enter your token:');
+    if (token) localStorage.setItem('token', token);
+
+    async function api(method, path, body = null) {
+      const res = await fetch('/api' + path, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: body ? JSON.stringify(body) : null
+      });
+      return res.ok ? await res.json() : null;
+    }
+
+    function renderPosts(posts) {
+      const el = document.getElementById('posts');
+      el.innerHTML = posts.map(p => `
+        <div class="post">
+          <div>
+            <span class="vote" onclick="vote('comment', ${p.id}, 1)">▲</span>
+            <span class="vote" onclick="vote('comment', ${p.id}, -1)">▼</span>
+            <a href="${p.url}" target="_blank">${p.title}</a>
+          </div>
+          <div>
+            by <span class="author" data-uid="${p.author_uid}">${p.author}</span>
+            | <a href="/comments.html?post=${p.id}">${p.comment_count} comments</a>
+            | ${p.upvotes - p.downvotes} points
+          </div>
+        </div>
+      `).join('');
+      // Всплывающая карма при наведении
+      document.querySelectorAll('.author').forEach(el => {
+        el.title = 'Click to vote karma';
+        el.style.cursor = 'pointer';
+        el.onclick = () => {
+          const dir = confirm('Upvote karma? (Cancel = downvote)');
+          vote('user', el.dataset.uid, dir ? 1 : -1);
+        };
+      });
+    }
+
+    async function loadPosts(sort) {
+      const posts = await api('GET', `/comments?sort=${sort}&n=50`);
+      if (posts) renderPosts(posts);
+    }
+
+    async function submitPost() {
+      const title = document.getElementById('postTitle').value;
+      const url = document.getElementById('postUrl').value;
+      const ok = await api('POST', '/comments', { title, url });
+      document.getElementById('postStatus').textContent = ok ? '✅ Posted!' : '❌ Failed';
+      if (ok) loadPosts('hot');
+    }
+
+    async function vote(type, id, dir) {
+      await api('POST', `/vote/${type}/${id}`, { dir });
+      loadPosts('hot'); // обновить
+    }
+
+    loadPosts('hot');
+  </script>
+</body>
+</html>

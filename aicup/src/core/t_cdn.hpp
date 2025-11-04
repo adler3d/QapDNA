@@ -226,7 +226,7 @@ struct t_cdn:t_http_base{
       svr.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type"}
+        {"Access-Control-Allow-Headers", "Authorization, Content-Type"}
       });
       svr.Options(R"(.*)", [](const httplib::Request &, httplib::Response &res) {
         res.status = 204; // No Content

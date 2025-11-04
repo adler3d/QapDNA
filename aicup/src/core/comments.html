@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Comments</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 0 10px; }
+    .post-header {
+      border-bottom: 2px solid #eee;
+      padding-bottom: 10px;
+      margin-bottom: 20px;
+    }
+    .comment {
+      border-left: 3px solid #ddd;
+      padding: 8px 0 8px 12px;
+      margin: 10px 0;
+    }
+    .comment.depth-0 { border-left: none; padding-left: 0; }
+    .vote { color: #888; cursor: pointer; user-select: none; }
+    .vote:hover { color: #000; }
+    .author { cursor: pointer; text-decoration: underline; }
+    .author:hover { color: #0077cc; }
+    textarea { width: 100%; height: 80px; padding: 6px; box-sizing: border-box; margin: 8px 0; }
+    button { padding: 6px 12px; }
+    .error { color: red; }
+    .success { color: green; }
+  </style>
+</head>
+<body>
+  <div class="post-header" id="postHeader"></div>
+
+  <h3>Comments</h3>
+  <div id="commentsTree"></div>
+
+  <h3>Add a comment</h3>
+  <textarea id="newCommentContent" placeholder="Write your comment..."></textarea><br>
+  <button onclick="submitComment()">Submit</button>
+  <div id="commentStatus"></div>
+
+  <script>
+    // === Вспомогательные функции ===
+    let token = localStorage.getItem('token') || prompt('Enter your token:');
+    if (token) localStorage.setItem('token', token);
+
+    function api(method, path, body = null) {
+      return fetch('/api' + path, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: body ? JSON.stringify(body) : null
+      }).then(r => r.ok ? r.json() : Promise.reject(r.status));
+    }
+
+    function renderPost(post) {
+      const el = document.getElementById('postHeader');
+      el.innerHTML = `
+        <h2><a href="${post.url}" target="_blank">${post.title}</a></h2>
+        <div>
+          by <span class="author" data-uid="${post.author_uid}">${post.author}</span>
+          | ${post.upvotes - post.downvotes} points
+          | <span class="vote" onclick="vote('comment', ${post.id}, 1)">▲</span>
+            <span class="vote" onclick="vote('comment', ${post.id}, -1)">▼</span>
+        </div>
+      `;
+      attachAuthorHandlers();
+    }
+
+    function renderComment(comment, depth = 0) {
+      const div = document.createElement('div');
+      div.className = `comment depth-${depth}`;
+      div.innerHTML = `
+        <div>
+          <span class="vote" onclick="vote('comment', ${comment.id}, 1)">▲</span>
+          <span class="vote" onclick="vote('comment', ${comment.id}, -1)">▼</span>
+          <strong class="author" data-uid="${comment.author_uid}">${comment.author}</strong>
+          (${comment.upvotes - comment.downvotes})
+        </div>
+        <div>${comment.content || '<i>No content</i>'}</div>
+      `;
+      if (comment.replies && comment.replies.length) {
+        const repliesDiv = document.createElement('div');
+        repliesDiv.style.marginLeft = '20px';
+        for (const reply of comment.replies) {
+          repliesDiv.appendChild(renderComment(reply, depth + 1));
+        }
+        div.appendChild(repliesDiv);
+      }
+      return div;
+    }
+
+    function attachAuthorHandlers() {
+      document.querySelectorAll('.author').forEach(el => {
+        el.onclick = () => {
+          const dir = confirm('Upvote this user’s karma? (Cancel = downvote)');
+          vote('user', el.dataset.uid, dir ? 1 : -1);
+        };
+      });
+    }
+
+    async function vote(type, id, dir) {
+      try {
+        await api('POST', `/vote/${type}/${id}`, { dir });
+        loadComments(); // перезагрузить для обновления счётчиков
+      } catch (e) {
+        alert('Vote failed: ' + e);
+      }
+    }
+
+    async function submitComment() {
+      const content = document.getElementById('newCommentContent').value.trim();
+      if (!content) return;
+      const urlParams = new URLSearchParams(window.location.search);
+      const postId = urlParams.get('post');
+      try {
+        await api('POST', '/comments', { parent_id: parseInt(postId), content });
+        document.getElementById('commentStatus').textContent = '✅ Comment posted!';
+        document.getElementById('newCommentContent').value = '';
+        loadComments();
+      } catch (e) {
+        document.getElementById('commentStatus').textContent = '❌ Failed: ' + e;
+      }
+    }
+
+    async function loadComments() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const postId = urlParams.get('post');
+      if (!postId) {
+        document.getElementById('commentsTree').innerHTML = '<div class="error">No post ID in URL</div>';
+        return;
+      }
+      try {
+        const tree = await api('GET', `/comments/${postId}`);
+        renderPost(tree);
+        const commentsEl = document.getElementById('commentsTree');
+        commentsEl.innerHTML = '';
+        if (tree.replies) {
+          for (const reply of tree.replies) {
+            commentsEl.appendChild(renderComment(reply, 0));
+          }
+        }
+        attachAuthorHandlers();
+      } catch (e) {
+        document.getElementById('commentsTree').innerHTML = `<div class="error">Failed to load comments: ${e}</div>`;
+      }
+    }
+
+    // Запуск
+    loadComments();
+  </script>
+</body>
+</html>
