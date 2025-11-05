@@ -105,16 +105,24 @@
 
         .user-popup {
             position: absolute;
-            top: 20px;
+            top: 120%; /* чуть ниже ника, без зазора */
             left: 0;
             background: #fff;
             border: 1px solid #ccc;
             padding: 6px 8px;
             border-radius: 4px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             z-index: 100;
-            display: none;
             font-size: 0.85em;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+            min-width: 140px;
+        }
+
+        .user-popup.visible {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         .moderator-btn {
@@ -275,32 +283,69 @@
 
         function attachAuthorHandlers() {
             document.querySelectorAll('.author').forEach(el => {
-                let popup;
-                el.addEventListener('mouseenter', async e => {
-                    const uid = el.dataset.uid;
-                    const commentId = el.dataset.comment;
+                let popup = null;
+                let hideTimer = null;
+                const HIDE_DELAY = 400;
+                let isPopupVisible = false; // флаг, чтобы повторный enter игнорировался
+
+                async function showPopup() {
+                    if (isPopupVisible) return; // повторный enter игнорируем
+                    clearTimeout(hideTimer);
+                    isPopupVisible = true;
+
                     const rect = el.getBoundingClientRect();
                     popup = document.createElement('div');
                     popup.className = 'user-popup';
-                    popup.style.top = `${rect.bottom + window.scrollY}px`;
-                    popup.style.left = `${rect.left}px`;
                     popup.textContent = 'Loading...';
                     document.body.appendChild(popup);
-                    popup.style.display = 'block';
+
+                    popup.style.position = 'absolute';
+                    popup.style.top = `${rect.bottom + window.scrollY + 4}px`;
+                    popup.style.left = `${rect.left + window.scrollX}px`;
+
+                    requestAnimationFrame(() => popup.classList.add('visible'));
 
                     try {
+                        const uid = el.dataset.uid;
+                        const commentId = el.dataset.comment;
                         const user = await api('GET', `/user/${uid}`);
+                        if (!popup) return; // пользователь ушёл до загрузки
                         popup.innerHTML = `
-                  <div><strong>${user.name}</strong></div>
-                  <div>Karma: ${user.karma}</div>
-                  <button onclick="voteUser(${uid}, 1, ${commentId})">👍</button>
-                  <button onclick="voteUser(${uid}, -1, ${commentId})">👎</button>
-                `;
+          <div><strong>${user.name}</strong></div>
+          <div>Karma: ${user.karma}</div>
+          <button onclick="voteUser(${uid}, 1, ${commentId})">👍</button>
+          <button onclick="voteUser(${uid}, -1, ${commentId})">👎</button>
+        `;
                     } catch {
-                        popup.textContent = 'Error loading user info';
+                        if (popup) popup.textContent = 'Error loading user info';
                     }
+
+                    // мышка над popup
+                    popup.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+                    popup.addEventListener('mouseleave', scheduleHide);
+                }
+
+                function hidePopup() {
+                    if (!popup) return;
+                    popup.classList.remove('visible');
+                    setTimeout(() => {
+                        popup && popup.remove();
+                        popup = null;
+                        isPopupVisible = false;
+                    }, 250);
+                }
+
+                function scheduleHide() {
+                    clearTimeout(hideTimer);
+                    hideTimer = setTimeout(() => hidePopup(), HIDE_DELAY);
+                }
+
+                el.addEventListener('mouseenter', () => {
+                    clearTimeout(hideTimer);
+                    showPopup();
                 });
-                el.addEventListener('mouseleave', () => popup && popup.remove());
+
+                el.addEventListener('mouseleave', () => scheduleHide());
             });
         }
 

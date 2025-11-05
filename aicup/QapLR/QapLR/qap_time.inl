@@ -1,9 +1,29 @@
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+#include <string>
+#include <iostream>
+
+using namespace std;
+
 // --- кроссплатформенна€ верси€ timegm ---
 std::time_t timegm_portable(std::tm* tm) {
 #if defined(_WIN32) || defined(_WIN64)
     return _mkgmtime(tm);
 #else
     return timegm(tm);
+#endif
+}
+
+// --- безопасное добавление часов к tm без mktime ---
+void add_hours_to_tm(std::tm& tm, int hours) {
+    std::time_t t = timegm_portable(&tm);
+    t += static_cast<std::time_t>(hours) * 3600; // сдвигаем UTC-врем€
+#if defined(_WIN32) || defined(_WIN64)
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
 #endif
 }
 
@@ -23,9 +43,8 @@ string qap_time() {
     gmtime_r(&t_c, &utc_tm);
 #endif
 
-    // ƒобавл€ем 3 часа (московское врем€)
-    utc_tm.tm_hour += 3;
-    std::mktime(&utc_tm);
+    // ћосква = UTC + 3
+    add_hours_to_tm(utc_tm, 3);
 
     std::ostringstream oss;
     oss << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S")
@@ -44,7 +63,7 @@ chrono::time_point<chrono::system_clock> parse_qap_time(const std::string& s) {
     iss >> dot >> millis;
 
     // ћосква - UTC
-    tm.tm_hour -= 3;
+    add_hours_to_tm(tm, -3);
 
     std::time_t time = timegm_portable(&tm);
     auto tp = system_clock::from_time_t(time);
@@ -63,7 +82,8 @@ double qap_time_parse(const string&s){
   return chrono::duration_cast<chrono::milliseconds>(tp2-tp1).count();
 }
 
-// --- форматирование time_point в московское врем€ ---
+
+// --- форматирование UTC-времени в московское ---
 string format_time_point(const chrono::system_clock::time_point& tp) {
     using namespace std;
     using namespace chrono;
@@ -80,9 +100,8 @@ string format_time_point(const chrono::system_clock::time_point& tp) {
     gmtime_r(&t_c, &utc_tm);
 #endif
 
-    // ѕреобразуем в московское врем€ (UTC+3)
-    utc_tm.tm_hour += 3;
-    std::mktime(&utc_tm);
+    // UTC - ћосква
+    add_hours_to_tm(utc_tm, 3);
 
     std::ostringstream oss;
     oss << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S")
@@ -90,12 +109,13 @@ string format_time_point(const chrono::system_clock::time_point& tp) {
     return oss.str();
 }
 
-// --- добавление миллисекунд к строковому времени ---
+// --- добавление миллисекунд ---
 chrono::system_clock::time_point add_milliseconds(
     const chrono::system_clock::time_point& tp, int64_t ms) {
     return tp + chrono::milliseconds(ms);
 }
 
+// --- обЄртка дл€ удобства ---
 string qap_time_addms(const string& t, int64_t ms) {
     auto tp = parse_qap_time(t);
     auto new_tp = add_milliseconds(tp, ms);
