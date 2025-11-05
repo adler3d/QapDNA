@@ -15,6 +15,7 @@ void LOG(const std::string&str);
 #include <iomanip>
 #include <random>
 #include <array>
+#include <stack>
 using namespace std;
 
 #include "../../QapLR/QapLR/qap_assert.inl"
@@ -1954,17 +1955,52 @@ struct t_main : t_http_base {
     };
     return j;
   }
+  json build_comment_tree(uint64_t root_id, const std::vector<t_comment>& comments, const std::vector<t_coder_rec>& carr, bool user) {
+    if (root_id >= comments.size()) return nullptr;
 
-  json build_comment_tree(uint64_t id, const vector<t_comment>& comments, const vector<t_coder_rec>& carr, bool user) {
-    if (id >= comments.size()) return nullptr;
-    json node = comment_to_json(comments[id], carr,user);
-    json replies = json::array();
-    for (uint64_t child_id : comments[id].comments) {
-      replies.push_back(build_comment_tree(child_id, comments, carr,user));
+    struct Frame {
+      uint64_t id;
+      size_t child_index;
+      json replies;
     };
-    node["replies"] = replies;
-    return node;
+
+    std::stack<Frame> stack;
+    stack.push({root_id, 0, json::array()});
+
+    json root_json;
+
+    while (!stack.empty()) {
+      Frame& top = stack.top();
+      const auto& children = comments[top.id].comments;
+
+      if (top.child_index < children.size()) {
+        uint64_t child_id = children[top.child_index];
+        top.child_index++;
+        if (child_id < comments.size()) {
+          stack.push({child_id, 0, json::array()});
+        } else {
+          // Некорректный id, добавим null
+          top.replies.push_back(nullptr);
+        }
+      } else {
+        // Все дети обработаны, формируем node с replies
+        json node = comment_to_json(comments[top.id], carr, user);
+        node["replies"] = std::move(top.replies);
+
+        stack.pop();
+
+        if (stack.empty()) {
+          root_json = std::move(node);
+        } else {
+          stack.top().replies.push_back(std::move(node));
+        }
+      }
+    }
+
+    return root_json;
   }
+
+
   void setup_routes_v2(){
     srv.Get("/api/comments", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(20);

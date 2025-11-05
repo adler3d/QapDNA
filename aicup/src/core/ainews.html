@@ -1,113 +1,673 @@
 ﻿<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>AI Arena News</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 20px auto; }
-    .post { border-bottom: 1px solid #eee; padding: 10px 0; }
-    .vote { color: #888; cursor: pointer; user-select: none; }
-    .vote:hover { color: #000; }
-    .karma { font-size: 0.9em; color: #666; }
-    .new-post { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
-    input, textarea { width: 100%; padding: 5px; margin: 4px 0; box-sizing: border-box; }
-    button { padding: 6px 12px; }
-  </style>
+    <meta charset="UTF-8">
+    <title>AI Arena News</title>
+    <style>
+
+        body {
+            font-family: sans-serif;
+            max-width: 100%;
+            margin: 20px auto;
+            padding: 0 10px;
+        }
+
+        .post-header {
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .post {
+            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+        }
+
+        .comment {
+            border-left: 3px solid #ddd;
+            padding: 8px 0 8px 12px;
+            margin: 10px 0;
+            position: relative;
+            border-radius: 4px;
+        }
+
+            .comment.depth-0 {
+                border-left: none;
+                padding-left: 0;
+            }
+
+        .vote {
+            color: #888;
+            cursor: pointer;
+            user-select: none;
+        }
+
+            .vote:hover {
+                color: #000;
+            }
+
+        .author {
+            cursor: pointer;
+            text-decoration: underline;
+            position: relative;
+        }
+
+            .author:hover {
+                color: #0077cc;
+            }
+
+        .karma {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .new-post {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 5px;
+            margin: 4px 0;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 6px 12px;
+            margin: 2px;
+            cursor: pointer;
+        }
+
+            button:hover {
+                background: #f2f2f2;
+            }
+
+        .reply-btn, .collapse-btn, .jump-btn {
+            font-size: 0.85em;
+            color: #555;
+            background: none;
+            border: none;
+            cursor: pointer;
+            margin-left: 8px;
+        }
+
+        .reply-form {
+            margin-top: 8px;
+            display: none;
+        }
+
+            .reply-form textarea {
+                width: 100%;
+                height: 60px;
+                padding: 6px;
+                box-sizing: border-box;
+            }
+
+            .reply-form button {
+                margin-top: 4px;
+                padding: 4px 8px;
+            }
+
+        .error {
+            color: red;
+        }
+
+        .success {
+            color: green;
+        }
+
+        .user-popup {
+            position: absolute;
+            top: 120%;
+            left: 0;
+            background: #fff;
+            border: 1px solid #ccc;
+            padding: 6px 8px;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            z-index: 100;
+            font-size: 0.85em;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+            min-width: 140px;
+        }
+
+            .user-popup.visible {
+                opacity: 1;
+                pointer-events: auto;
+            }
+
+        .moderator-btn {
+            background: #ffe0e0;
+            border: 1px solid #f88;
+            color: #a00;
+            font-size: 0.8em;
+            margin-left: 6px;
+        }
+
+        /* Стили для модальных окон */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            min-width: 400px;
+            max-width: 500px;
+        }
+
+            .modal h3 {
+                margin-top: 0;
+                color: #333;
+            }
+
+            .modal textarea {
+                width: 100%;
+                height: 100px;
+                margin: 10px 0;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                resize: vertical;
+            }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+            .modal-buttons button {
+                padding: 8px 16px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+
+            .modal-buttons .confirm-btn {
+                background: #007cba;
+                color: white;
+                border: none;
+            }
+
+                .modal-buttons .confirm-btn:disabled {
+                    background: #ccc;
+                    cursor: not-allowed;
+                }
+
+            .modal-buttons .cancel-btn {
+                background: #f8f8f8;
+                color: #333;
+            }
+
+        /* Скрываем секции в зависимости от режима */
+        .posts-mode {
+            display: block;
+        }
+
+        .comments-mode {
+            display: none;
+        }
+
+        body.comments-page .posts-mode {
+            display: none;
+        }
+
+        body.comments-page .comments-mode {
+            display: block;
+        }
+    </style>
 </head>
 <body>
-  <h1>🔥 AI Arena News</h1>
-
-  <div class="new-post">
-    <h3>Submit a post</h3>
-    <input id="postTitle" placeholder="Title" />
-    <input id="postUrl" placeholder="URL (https://...)" />
-    <button onclick="submitPost()">Submit</button>
-    <div id="postStatus"></div>
-  </div>
-
-  <div>
-    <button onclick="loadPosts('hot')">🔥 Hot</button>
-    <button onclick="loadPosts('new')">🆕 New</button>
-  </div>
-
-  <div id="posts"></div>
-
-  <script>
-    let token = localStorage.getItem('token') || prompt('Enter your token:');
-    if (token) localStorage.setItem('token', token);
-
-    async function api(method, path, body = null) {
-      const res = await fetch('/api' + path, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token
-        },
-        body: body ? JSON.stringify(body) : null
-      });
-      return res.ok ? await res.json() : null;
-    }
-    const timeAgo = (dateStr) => {
-      return dateStr;
-      const now = new Date();
-      const then = new Date(dateStr.replace(' ', 'T').replace(/\./g, '-'));
-      const diffMs = now - then;
-      const diffSec = Math.floor(diffMs / 1000);
-      if (diffSec < 60) return `${diffSec}s ago`;
-      const diffMin = Math.floor(diffSec / 60);
-      if (diffMin < 60) return `${diffMin}m ago`;
-      const diffHr = Math.floor(diffMin / 60);
-      if (diffHr < 24) return `${diffHr}h ago`;
-      return then.toLocaleDateString();
-    };
-
-    function renderPosts(posts) {
-      const el = document.getElementById('posts');
-      el.innerHTML = posts.map(p => `
-        <div class="post">
-          <div>
-            <span class="vote" onclick="vote('comment', ${p.id}, 1)">▲</span>
-            <span class="vote" onclick="vote('comment', ${p.id}, -1)">▼</span>
-            <a href="${p.url}" target="_blank">${p.title}</a>
-          </div>
-          <div>
-            by <span class="author" data-uid="${p.author_uid}">${p.author}</span>
-            | <a href="/comments.html?post=${p.id}">${p.comment_count} comments</a>
-            | ${p.upvotes - p.downvotes} points
-            | <small>${timeAgo(p.created_at)}</small>
-          </div>
+    <!-- Режим ленты новостей -->
+    <div class="posts-mode">
+        <h1>🔥 AI Arena News</h1>
+        <div class="new-post">
+            <h3>Submit a post</h3>
+            <input id="postTitle" placeholder="Title" />
+            <input id="postUrl" placeholder="URL (https://...)" />
+            <button onclick="submitPost()">Submit</button>
+            <div id="postStatus"></div>
         </div>
-      `).join('');
-      // Всплывающая карма при наведении
-      document.querySelectorAll('.author').forEach(el => {
-        el.title = 'Click to vote karma';
-        el.style.cursor = 'pointer';
-        el.onclick = () => {
-          const dir = confirm('Upvote karma? (Cancel = downvote)');
-          vote('user', el.dataset.uid, dir ? 1 : -1);
+        <div>
+            <button onclick="loadPosts('hot')">🔥 Hot</button>
+            <button onclick="loadPosts('new')">🆕 New</button>
+        </div>
+        <div id="posts"></div>
+    </div>
+    <!-- Режим комментариев -->
+    <div class="comments-mode">
+        <div class="post-header" id="postHeader"></div>
+        <h3>Comments</h3>
+        <div id="commentsTree"></div>
+        <h3>Add a comment</h3>
+        <textarea id="newCommentContent" placeholder="Write your comment..."></textarea><br>
+        <button onclick="submitComment()">Submit</button>
+        <div id="commentStatus"></div>
+        <button onclick="switchToPostsMode()" style="margin-top: 20px;">← Back to Posts</button>
+    </div>
+    <script>
+        let token = localStorage.getItem('token') || prompt('Enter your token:');
+        if (token) localStorage.setItem('token', token);
+        const isModerator = localStorage.getItem('moderator') === 'true';
+
+        // Определяем режим работы (лента или комментарии)
+        const urlParams = new URLSearchParams(window.location.search);
+        const isCommentsPage = urlParams.has('post');
+
+        if (isCommentsPage) {
+            document.body.classList.add('comments-page');
+        }
+
+        // Переменные для хранения текущих действий
+        let currentAction = null;
+        let currentActionData = null;
+
+        function api(method, path, body = null) {
+            return fetch('/api' + path, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: body ? JSON.stringify(body) : null
+            }).then(r => r.ok ? r.json() : Promise.reject(r.status));
+        }
+
+        // Функции для ленты новостей
+        function renderPosts(posts) {
+            const el = document.getElementById('posts');
+            el.innerHTML = posts.map(p => `
+                    <div class="post">
+                        <div>
+                            <span class="vote" onclick="vote('comment', ${p.id}, 1)">▲</span>
+                            <span class="vote" onclick="vote('comment', ${p.id}, -1)">▼</span>
+                            <a href="${p.url}" target="_blank">${p.title}</a>
+                        </div>
+                        <div>
+                            by <span class="author" data-uid="${p.author_uid}">${p.author}</span>
+                            | <a href="?post=${p.id}">${p.comment_count} comments</a>
+                            | ${p.upvotes - p.downvotes} points
+                            | <small>${timeAgo(p.created_at)}</small>
+                        </div>
+                    </div>
+                `).join('');
+            attachAuthorHandlers();
+        }
+
+        async function loadPosts(sort) {
+            const posts = await api('GET', `/comments?sort=${sort}&n=50`);
+            if (posts) renderPosts(posts);
+        }
+
+        async function submitPost() {
+            const title = document.getElementById('postTitle').value;
+            const url = document.getElementById('postUrl').value;
+            try {
+                await api('POST', '/comments', { title, url });
+                document.getElementById('postStatus').textContent = '✅ Posted!';
+                document.getElementById('postTitle').value = '';
+                document.getElementById('postUrl').value = '';
+                loadPosts('hot');
+            } catch (e) {
+                document.getElementById('postStatus').textContent = '❌ Failed: ' + e;
+            }
+        }
+
+        // Функции для комментариев
+        function renderPost(post) {
+            const el = document.getElementById('postHeader');
+            el.innerHTML = `
+                    <h2><a href="${post.url}" target="_blank">${post.title}</a></h2>
+                    <div>
+                        by <span class="author" data-uid="${post.author_uid}">${post.author}</span>
+                        | ${post.upvotes - post.downvotes} points
+                        | <span class="vote" onclick="vote('comment', ${post.id}, 1)">▲</span>
+                        <span class="vote" onclick="vote('comment', ${post.id}, -1)">▼</span>
+                        | <button onclick="switchToPostsMode()">← Back to Posts</button>
+                    </div>
+                `;
+            attachAuthorHandlers();
+        }
+
+        function renderComment(comment, depth = 0, parent = null) {
+            const div = document.createElement('div');
+            div.className = `comment depth-${depth}`;
+            div.dataset.commentId = comment.id;
+            if (parent) div.dataset.parentId = parent.id;
+
+            div.innerHTML = `
+                    <div>
+                        <span class="vote" onclick="vote('comment', ${comment.id}, 1)">▲</span>
+                        <span class="vote" onclick="vote('comment', ${comment.id}, -1)">▼</span>
+                        <strong class="author" data-uid="${comment.author_uid}" data-comment="${comment.id}">${comment.author}</strong>
+                        (${comment.upvotes - comment.downvotes})
+                        <small style="color:#888; margin-left:8px;">${timeAgo(comment.created_at)}</small>
+                        <button class="reply-btn" onclick="toggleReplyForm(${comment.id})">Reply</button>
+                        <button class="collapse-btn" onclick="toggleCollapse(${comment.id})">Collapse</button>
+                        ${parent ? `<button class="jump-btn" onclick="jumpToParent(${comment.id})">↑ Parent</button>` : ''}
+                        ${isModerator ? `
+                            <button class="moderator-btn" onclick="showDeleteCommentForm(${comment.id})">Delete</button>
+                            <button class="moderator-btn" onclick="showBanUserForm(${comment.author_uid}, ${comment.id})">Ban</button>
+                        ` : ''}
+                    </div>
+                    <div class="comment-body" style="white-space: pre-wrap;">${comment.content || '<i>No content</i>'}</div>
+                    <div class="reply-form" id="reply-form-${comment.id}">
+                        <textarea placeholder="Write your reply..."></textarea><br>
+                        <button onclick="submitReply(${comment.id})">Submit Reply</button>
+                        <span class="status"></span>
+                    </div>
+                `;
+
+            if (comment.replies && comment.replies.length) {
+                const repliesDiv = document.createElement('div');
+                repliesDiv.className = 'replies';
+                repliesDiv.style.marginLeft = '20px';
+                for (const reply of comment.replies) {
+                    repliesDiv.appendChild(renderComment(reply, depth + 1, comment));
+                }
+                div.appendChild(repliesDiv);
+            }
+            return div;
+        }
+
+        // Общие функции
+        const timeAgo = (dateStr) => {
+            // Упрощенная версия - можно доработать позже
+            return dateStr;
         };
-      });
-    }
 
-    async function loadPosts(sort) {
-      const posts = await api('GET', `/comments?sort=${sort}&n=50`);
-      if (posts) renderPosts(posts);
-    }
+        function switchToPostsMode() {
+            window.location.href = window.location.pathname;
+        }
 
-    async function submitPost() {
-      const title = document.getElementById('postTitle').value;
-      const url = document.getElementById('postUrl').value;
-      const ok = await api('POST', '/comments', { title, url });
-      document.getElementById('postStatus').textContent = ok ? '✅ Posted!' : '❌ Failed';
-      if (ok) loadPosts('hot');
-    }
+        // Функции для модальных окон с причинами
+        function showDeleteCommentForm(commentId) {
+            currentAction = 'deleteComment';
+            currentActionData = { commentId };
+            showReasonModal('Delete Comment', 'Please provide a reason for deleting this comment:');
+        }
 
-    async function vote(type, id, dir) {
-      await api('POST', `/vote/${type}/${id}`, { dir });
-      loadPosts('hot'); // обновить
-    }
+        function showBanUserForm(uid, reasonId) {
+            currentAction = 'banUser';
+            currentActionData = { uid, reasonId };
+            showReasonModal('Ban User', 'Please provide a reason for banning this user:');
+        }
 
-    loadPosts('hot');
-  </script>
+        function showKarmaVoteForm(uid, dir, reasonId) {
+            currentAction = 'voteUser';
+            currentActionData = { uid, dir, reasonId };
+            const action = dir === 1 ? 'upvote' : 'downvote';
+            showReasonModal(`Karma ${action}`, `Please provide a reason for ${action} this user's karma:`);
+        }
+
+        function showReasonModal(title, message) {
+            const existingModal = document.getElementById('reasonModal');
+            if (existingModal) existingModal.remove();
+
+            const modalHTML = `
+                    <div class="modal-overlay" id="reasonModal">
+                        <div class="modal">
+                            <h3>${title}</h3>
+                            <p>${message}</p>
+                            <textarea id="reasonText" placeholder="Enter reason..." maxlength="500"></textarea>
+                            <div class="modal-buttons">
+                                <button class="cancel-btn" onclick="closeReasonModal()">Cancel</button>
+                                <button class="confirm-btn" id="confirmAction" onclick="executeAction()" disabled>Confirm</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+            const reasonText = document.getElementById('reasonText');
+            const confirmBtn = document.getElementById('confirmAction');
+
+            reasonText.addEventListener('input', function () {
+                const reason = this.value.trim();
+                confirmBtn.disabled = reason.length === 0;
+            });
+
+            reasonText.focus();
+        }
+
+        function closeReasonModal() {
+            const modal = document.getElementById('reasonModal');
+            if (modal) modal.remove();
+            currentAction = null;
+            currentActionData = null;
+        }
+
+        async function executeAction() {
+            const reasonText = document.getElementById('reasonText');
+            const reason = reasonText.value.trim();
+
+            if (!reason) {
+                alert('Please provide a reason');
+                return;
+            }
+
+            try {
+                switch (currentAction) {
+                    case 'deleteComment':
+                        await api('DELETE', `/comments/${currentActionData.commentId}`, { reason });
+                        alert('✅ Comment deleted');
+                        break;
+
+                    case 'banUser':
+                        await api('POST', `/mod/ban/${currentActionData.uid}`, {
+                            reason: reason,
+                            comment_reference: currentActionData.reasonId,
+                            dt: 15 * 1000
+                        });
+                        alert('✅ User banned');
+                        break;
+
+                    case 'voteUser':
+                        await api('POST', `/vote/user/${currentActionData.uid}`, {
+                            dir: currentActionData.dir,
+                            reason: reason,
+                            comment_reference: currentActionData.reasonId
+                        });
+                        alert('✅ Karma updated');
+                        break;
+                }
+
+                closeReasonModal();
+                if (isCommentsPage) {
+                    loadComments();
+                } else {
+                    loadPosts('hot');
+                }
+            } catch (error) {
+                alert(`❌ Action failed: ${error}`);
+            }
+        }
+
+        // Остальные функции комментариев
+        function toggleReplyForm(commentId) {
+            const form = document.getElementById(`reply-form-${commentId}`);
+            form.style.display = form.style.display === 'none' || !form.style.display ? 'block' : 'none';
+            if (form.style.display === 'block') form.querySelector('textarea').focus();
+        }
+
+        async function submitReply(parentId) {
+            const form = document.getElementById(`reply-form-${parentId}`);
+            const textarea = form.querySelector('textarea');
+            const status = form.querySelector('.status');
+            const content = textarea.value.trim();
+            if (!content) return;
+            if (content.length > 10000) {
+                status.textContent = '❌ Comment too long (max 10k chars)';
+                return;
+            }
+            try {
+                await api('POST', '/comments', { parent_id: parentId, content });
+                status.textContent = '✅ Posted!';
+                textarea.value = '';
+                form.style.display = 'none';
+                loadComments();
+            } catch (e) {
+                status.textContent = '❌ Failed: ' + e;
+            }
+        }
+
+        async function submitComment() {
+            const content = document.getElementById('newCommentContent').value.trim();
+            if (!content) return;
+            if (content.length > 10000) {
+                document.getElementById('commentStatus').textContent = '❌ Comment too long (max 10k chars)';
+                return;
+            }
+            const postId = urlParams.get('post');
+            try {
+                await api('POST', '/comments', { parent_id: parseInt(postId), content });
+                document.getElementById('commentStatus').textContent = '✅ Comment posted!';
+                document.getElementById('newCommentContent').value = '';
+                loadComments();
+            } catch (e) {
+                document.getElementById('commentStatus').textContent = '❌ Failed: ' + e;
+            }
+        }
+
+        async function vote(type, id, dir) {
+            try {
+                await api('POST', `/vote/${type}/${id}`, { dir });
+                if (isCommentsPage) {
+                    loadComments();
+                } else {
+                    loadPosts('hot');
+                }
+            } catch (e) {
+                alert('Vote failed: ' + e);
+            }
+        }
+
+        function toggleCollapse(commentId) {
+            const el = document.querySelector(`[data-comment-id="${commentId}"] .replies`);
+            if (!el) return;
+            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function jumpToParent(commentId) {
+            const current = document.querySelector(`[data-comment-id="${commentId}"]`);
+            const parentId = current.dataset.parentId;
+            if (!parentId) return;
+            const parent = document.querySelector(`[data-comment-id="${parentId}"]`);
+            if (parent) parent.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function attachAuthorHandlers() {
+            document.querySelectorAll('.author').forEach(el => {
+                let popup = null;
+                let hideTimer = null;
+                const HIDE_DELAY = 400;
+                let isPopupVisible = false;
+
+                async function showPopup() {
+                    if (isPopupVisible) return;
+                    clearTimeout(hideTimer);
+                    isPopupVisible = true;
+
+                    const rect = el.getBoundingClientRect();
+                    popup = document.createElement('div');
+                    popup.className = 'user-popup';
+                    popup.textContent = 'Loading...';
+                    document.body.appendChild(popup);
+
+                    popup.style.position = 'absolute';
+                    popup.style.top = `${rect.bottom + window.scrollY + 4}px`;
+                    popup.style.left = `${rect.left + window.scrollX}px`;
+
+                    requestAnimationFrame(() => popup.classList.add('visible'));
+
+                    try {
+                        const uid = el.dataset.uid;
+                        const commentId = el.dataset.comment;
+                        const user = await api('GET', `/user/${uid}`);
+                        if (!popup) return;
+                        popup.innerHTML = `
+                                <div><strong>${user.name}</strong></div>
+                                <div>Karma: ${user.karma}</div>
+                                <button onclick="showKarmaVoteForm(${uid}, 1, ${commentId})">👍</button>
+                                <button onclick="showKarmaVoteForm(${uid}, -1, ${commentId})">👎</button>
+                            `;
+                    } catch {
+                        if (popup) popup.textContent = 'Error loading user info';
+                    }
+
+                    popup.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+                    popup.addEventListener('mouseleave', scheduleHide);
+                }
+
+                function hidePopup() {
+                    if (!popup) return;
+                    popup.classList.remove('visible');
+                    setTimeout(() => {
+                        popup && popup.remove();
+                        popup = null;
+                        isPopupVisible = false;
+                    }, 250);
+                }
+
+                function scheduleHide() {
+                    clearTimeout(hideTimer);
+                    hideTimer = setTimeout(() => hidePopup(), HIDE_DELAY);
+                }
+
+                el.addEventListener('mouseenter', () => {
+                    clearTimeout(hideTimer);
+                    showPopup();
+                });
+
+                el.addEventListener('mouseleave', () => scheduleHide());
+            });
+        }
+
+        async function loadComments() {
+            const postId = urlParams.get('post');
+            if (!postId) {
+                document.getElementById('commentsTree').innerHTML = '<div class="error">No post ID</div>';
+                return;
+            }
+            try {
+                const tree = await api('GET', `/comments/${postId}`);
+                renderPost(tree);
+                const commentsEl = document.getElementById('commentsTree');
+                commentsEl.innerHTML = '';
+                if (tree.replies) {
+                    for (const reply of tree.replies) {
+                        commentsEl.appendChild(renderComment(reply, 0, null));
+                    }
+                }
+                attachAuthorHandlers();
+            } catch (e) {
+                document.getElementById('commentsTree').innerHTML = `<div class="error">Load error: ${e}</div>`;
+            }
+        }
+
+        // Инициализация
+        if (isCommentsPage) {
+            loadComments();
+        } else {
+            loadPosts('hot');
+        }
+    </script>
 </body>
 </html>
