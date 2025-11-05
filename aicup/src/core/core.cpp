@@ -443,6 +443,19 @@ struct t_votes{
   void add(const t_vote&v){up+=v.delta>0?v.delta:0;down+=v.delta<0?-v.delta:0;arr.push_back(v);}
   int64_t tot()const{return up-down;}
 };
+
+struct t_ban{
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_ban
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(uint64_t,from_uid,{})\
+  ADD(string,time,{})\
+  ADD(string,until,{})\
+  ADD(string,reason,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+};
 struct t_coder_rec{
   struct t_source{
     #define DEF_PRO_COPYABLE()
@@ -463,6 +476,7 @@ struct t_coder_rec{
   #define DEF_PRO_CLASSNAME()t_coder_rec
   #define DEF_PRO_VARIABLE(ADD)\
   ADD(uint64_t,id,0)\
+  ADD(uint64,lvl,999999)\
   ADD(string,last_ip,{})\
   ADD(string,sysname,{})\
   ADD(string,visname,{})\
@@ -470,10 +484,17 @@ struct t_coder_rec{
   ADD(string,email,{})\
   ADD(string,time,{})\
   ADD(t_votes,karma,{})\
-  ADD(bool,banned,false)\
+  ADD(vector<t_ban>,bans,{})\
   //===
   #include "defprovar.inl"
   //===
+  bool is_banned(const chrono::system_clock::time_point&now)const{
+    if(bans.empty())return false;
+    auto&b=bans.back();
+    auto tp=parse_qap_time(b.until);
+    auto diff=chrono::duration_cast<chrono::milliseconds>(now-tp).count();
+    return diff<0;
+  }
 };
 typedef map<uint64_t,uint64_t> t_phase2rank;
 typedef map<uint64_t,uint64_t> t_phase2rank;
@@ -869,6 +890,7 @@ struct t_main : t_http_base {
       cleanup_old_clients();
     }).detach();
     thread([this](){
+      srv.set_payload_max_length(1024*1024);
       setup_routes();
       if(!srv.listen("0.0.0.0",80)){
         cerr << "[t_site] Failed to start server\n";
@@ -957,9 +979,9 @@ struct t_main : t_http_base {
           b.sysname = sysname;
           b.email = sysemail;
           b.token = sha256(b.time + name + email + to_string((rand() << 16) + rand()) + "2025.08.23 15:10:42.466");
-
-          if(b.id<64)b.karma.add(t_vote::mk(0,+1,qap_time(),"init"));
-
+          b.lvl=!b.id?0:(b.id<=10?999999-1000+b.id*16:999999);
+          if(b.id<=10)b.karma.add(t_vote::mk(0,+2,qap_time(),"init_v1"));
+          if(b.id<=64)b.karma.add(t_vote::mk(0,+1,qap_time(),"init_v2"));
           carr.push_back(std::move(b));
 
           uint64_t uid = carr.back().id;
@@ -1645,6 +1667,7 @@ struct t_main : t_http_base {
         }
         json j = json::parse(req.body);
         auto cfg = j.get<TSeasonConfig>();
+        lock_guard<mutex> lock(mtx);
         res.status=apply_config(cfg)?200:400;
         res.set_content((res.status==200?"ok:":"fail:")+qap_time(),"text/plain");
       } catch (const std::exception& e) {
@@ -1701,18 +1724,16 @@ struct t_main : t_http_base {
     });
     srv.Get("/api/seasons/current/me", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
+      lock_guard<mutex> lock(mtx);
       string token=get_token_from_request(req,res);
       if(token.empty())return;
       uint64_t uid = UINT64_MAX;
       string sysname;
-      {
-        lock_guard<mutex> lock(mtx);
-        for (size_t i = 0; i < carr.size(); ++i) {
-          if (carr[i].token == token) {
-            uid = i;
-            sysname = carr[i].sysname;
-            break;
-          }
+      for (size_t i = 0; i < carr.size(); ++i) {
+        if (carr[i].token == token) {
+          uid = i;
+          sysname = carr[i].sysname;
+          break;
         }
       }
       if (uid == UINT64_MAX) {
@@ -1720,8 +1741,6 @@ struct t_main : t_http_base {
         res.set_content("Invalid token", "text/plain");
         return;
       }
-
-      lock_guard<mutex> lock(mtx);
       if (seasons.empty()) {
         res.status = 404;
         res.set_content("No active season", "text/plain");
@@ -1882,24 +1901,18 @@ struct t_main : t_http_base {
     });
     srv.Get("/", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
-      res.set_content(file_get_contents("index.html"), "text/html");
+      res.set_file_content("index.html","text/html");
     });
-    srv.Get("/comments.html", [this](const httplib::Request& req, httplib::Response& res) {
-      RATE_LIMITER(25);
-      res.set_content(file_get_contents("comments.html"), "text/html");
-    });
-    srv.Get("/ainews.html", [this](const httplib::Request& req, httplib::Response& res) {
-      RATE_LIMITER(25);
-      res.set_content(file_get_contents("ainews.html"), "text/html");
-    });
-    srv.Get("/admin.html", [this](const httplib::Request& req, httplib::Response& res) {
-      RATE_LIMITER(25);
-      res.set_content(file_get_contents("admin.html"), "text/html");
-    });
-    srv.Get("/strategies.html", [this](const httplib::Request& req, httplib::Response& res) {
-      RATE_LIMITER(25);
-      res.set_content(file_get_contents("strategies.html"), "text/html");
-    });
+    #define F(FN)\
+      srv.Get("/" FN, [this](const httplib::Request&req,httplib::Response&res){\
+        RATE_LIMITER(25);res.set_file_content(FN,"text/html");\
+      });
+    //---
+    F("index.html");
+    F("comments.html");
+    F("ainews.html");
+    F("admin.html");
+    F("strategies.html");
     srv.set_logger([](const httplib::Request& req, const httplib::Response& res) {
         std::cout <<"["<<qap_time()<<"]t_site: "<< "Request: " << req.method << " " << req.path;
         if (!req.remote_addr.empty()) {
@@ -1918,9 +1931,9 @@ struct t_main : t_http_base {
     }
     return {0, false};
   }
-  int64_t get_karma(uint64_t uid) {
+  int64_t get_karma(uint64_t uid,const chrono::system_clock::time_point&now) {
     if (uid >= carr.size()) return -1;
-    if (carr[uid].banned) return -999999;
+    if (carr[uid].is_banned(now)) return -999999;
     return carr[uid].karma.tot();
   }
   json comment_to_json(const t_comment& c, const vector<t_coder_rec>& carr,bool user) {
@@ -1990,11 +2003,54 @@ struct t_main : t_http_base {
       }
       res.set_content(out.dump(), "application/json");
     });
-    srv.Post("/api/comments", [this](const httplib::Request& req, httplib::Response& res) {
+    srv.Delete(R"(/api/comments/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(5);
+      uint64_t id = stoull(req.matches[1]);
+      lock_guard<mutex> lock(mtx);
+      if (id >= comments.size() || comments[id].hidden) {
+        res.status = 404;
+        return;
+      }
+      auto&c=comments[id];
       auto [uid, ok] = auth_by_bearer(req);
       if (!ok) { res.status = 401; return; }
-      if (get_karma(uid) < 0) {
+      if (uid>=carr.size()){
+        res.status = 403;
+        return;
+      }
+      bool moder=carr[uid].lvl<999999;
+      auto author=c.author_uid==uid;
+      if(!(moder||author)){
+        res.status = 403;
+        res.set_content("allowed only for moders or author", "text/plain");
+        return;
+      }
+      c.hidden=true;
+      res.set_content(R"({"ok":true})", "application/json");
+    });
+    srv.Get(R"(/api/user/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(5);
+      uint64_t uid = stoull(req.matches[1]);
+      lock_guard<mutex> lock(mtx);
+      if (uid>=carr.size()){
+        res.status = 403;
+        return;
+      }
+      auto&c=carr[uid];
+      json j = {
+        {"name", c.visname},
+        {"lvl", c.lvl},
+        {"time", c.time},
+        {"karma", c.karma.tot()}
+      };
+      res.set_content(j.dump(2), "application/json");
+    });
+    srv.Post("/api/comments", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(5);
+      lock_guard<mutex> lock(mtx);
+      auto [uid, ok] = auth_by_bearer(req);
+      if (!ok) { res.status = 401; return; }
+      if (get_karma(uid,chrono::system_clock::now()) < 0) {
         res.status = 403;
         res.set_content("Karma too low", "text/plain");
         return;
@@ -2014,8 +2070,6 @@ struct t_main : t_http_base {
         res.set_content("Root posts require non-empty title and valid URL", "text/plain");
         return;
       }
-
-      lock_guard<mutex> lock(mtx);
       t_comment c;
       c.id = comments.size();
       c.parent_id = parent_id;
@@ -2036,9 +2090,9 @@ struct t_main : t_http_base {
     });
     srv.Get(R"(/api/comments/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(15);
+      lock_guard<mutex> lock(mtx);
       auto [uid, ok] = auth_by_bearer(req);
       uint64_t id = stoull(req.matches[1]);
-      lock_guard<mutex> lock(mtx);
       if (id >= comments.size() || comments[id].hidden) {
         res.status = 404;
         return;
@@ -2057,15 +2111,15 @@ struct t_main : t_http_base {
     srv.Post(R"(/api/vote/comment/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(15);
       uint64_t id = stoull(req.matches[1]);
+      lock_guard<mutex> lock(mtx);
       auto [uid, ok] = auth_by_bearer(req);
-      if (!ok || get_karma(uid) <= 0) { res.status = 401; return; }
+      if (!ok || get_karma(uid,chrono::system_clock::now()) <= 0) { res.status = 401; return; }
       if (uid == comments[id].author_uid) { res.status = 400; return; } // нельзя голосовать за себя
 
       auto j = json::parse(req.body);
       int dir = j.value("dir", 0);
       if (dir != 1 && dir != -1) { res.status = 400; return; }
 
-      lock_guard<mutex> lock(mtx);
       if (id >= comments.size() || comments[id].hidden) { res.status = 404; return; }
 
       t_vote v;
@@ -2079,7 +2133,7 @@ struct t_main : t_http_base {
         t_vote kv;
         kv.from_uid = uid;
         kv.delta = dir;
-        kv.time = qap_time();
+        kv.time = v.time;
         kv.reason = "karma_from_comment";
         carr[target_uid].karma.add(kv);
       }
@@ -2087,16 +2141,17 @@ struct t_main : t_http_base {
       res.set_content(R"({"ok":true})", "application/json");
     });
     srv.Post(R"(/api/vote/user/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(15);
+      lock_guard<mutex> lock(mtx);
       uint64_t target_uid = stoull(req.matches[1]);
       auto [voter_uid, ok] = auth_by_bearer(req);
-      if (!ok || get_karma(voter_uid) <= 0) { res.status = 401; return; }
+      if (!ok || get_karma(voter_uid,chrono::system_clock::now()) <= 0) { res.status = 401; return; }
       if (voter_uid == target_uid) { res.status = 400; return; }
 
       auto j = json::parse(req.body);
       int dir = j.value("dir", 0);
       if (dir != 1 && dir != -1) { res.status = 400; return; }
 
-      lock_guard<mutex> lock(mtx);
       if (target_uid >= carr.size()) { res.status = 404; return; }
 
       t_vote v;
@@ -2109,19 +2164,42 @@ struct t_main : t_http_base {
       res.set_content(R"({"ok":true})", "application/json");
     });
     srv.Post(R"(/api/mod/ban/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(15);
       uint64_t target_uid = stoull(req.matches[1]);
+      lock_guard<mutex> lock(mtx);
+      if (target_uid >= carr.size()) { res.status = 404; return; }
       auto [mod_uid, ok] = auth_by_bearer(req);
-      if (!ok || mod_uid != 0) { // только uid=0 — модератор
+      if (!ok || carr[mod_uid].lvl>=carr[target_uid].lvl) {
         res.status = 403;
         return;
       }
-      lock_guard<mutex> lock(mtx);
-      if (target_uid >= carr.size()) { res.status = 404; return; }
-      carr[target_uid].banned = true;
-
-      for (auto& c : comments) {
-        if (c.author_uid == target_uid) c.hidden = true;
+      auto j = json::parse(req.body);
+      auto reason = j.value("reason",string{});
+      auto dt = j.value("dt",1000i64*3600*24*7*2);
+      auto hide_all = j.value("hide_all",false);
+      if (reason.empty()) {
+        res.status = 403;
+        res.set_content(R"({"ok":false,"err":"need not empty reason"})", "application/json");
+        return;
       }
+      auto now=qap_time();
+      auto&c=carr[target_uid];
+      if(!c.bans.empty()){
+        auto&prev=c.bans.back();
+        if(qap_time_diff(prev.until,now)<0){
+          if(prev.from_uid<carr.size()&&carr[prev.from_uid].lvl<carr[mod_uid].lvl){
+            res.status = 403;
+            res.set_content(R"({"ok":false,"err":"you do not have sufficient rights"})", "application/json");
+            return;
+          }
+        }
+      }
+      auto&b=qap_add_back(c.bans);
+      b.from_uid=mod_uid;
+      b.time=now;
+      b.until=qap_time_addms(now,dt);
+      b.reason=reason;
+      if(hide_all)for(auto&c:comments)if(c.author_uid==target_uid)c.hidden=true;
       res.set_content(R"({"ok":true})", "application/json");
     });
   }

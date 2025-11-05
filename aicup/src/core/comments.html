@@ -1,69 +1,143 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Comments</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 0 10px; }
-    .post-header {
-      border-bottom: 2px solid #eee;
-      padding-bottom: 10px;
-      margin-bottom: 20px;
-    }
-    .comment {
-      border-left: 3px solid #ddd;
-      padding: 8px 0 8px 12px;
-      margin: 10px 0;
-      position: relative;
-    }
-    .comment.depth-0 { border-left: none; padding-left: 0; }
-    .vote { color: #888; cursor: pointer; user-select: none; }
-    .vote:hover { color: #000; }
-    .author { cursor: pointer; text-decoration: underline; }
-    .author:hover { color: #0077cc; }
-    textarea { width: 100%; height: 80px; padding: 6px; box-sizing: border-box; margin: 8px 0; }
-    button { padding: 6px 12px; }
+    <meta charset="UTF-8">
+    <title>Comments</title>
+    <style>
 
-    .reply-btn {
-      font-size: 0.9em;
-      color: #555;
-      background: none;
-      border: none;
-      cursor: pointer;
-      margin-left: 8px;
-    }
-    .reply-form {
-      margin-top: 8px;
-      display: none;
-    }
-    .reply-form textarea {
-      width: 100%;
-      height: 60px;
-      padding: 6px;
-      box-sizing: border-box;
-    }
-    .reply-form button {
-      margin-top: 4px;
-      padding: 4px 8px;
-    }
-    .error { color: red; }
-    .success { color: green; }
-  </style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 10px;
+        }
+
+        .post-header {
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .comment {
+            border-left: 3px solid #ddd;
+            padding: 8px 0 8px 12px;
+            margin: 10px 0;
+            position: relative;
+            border-radius: 4px;
+        }
+
+            .comment.depth-0 {
+                border-left: none;
+                padding-left: 0;
+            }
+
+        .vote {
+            color: #888;
+            cursor: pointer;
+            user-select: none;
+        }
+
+            .vote:hover {
+                color: #000;
+            }
+
+        .author {
+            cursor: pointer;
+            text-decoration: underline;
+            position: relative;
+        }
+
+            .author:hover {
+                color: #0077cc;
+            }
+
+        textarea {
+            width: 100%;
+            height: 80px;
+            padding: 6px;
+            box-sizing: border-box;
+            margin: 8px 0;
+        }
+
+        button {
+            padding: 6px 12px;
+            margin: 2px;
+            cursor: pointer;
+        }
+
+            button:hover {
+                background: #f2f2f2;
+            }
+
+        .reply-btn, .collapse-btn, .jump-btn {
+            font-size: 0.85em;
+            color: #555;
+            background: none;
+            border: none;
+            cursor: pointer;
+            margin-left: 8px;
+        }
+
+        .reply-form {
+            margin-top: 8px;
+            display: none;
+        }
+
+            .reply-form textarea {
+                width: 100%;
+                height: 60px;
+                padding: 6px;
+                box-sizing: border-box;
+            }
+
+            .reply-form button {
+                margin-top: 4px;
+                padding: 4px 8px;
+            }
+
+        .error {
+            color: red;
+        }
+
+        .success {
+            color: green;
+        }
+
+        .user-popup {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            background: #fff;
+            border: 1px solid #ccc;
+            padding: 6px 8px;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 100;
+            display: none;
+            font-size: 0.85em;
+        }
+
+        .moderator-btn {
+            background: #ffe0e0;
+            border: 1px solid #f88;
+            color: #a00;
+            font-size: 0.8em;
+            margin-left: 6px;
+        }
+    </style>
 </head>
 <body>
     <div class="post-header" id="postHeader"></div>
-
     <h3>Comments</h3>
     <div id="commentsTree"></div>
-
     <h3>Add a comment</h3>
     <textarea id="newCommentContent" placeholder="Write your comment..."></textarea><br>
     <button onclick="submitComment()">Submit</button>
     <div id="commentStatus"></div>
-
     <script>
         let token = localStorage.getItem('token') || prompt('Enter your token:');
         if (token) localStorage.setItem('token', token);
+        const isModerator = localStorage.getItem('moderator') === 'true';
 
         function api(method, path, body = null) {
             return fetch('/api' + path, {
@@ -90,22 +164,29 @@
             attachAuthorHandlers();
         }
 
-        function renderComment(comment, depth = 0) {
+        function renderComment(comment, depth = 0, parent = null) {
             const div = document.createElement('div');
             div.className = `comment depth-${depth}`;
             div.dataset.commentId = comment.id;
+            if (parent) div.dataset.parentId = parent.id;
 
             div.innerHTML = `
             <div>
               <span class="vote" onclick="vote('comment', ${comment.id}, 1)">▲</span>
               <span class="vote" onclick="vote('comment', ${comment.id}, -1)">▼</span>
-              <strong class="author" data-uid="${comment.author_uid}">${comment.author}</strong>
+              <strong class="author" data-uid="${comment.author_uid}" data-comment="${comment.id}">${comment.author}</strong>
               (${comment.upvotes - comment.downvotes})
-              <small style="color:#888; margin-left:8px;">${(comment.created_at)}</small>
+              <small style="color:#888; margin-left:8px;">${comment.created_at}</small>
               <button class="reply-btn" onclick="toggleReplyForm(${comment.id})">Reply</button>
+              <button class="collapse-btn" onclick="toggleCollapse(${comment.id})">Collapse</button>
+              ${parent ? `<button class="jump-btn" onclick="jumpToParent(${comment.id})">↑ Parent</button>` : ''}
+              ${isModerator ? `
+                <button class="moderator-btn" onclick="deleteComment(${comment.id})">Delete</button>
+                <button class="moderator-btn" onclick="banUser(${comment.author_uid}, ${comment.id})">Ban</button>
+              ` : ''}
             </div>
-            <div>${comment.content || '<i>No content</i>'}</div>
-            <div class="reply-form" style="display:none" id="reply-form-${comment.id}">
+            <div class="comment-body" style="white-space: pre-wrap;">${comment.content || '<i>No content</i>'}</div>
+            <div class="reply-form" id="reply-form-${comment.id}">
               <textarea placeholder="Write your reply..."></textarea><br>
               <button onclick="submitReply(${comment.id})">Submit Reply</button>
               <span class="status"></span>
@@ -114,30 +195,20 @@
 
             if (comment.replies && comment.replies.length) {
                 const repliesDiv = document.createElement('div');
+                repliesDiv.className = 'replies';
                 repliesDiv.style.marginLeft = '20px';
                 for (const reply of comment.replies) {
-                    repliesDiv.appendChild(renderComment(reply, depth + 1));
+                    repliesDiv.appendChild(renderComment(reply, depth + 1, comment));
                 }
                 div.appendChild(repliesDiv);
             }
             return div;
         }
 
-        function attachAuthorHandlers() {
-            document.querySelectorAll('.author').forEach(el => {
-                el.onclick = () => {
-                    const dir = confirm('Upvote this user’s karma? (Cancel = downvote)');
-                    vote('user', el.dataset.uid, dir ? 1 : -1);
-                };
-            });
-        }
-
         function toggleReplyForm(commentId) {
             const form = document.getElementById(`reply-form-${commentId}`);
-            form.style.display = form.style.display === 'none' ? 'block' : 'none';
-            if (form.style.display === 'block') {
-                form.querySelector('textarea').focus();
-            }
+            form.style.display = form.style.display === 'none' || !form.style.display ? 'block' : 'none';
+            if (form.style.display === 'block') form.querySelector('textarea').focus();
         }
 
         async function submitReply(parentId) {
@@ -146,15 +217,36 @@
             const status = form.querySelector('.status');
             const content = textarea.value.trim();
             if (!content) return;
-
+            if (content.length > 10000) {
+                status.textContent = '❌ Comment too long (max 10k chars)';
+                return;
+            }
             try {
                 await api('POST', '/comments', { parent_id: parentId, content });
                 status.textContent = '✅ Posted!';
                 textarea.value = '';
                 form.style.display = 'none';
-                loadComments(); // перезагрузить дерево
+                loadComments();
             } catch (e) {
                 status.textContent = '❌ Failed: ' + e;
+            }
+        }
+
+        async function submitComment() {
+            const content = document.getElementById('newCommentContent').value.trim();
+            if (!content) return;
+            if (content.length > 10000) {
+                document.getElementById('commentStatus').textContent = '❌ Comment too long (max 10k chars)';
+                return;
+            }
+            const postId = new URLSearchParams(window.location.search).get('post');
+            try {
+                await api('POST', '/comments', { parent_id: parseInt(postId), content });
+                document.getElementById('commentStatus').textContent = '✅ Comment posted!';
+                document.getElementById('newCommentContent').value = '';
+                loadComments();
+            } catch (e) {
+                document.getElementById('commentStatus').textContent = '❌ Failed: ' + e;
             }
         }
 
@@ -167,24 +259,74 @@
             }
         }
 
-        async function submitComment() {
-            const content = document.getElementById('newCommentContent').value.trim();
-            if (!content) return;
-            const urlParams = new URLSearchParams(window.location.search);
-            const postId = urlParams.get('post');
+        function toggleCollapse(commentId) {
+            const el = document.querySelector(`[data-comment-id="${commentId}"] .replies`);
+            if (!el) return;
+            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function jumpToParent(commentId) {
+            const current = document.querySelector(`[data-comment-id="${commentId}"]`);
+            const parentId = current.dataset.parentId;
+            if (!parentId) return;
+            const parent = document.querySelector(`[data-comment-id="${parentId}"]`);
+            if (parent) parent.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function attachAuthorHandlers() {
+            document.querySelectorAll('.author').forEach(el => {
+                let popup;
+                el.addEventListener('mouseenter', async e => {
+                    const uid = el.dataset.uid;
+                    const commentId = el.dataset.comment;
+                    const rect = el.getBoundingClientRect();
+                    popup = document.createElement('div');
+                    popup.className = 'user-popup';
+                    popup.style.top = `${rect.bottom + window.scrollY}px`;
+                    popup.style.left = `${rect.left}px`;
+                    popup.textContent = 'Loading...';
+                    document.body.appendChild(popup);
+                    popup.style.display = 'block';
+
+                    try {
+                        const user = await api('GET', `/user/${uid}`);
+                        popup.innerHTML = `
+                  <div><strong>${user.name}</strong></div>
+                  <div>Karma: ${user.karma}</div>
+                  <button onclick="voteUser(${uid}, 1, ${commentId})">👍</button>
+                  <button onclick="voteUser(${uid}, -1, ${commentId})">👎</button>
+                `;
+                    } catch {
+                        popup.textContent = 'Error loading user info';
+                    }
+                });
+                el.addEventListener('mouseleave', () => popup && popup.remove());
+            });
+        }
+
+        async function voteUser(uid, dir, reasonId) {
             try {
-                await api('POST', '/comments', { parent_id: parseInt(postId), content });
-                document.getElementById('commentStatus').textContent = '✅ Comment posted!';
-                document.getElementById('newCommentContent').value = '';
-                loadComments();
-            } catch (e) {
-                document.getElementById('commentStatus').textContent = '❌ Failed: ' + e;
+                await api('POST', `/vote/user/${uid}`, { dir, reason: reasonId });
+                alert('✅ Karma updated');
+            } catch {
+                alert('❌ Failed to vote');
             }
         }
 
+        async function deleteComment(commentId) {
+            if (!confirm('Delete this comment?')) return;
+            await api('DELETE', `/comments/${commentId}`);
+            loadComments();
+        }
+
+        async function banUser(uid, reasonId) {
+            if (!confirm('Ban this user?')) return;
+            await api('POST', `/mod/ban/${uid}`, { reason: "see comment "+reasonId,dt:15*1000});
+            alert('Action sent');
+        }
+
         async function loadComments() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const postId = urlParams.get('post');
+            const postId = new URLSearchParams(window.location.search).get('post');
             if (!postId) {
                 document.getElementById('commentsTree').innerHTML = '<div class="error">No post ID</div>';
                 return;
@@ -196,7 +338,7 @@
                 commentsEl.innerHTML = '';
                 if (tree.replies) {
                     for (const reply of tree.replies) {
-                        commentsEl.appendChild(renderComment(reply, 0));
+                        commentsEl.appendChild(renderComment(reply, 0, null));
                     }
                 }
                 attachAuthorHandlers();
