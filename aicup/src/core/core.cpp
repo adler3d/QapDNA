@@ -2003,48 +2003,83 @@ struct t_main : t_http_base {
       }
       res.set_content(out.dump(), "application/json");
     });
+    // DELETE комментария
     srv.Delete(R"(/api/comments/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(5);
-      uint64_t id = stoull(req.matches[1]);
+
+      uint64_t comment_id;
+      try {
+        comment_id = stoull(req.matches[1]);
+      } catch (...) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid comment id"})", "application/json");
+        return;
+      }
+
       lock_guard<mutex> lock(mtx);
-      if (id >= comments.size() || comments[id].hidden.tot()>0) {
+
+      if (comment_id >= comments.size() || comments[comment_id].hidden.tot() > 0) {
         res.status = 404;
         return;
       }
-      auto&c=comments[id];
+
+      auto& c = comments[comment_id];
       auto [uid, ok] = auth_by_bearer(req);
       if (!ok) { res.status = 401; return; }
-      if (uid>=carr.size()){
+      if (uid >= carr.size()) { res.status = 403; return; }
+
+      bool moder = carr[uid].lvl >= 999999;
+      bool author = c.author_uid == uid;
+      if (!(moder || author)) {
         res.status = 403;
+        res.set_content(R"({"error":"allowed only for mods or author"})", "application/json");
         return;
       }
-      bool moder=carr[uid].lvl<999999;
-      auto author=c.author_uid==uid;
-      if(!(moder||author)){
-        res.status = 403;
-        res.set_content("allowed only for moders or author", "text/plain");
+
+      string reason;
+      int64_t delta;
+      try {
+        auto j = json::parse(req.body);
+        reason = j.value("reason", "");
+        delta = j.value("delta", 999999 - int64_t(carr[uid].lvl));
+      } catch (const json::parse_error& e) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid json"})", "application/json");
         return;
       }
-      auto j = json::parse(req.body);
-      string reason=j.value("reason", "");
-      auto delta=j.value("delta",999999-int64_t(carr[uid].lvl));
-      if (reason.empty()||reason.size()>1024*4) {
-          res.status = 400;
-          res.set_content(R"({"error":"reason empty or over 4KB"})", "application/json");
-          return;
+
+      if (reason.empty() || reason.size() > 1024 * 4) {
+        res.status = 400;
+        res.set_content(R"({"error":"reason empty or over 4KB"})", "application/json");
+        return;
       }
-      c.hidden.add(t_vote::mk(uid,author?1:delta,qap_time(),reason));
+
+      c.hidden.add(t_vote::mk(uid, author ? 1 : delta, qap_time(), reason));
       res.set_content(R"({"ok":true})", "application/json");
     });
+
+
+    // GET информации о пользователе
     srv.Get(R"(/api/user/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(5);
-      uint64_t uid = stoull(req.matches[1]);
+
+      uint64_t uid;
+      try {
+        uid = stoull(req.matches[1]);
+      } catch (...) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid user id"})", "application/json");
+        return;
+      }
+
       lock_guard<mutex> lock(mtx);
-      if (uid>=carr.size()){
+
+      if (uid >= carr.size()) {
         res.status = 403;
         return;
       }
-      auto&c=carr[uid];
+
+      auto& c = carr[uid];
       json j = {
         {"name", c.visname},
         {"lvl", c.lvl},
@@ -2053,31 +2088,44 @@ struct t_main : t_http_base {
       };
       res.set_content(j.dump(2), "application/json");
     });
+
+
+    // POST нового комментария
     srv.Post("/api/comments", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(5);
       lock_guard<mutex> lock(mtx);
+
       auto [uid, ok] = auth_by_bearer(req);
       if (!ok) { res.status = 401; return; }
-      if (get_karma(uid,chrono::system_clock::now()) < 0) {
+      if (get_karma(uid, chrono::system_clock::now()) < 0) {
         res.status = 403;
-        res.set_content("Karma too low", "text/plain");
+        res.set_content(R"({"error":"karma too low"})", "application/json");
         return;
       }
 
-      auto j = json::parse(req.body);
-      uint64_t parent_id = j.value("parent_id", uint64_t(0));
-      string title = j.value("title", "");
-      string url = j.value("url", "");
-      string content = j.value("content", "");
-      title=sanitizeHtml(title,true);
-      url=sanitizeHtml(url,true);
-      content=sanitizeHtml(content,false);
-      // Для корневого поста: требуем title и url
-      if (parent_id == 0 && (title.empty() || url.empty() || url.find("http") != 0)) {
+      uint64_t parent_id = 0;
+      string title, url, content;
+      try {
+        auto j = json::parse(req.body);
+        parent_id = j.value("parent_id", uint64_t(0));
+        title = sanitizeHtml(j.value("title", ""), true);
+        url = sanitizeHtml(j.value("url", ""), true);
+        content = sanitizeHtml(j.value("content", ""), false);
+        if(title.size()>256){res.status = 400;res.set_content(R"({"error":"title over 256 bytes"})", "application/json");}
+        if(url.size()>512){res.status = 400;res.set_content(R"({"error":"url over 512 bytes"})", "application/json");}
+        if(content.size()>1024*10){res.status = 400;res.set_content(R"({"error":"content over 10KB"})", "application/json");}
+      } catch (const json::parse_error& e) {
         res.status = 400;
-        res.set_content("Root posts require non-empty title and valid URL", "text/plain");
+        res.set_content(R"({"error":"invalid json"})", "application/json");
         return;
       }
+
+      if (parent_id == 0 && (title.empty() || url.empty() || url.find("http") != 0)) {
+        res.status = 400;
+        res.set_content(R"({"error":"Root posts require title and valid URL"})", "application/json");
+        return;
+      }
+
       t_comment c;
       c.id = comments.size();
       c.parent_id = parent_id;
@@ -2088,14 +2136,14 @@ struct t_main : t_http_base {
       c.created_at = qap_time();
       comments.push_back(c);
 
-      // Связываем с родителем
       if (parent_id != 0 && parent_id < comments.size()) {
         comments[parent_id].comments.push_back(c.id);
       }
 
       res.status = 201;
-      res.set_content("\""+qap_time()+"\"", "application/json");
+      res.set_content("\"" + qap_time() + "\"", "application/json");
     });
+
     srv.Get(R"(/api/comments/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(15);
       lock_guard<mutex> lock(mtx);
@@ -2283,7 +2331,7 @@ struct t_main : t_http_base {
       b.time=now;
       b.until=qap_time_addms(now,dt);
       b.reason=reason;
-      if(hide_all)for(auto&c:comments)if(c.author_uid==target_uid)c.hidden=true;
+      if(hide_all)for(auto&c:comments)if(c.author_uid==target_uid)c.hidden.add(t_vote::mk(mod_uid,1024*1024*1024,now,"hide_all"));
       res.set_content(R"({"ok":true})", "application/json");
     });
   }
