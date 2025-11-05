@@ -2028,7 +2028,7 @@ struct t_main : t_http_base {
       if (!ok) { res.status = 401; return; }
       if (uid >= carr.size()) { res.status = 403; return; }
 
-      bool moder = carr[uid].lvl >= 999999;
+      bool moder = carr[uid].lvl < 999999;
       bool author = c.author_uid == uid;
       if (!(moder || author)) {
         res.status = 403;
@@ -2172,168 +2172,206 @@ struct t_main : t_http_base {
       res.set_content("["+qap_time()+"]: size="+to_string(s.size()/1024.0/1024.0)+"MB", "text/plain");
     });
     srv.Post(R"(/api/vote/comment/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
-        RATE_LIMITER(15);
+      RATE_LIMITER(15);
 
-        uint64_t comment_id;
-        try {
-            comment_id = stoull(req.matches[1]);
-        } catch (...) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid comment id"})", "application/json");
-            return;
+      uint64_t comment_id;
+      try {
+        comment_id = stoull(req.matches[1]);
+      } catch (...) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid comment id"})", "application/json");
+        return;
+      }
+
+      lock_guard<mutex> lock(mtx);
+
+      auto [uid, ok] = auth_by_bearer(req);
+      if (!ok || get_karma(uid, chrono::system_clock::now()) <= 0) {
+        res.status = 401;
+        return;
+      }
+
+      if (comment_id >= comments.size() || comments[comment_id].hidden.tot() > 0) {
+        res.status = 404;
+        return;
+      }
+
+      if (uid == comments[comment_id].author_uid) {
+        res.status = 400;
+        return; // нельзя голосовать за себя
+      }
+
+      int dir = 0;
+      try {
+        auto j = json::parse(req.body);
+        dir = j.value("dir", 0);
+        if (dir != 1 && dir != -1) {
+          res.status = 400;
+          res.set_content(R"({"error":"invalid vote direction"})", "application/json");
+          return;
         }
+      } catch (const json::parse_error& e) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid json"})", "application/json");
+        //std::cerr << "JSON parse error: " << e.what() << std::endl;
+        return;
+      }
 
-        lock_guard<mutex> lock(mtx);
+      t_vote v;
+      v.from_uid = uid;
+      v.delta = dir;
+      v.time = qap_time();
+      v.reason = "comment_vote";
+      comments[comment_id].votes.add(v);
 
-        auto [uid, ok] = auth_by_bearer(req);
-        if (!ok || get_karma(uid, chrono::system_clock::now()) <= 0) {
-            res.status = 401;
-            return;
-        }
+      auto& target_uid = comments[comment_id].author_uid;
+      if (target_uid < carr.size()) {
+        t_vote kv;
+        kv.from_uid = uid;
+        kv.delta = dir;
+        kv.time = v.time;
+        kv.reason = "karma_from_comment:" + std::to_string(comment_id);
+        carr[target_uid].karma.add(kv);
+      }
 
-        if (comment_id >= comments.size() || comments[comment_id].hidden.tot() > 0) {
-            res.status = 404;
-            return;
-        }
-
-        if (uid == comments[comment_id].author_uid) {
-            res.status = 400;
-            return; // нельзя голосовать за себя
-        }
-
-        int dir = 0;
-        try {
-            auto j = json::parse(req.body);
-            dir = j.value("dir", 0);
-            if (dir != 1 && dir != -1) {
-                res.status = 400;
-                res.set_content(R"({"error":"invalid vote direction"})", "application/json");
-                return;
-            }
-        } catch (const json::parse_error& e) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid json"})", "application/json");
-            //std::cerr << "JSON parse error: " << e.what() << std::endl;
-            return;
-        }
-
-        t_vote v;
-        v.from_uid = uid;
-        v.delta = dir;
-        v.time = qap_time();
-        v.reason = "comment_vote";
-        comments[comment_id].votes.add(v);
-
-        auto& target_uid = comments[comment_id].author_uid;
-        if (target_uid < carr.size()) {
-            t_vote kv;
-            kv.from_uid = uid;
-            kv.delta = dir;
-            kv.time = v.time;
-            kv.reason = "karma_from_comment:" + std::to_string(comment_id);
-            carr[target_uid].karma.add(kv);
-        }
-
-        res.set_content(R"({"ok":true})", "application/json");
+      res.set_content(R"({"ok":true})", "application/json");
     });
 
     srv.Post(R"(/api/vote/user/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
-        RATE_LIMITER(15);
+      RATE_LIMITER(15);
 
-        lock_guard<mutex> lock(mtx);
+      lock_guard<mutex> lock(mtx);
 
-        uint64_t target_uid;
-        try {
-            target_uid = stoull(req.matches[1]);
-        } catch (...) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid user id"})", "application/json");
-            return;
+      uint64_t target_uid;
+      try {
+        target_uid = stoull(req.matches[1]);
+      } catch (...) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid user id"})", "application/json");
+        return;
+      }
+
+      auto [voter_uid, ok] = auth_by_bearer(req);
+      if (!ok || get_karma(voter_uid, chrono::system_clock::now()) <= 0) {
+        res.status = 401;
+        return;
+      }
+      if (voter_uid == target_uid) {
+        res.status = 400;
+        return;
+      }
+
+      int dir = 0;string reason;
+      try {
+        auto j = json::parse(req.body);
+        dir = j.value("dir", 0);
+        reason = j.value("reason", reason);
+        if (dir != 1 && dir != -1) {
+          res.status = 400;
+          res.set_content(R"({"error":"invalid vote direction"})", "application/json");
+          return;
         }
-
-        auto [voter_uid, ok] = auth_by_bearer(req);
-        if (!ok || get_karma(voter_uid, chrono::system_clock::now()) <= 0) {
-            res.status = 401;
-            return;
+        if (reason.empty()||reason.size()>1024*4) {
+          res.status = 400;
+          res.set_content(R"({"error":"reason empty or over 4KB"})", "application/json");
+          return;
         }
-        if (voter_uid == target_uid) {
-            res.status = 400;
-            return;
-        }
+      } catch (const json::parse_error& e) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid json"})", "application/json");
+        //std::cerr << "JSON parse error: " << e.what() << std::endl;
+        return;
+      }
 
-        int dir = 0;string reason;
-        try {
-            auto j = json::parse(req.body);
-            dir = j.value("dir", 0);
-            reason = j.value("reason", reason);
-            if (dir != 1 && dir != -1) {
-                res.status = 400;
-                res.set_content(R"({"error":"invalid vote direction"})", "application/json");
-                return;
-            }
-            if (reason.empty()||reason.size()>1024*4) {
-                res.status = 400;
-                res.set_content(R"({"error":"reason empty or over 4KB"})", "application/json");
-                return;
-            }
-        } catch (const json::parse_error& e) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid json"})", "application/json");
-            //std::cerr << "JSON parse error: " << e.what() << std::endl;
-            return;
-        }
+      if (target_uid >= carr.size()) { res.status = 404; return; }
 
-        if (target_uid >= carr.size()) { res.status = 404; return; }
+      t_vote v;
+      v.from_uid = voter_uid;
+      v.delta = dir;
+      v.time = qap_time();
+      v.reason = reason;
+      carr[target_uid].karma.add(v);
 
-        t_vote v;
-        v.from_uid = voter_uid;
-        v.delta = dir;
-        v.time = qap_time();
-        v.reason = reason;
-        carr[target_uid].karma.add(v);
-
-        res.set_content(R"({"ok":true})", "application/json");
+      res.set_content(R"({"ok":true})", "application/json");
     });
-
     srv.Post(R"(/api/mod/ban/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(15);
-      uint64_t target_uid = stoull(req.matches[1]);
+
+      uint64_t target_uid;
+      try {
+        target_uid = stoull(req.matches[1]);
+      } catch (...) {
+        res.status = 400;
+        res.set_content(R"({"ok":false,"err":"invalid target uid"})", "application/json");
+        return;
+      }
+
       lock_guard<mutex> lock(mtx);
-      if (target_uid >= carr.size()) { res.status = 404; return; }
+
+      if (target_uid >= carr.size()) {
+        res.status = 404;
+        return;
+      }
+
       auto [mod_uid, ok] = auth_by_bearer(req);
-      if (!ok || carr[mod_uid].lvl>=carr[target_uid].lvl) {
+      if (!ok || carr[mod_uid].lvl >= carr[target_uid].lvl) {
         res.status = 403;
         return;
       }
-      auto j = json::parse(req.body);
-      auto reason = j.value("reason",string{});
-      auto dt = j.value("dt",1000i64*3600*24*7*2);
-      auto hide_all = j.value("hide_all",false);
+
+      string reason;
+      int64_t dt = 1000i64 * 3600 * 24 * 7 * 2; // 2 недели по умолчанию
+      bool hide_all = false;
+
+      try {
+        auto j = json::parse(req.body);
+        reason = j.value("reason", string{});
+        dt = j.value("dt", dt);
+        hide_all = j.value("hide_all", false);
+      } catch (const json::parse_error& e) {
+        res.status = 400;
+        res.set_content(R"({"ok":false,"err":"invalid json"})", "application/json");
+        return;
+      }
+
       if (reason.empty()) {
         res.status = 403;
         res.set_content(R"({"ok":false,"err":"need not empty reason"})", "application/json");
         return;
       }
-      auto now=qap_time();
-      auto&c=carr[target_uid];
-      if(!c.bans.empty()){
-        auto&prev=c.bans.back();
-        if(qap_time_diff(prev.until,now)<0){
-          if(prev.from_uid<carr.size()&&carr[prev.from_uid].lvl<carr[mod_uid].lvl){
+
+      auto now = qap_time();
+      auto& c = carr[target_uid];
+
+      // Проверка существующего бана
+      if (!c.bans.empty()) {
+        auto& prev = c.bans.back();
+        if (qap_time_diff(prev.until, now) < 0) { // текущий бан активен
+          if (prev.from_uid < carr.size() && carr[prev.from_uid].lvl < carr[mod_uid].lvl) {
             res.status = 403;
             res.set_content(R"({"ok":false,"err":"you do not have sufficient rights"})", "application/json");
             return;
           }
         }
       }
-      auto&b=qap_add_back(c.bans);
-      b.from_uid=mod_uid;
-      b.time=now;
-      b.until=qap_time_addms(now,dt);
-      b.reason=reason;
-      if(hide_all)for(auto&c:comments)if(c.author_uid==target_uid)c.hidden.add(t_vote::mk(mod_uid,1024*1024*1024,now,"hide_all"));
+
+      auto& b = qap_add_back(c.bans);
+      b.from_uid = mod_uid;
+      b.time = now;
+      b.until = qap_time_addms(now, dt);
+      b.reason = reason;
+
+      if (hide_all) {
+        for (auto& comment : comments) {
+          if (comment.author_uid == target_uid) {
+            comment.hidden.add(t_vote::mk(mod_uid, 1024*1024*1024, now, "hide_all"));
+          }
+        }
+      }
+
       res.set_content(R"({"ok":true})", "application/json");
     });
+
   }
   string main_start_time=qap_time();
 public:

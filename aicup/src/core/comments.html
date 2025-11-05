@@ -105,7 +105,7 @@
 
         .user-popup {
             position: absolute;
-            top: 120%; /* чуть ниже ника, без зазора */
+            top: 120%;
             left: 0;
             background: #fff;
             border: 1px solid #ccc;
@@ -120,10 +120,10 @@
             min-width: 140px;
         }
 
-        .user-popup.visible {
-            opacity: 1;
-            pointer-events: auto;
-        }
+            .user-popup.visible {
+                opacity: 1;
+                pointer-events: auto;
+            }
 
         .moderator-btn {
             background: #ffe0e0;
@@ -132,6 +132,73 @@
             font-size: 0.8em;
             margin-left: 6px;
         }
+
+        /* Стили для модальных окон */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            min-width: 400px;
+            max-width: 500px;
+        }
+
+            .modal h3 {
+                margin-top: 0;
+                color: #333;
+            }
+
+            .modal textarea {
+                width: 100%;
+                height: 100px;
+                margin: 10px 0;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                resize: vertical;
+            }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+            .modal-buttons button {
+                padding: 8px 16px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+
+            .modal-buttons .confirm-btn {
+                background: #007cba;
+                color: white;
+                border: none;
+            }
+
+                .modal-buttons .confirm-btn:disabled {
+                    background: #ccc;
+                    cursor: not-allowed;
+                }
+
+            .modal-buttons .cancel-btn {
+                background: #f8f8f8;
+                color: #333;
+            }
     </style>
 </head>
 <body>
@@ -147,6 +214,10 @@
         if (token) localStorage.setItem('token', token);
         const isModerator = localStorage.getItem('moderator') === 'true';
 
+        // Переменные для хранения текущих действий
+        let currentAction = null;
+        let currentActionData = null;
+
         function api(method, path, body = null) {
             return fetch('/api' + path, {
                 method,
@@ -161,14 +232,14 @@
         function renderPost(post) {
             const el = document.getElementById('postHeader');
             el.innerHTML = `
-            <h2><a href="${post.url}" target="_blank">${post.title}</a></h2>
-            <div>
-              by <span class="author" data-uid="${post.author_uid}">${post.author}</span>
-              | ${post.upvotes - post.downvotes} points
-              | <span class="vote" onclick="vote('comment', ${post.id}, 1)">▲</span>
-                <span class="vote" onclick="vote('comment', ${post.id}, -1)">▼</span>
-            </div>
-          `;
+                <h2><a href="${post.url}" target="_blank">${post.title}</a></h2>
+                <div>
+                  by <span class="author" data-uid="${post.author_uid}">${post.author}</span>
+                  | ${post.upvotes - post.downvotes} points
+                  | <span class="vote" onclick="vote('comment', ${post.id}, 1)">▲</span>
+                    <span class="vote" onclick="vote('comment', ${post.id}, -1)">▼</span>
+                </div>
+              `;
             attachAuthorHandlers();
         }
 
@@ -179,27 +250,27 @@
             if (parent) div.dataset.parentId = parent.id;
 
             div.innerHTML = `
-            <div>
-              <span class="vote" onclick="vote('comment', ${comment.id}, 1)">▲</span>
-              <span class="vote" onclick="vote('comment', ${comment.id}, -1)">▼</span>
-              <strong class="author" data-uid="${comment.author_uid}" data-comment="${comment.id}">${comment.author}</strong>
-              (${comment.upvotes - comment.downvotes})
-              <small style="color:#888; margin-left:8px;">${comment.created_at}</small>
-              <button class="reply-btn" onclick="toggleReplyForm(${comment.id})">Reply</button>
-              <button class="collapse-btn" onclick="toggleCollapse(${comment.id})">Collapse</button>
-              ${parent ? `<button class="jump-btn" onclick="jumpToParent(${comment.id})">↑ Parent</button>` : ''}
-              ${isModerator ? `
-                <button class="moderator-btn" onclick="deleteComment(${comment.id})">Delete</button>
-                <button class="moderator-btn" onclick="banUser(${comment.author_uid}, ${comment.id})">Ban</button>
-              ` : ''}
-            </div>
-            <div class="comment-body" style="white-space: pre-wrap;">${comment.content || '<i>No content</i>'}</div>
-            <div class="reply-form" id="reply-form-${comment.id}">
-              <textarea placeholder="Write your reply..."></textarea><br>
-              <button onclick="submitReply(${comment.id})">Submit Reply</button>
-              <span class="status"></span>
-            </div>
-          `;
+                <div>
+                  <span class="vote" onclick="vote('comment', ${comment.id}, 1)">▲</span>
+                  <span class="vote" onclick="vote('comment', ${comment.id}, -1)">▼</span>
+                  <strong class="author" data-uid="${comment.author_uid}" data-comment="${comment.id}">${comment.author}</strong>
+                  (${comment.upvotes - comment.downvotes})
+                  <small style="color:#888; margin-left:8px;">${comment.created_at}</small>
+                  <button class="reply-btn" onclick="toggleReplyForm(${comment.id})">Reply</button>
+                  <button class="collapse-btn" onclick="toggleCollapse(${comment.id})">Collapse</button>
+                  ${parent ? `<button class="jump-btn" onclick="jumpToParent(${comment.id})">↑ Parent</button>` : ''}
+                  ${isModerator ? `
+                    <button class="moderator-btn" onclick="showDeleteCommentForm(${comment.id})">Delete</button>
+                    <button class="moderator-btn" onclick="showBanUserForm(${comment.author_uid}, ${comment.id})">Ban</button>
+                  ` : ''}
+                </div>
+                <div class="comment-body" style="white-space: pre-wrap;">${comment.content || '<i>No content</i>'}</div>
+                <div class="reply-form" id="reply-form-${comment.id}">
+                  <textarea placeholder="Write your reply..."></textarea><br>
+                  <button onclick="submitReply(${comment.id})">Submit Reply</button>
+                  <span class="status"></span>
+                </div>
+              `;
 
             if (comment.replies && comment.replies.length) {
                 const repliesDiv = document.createElement('div');
@@ -211,6 +282,113 @@
                 div.appendChild(repliesDiv);
             }
             return div;
+        }
+
+        // Функции для показа форм с указанием причины
+        function showDeleteCommentForm(commentId) {
+            currentAction = 'deleteComment';
+            currentActionData = { commentId };
+            showReasonModal('Delete Comment', 'Please provide a reason for deleting this comment:');
+        }
+
+        function showBanUserForm(uid, reasonId) {
+            currentAction = 'banUser';
+            currentActionData = { uid, reasonId };
+            showReasonModal('Ban User', 'Please provide a reason for banning this user:');
+        }
+
+        function showKarmaVoteForm(uid, dir, reasonId) {
+            currentAction = 'voteUser';
+            currentActionData = { uid, dir, reasonId };
+            const action = dir === 1 ? 'upvote' : 'downvote';
+            showReasonModal(`Karma ${action}`, `Please provide a reason for ${action} this user's karma:`);
+        }
+
+        function showReasonModal(title, message) {
+            // Удаляем существующее модальное окно, если есть
+            const existingModal = document.getElementById('reasonModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+
+            const modalHTML = `
+                    <div class="modal-overlay" id="reasonModal">
+                        <div class="modal">
+                            <h3>${title}</h3>
+                            <p>${message}</p>
+                            <textarea id="reasonText" placeholder="Enter reason..." maxlength="500"></textarea>
+                            <div class="modal-buttons">
+                                <button class="cancel-btn" onclick="closeReasonModal()">Cancel</button>
+                                <button class="confirm-btn" id="confirmAction" onclick="executeAction()" disabled>Confirm</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+            // Добавляем обработчик для проверки ввода
+            const reasonText = document.getElementById('reasonText');
+            const confirmBtn = document.getElementById('confirmAction');
+
+            reasonText.addEventListener('input', function () {
+                const reason = this.value.trim();
+                confirmBtn.disabled = reason.length === 0;
+            });
+
+            // Фокус на текстовое поле
+            reasonText.focus();
+        }
+
+        function closeReasonModal() {
+            const modal = document.getElementById('reasonModal');
+            if (modal) {
+                modal.remove();
+            }
+            currentAction = null;
+            currentActionData = null;
+        }
+
+        async function executeAction() {
+            const reasonText = document.getElementById('reasonText');
+            const reason = reasonText.value.trim();
+
+            if (!reason) {
+                alert('Please provide a reason');
+                return;
+            }
+
+            try {
+                switch (currentAction) {
+                    case 'deleteComment':
+                        await api('DELETE', `/comments/${currentActionData.commentId}`, { reason });
+                        alert('✅ Comment deleted');
+                        break;
+
+                    case 'banUser':
+                        await api('POST', `/mod/ban/${currentActionData.uid}`, {
+                            reason: reason,
+                            comment_reference: currentActionData.reasonId,
+                            dt: 15 * 1000
+                        });
+                        alert('✅ User banned');
+                        break;
+
+                    case 'voteUser':
+                        await api('POST', `/vote/user/${currentActionData.uid}`, {
+                            dir: currentActionData.dir,
+                            reason: reason,
+                            comment_reference: currentActionData.reasonId
+                        });
+                        alert('✅ Karma updated');
+                        break;
+                }
+
+                closeReasonModal();
+                loadComments(); // Перезагружаем комментарии для обновления интерфейса
+            } catch (error) {
+                alert(`❌ Action failed: ${error}`);
+            }
         }
 
         function toggleReplyForm(commentId) {
@@ -286,10 +464,10 @@
                 let popup = null;
                 let hideTimer = null;
                 const HIDE_DELAY = 400;
-                let isPopupVisible = false; // флаг, чтобы повторный enter игнорировался
+                let isPopupVisible = false;
 
                 async function showPopup() {
-                    if (isPopupVisible) return; // повторный enter игнорируем
+                    if (isPopupVisible) return;
                     clearTimeout(hideTimer);
                     isPopupVisible = true;
 
@@ -309,18 +487,17 @@
                         const uid = el.dataset.uid;
                         const commentId = el.dataset.comment;
                         const user = await api('GET', `/user/${uid}`);
-                        if (!popup) return; // пользователь ушёл до загрузки
+                        if (!popup) return;
                         popup.innerHTML = `
-          <div><strong>${user.name}</strong></div>
-          <div>Karma: ${user.karma}</div>
-          <button onclick="voteUser(${uid}, 1, ${commentId})">👍</button>
-          <button onclick="voteUser(${uid}, -1, ${commentId})">👎</button>
-        `;
+                                <div><strong>${user.name}</strong></div>
+                                <div>Karma: ${user.karma}</div>
+                                <button onclick="showKarmaVoteForm(${uid}, 1, ${commentId})">👍</button>
+                                <button onclick="showKarmaVoteForm(${uid}, -1, ${commentId})">👎</button>
+                            `;
                     } catch {
                         if (popup) popup.textContent = 'Error loading user info';
                     }
 
-                    // мышка над popup
                     popup.addEventListener('mouseenter', () => clearTimeout(hideTimer));
                     popup.addEventListener('mouseleave', scheduleHide);
                 }
@@ -347,27 +524,6 @@
 
                 el.addEventListener('mouseleave', () => scheduleHide());
             });
-        }
-
-        async function voteUser(uid, dir, reasonId) {
-            try {
-                await api('POST', `/vote/user/${uid}`, { dir, reason: reasonId });
-                alert('✅ Karma updated');
-            } catch {
-                alert('❌ Failed to vote');
-            }
-        }
-
-        async function deleteComment(commentId) {
-            if (!confirm('Delete this comment?')) return;
-            await api('DELETE', `/comments/${commentId}`);
-            loadComments();
-        }
-
-        async function banUser(uid, reasonId) {
-            if (!confirm('Ban this user?')) return;
-            await api('POST', `/mod/ban/${uid}`, { reason: "see comment "+reasonId,dt:15*1000});
-            alert('Action sent');
         }
 
         async function loadComments() {
