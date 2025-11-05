@@ -3358,10 +3358,135 @@ void setup_main(t_main&m){
 }
 //#include "t_main_test.h"
 #include <signal.h>
+
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <string>
+
+using namespace std;
+
+// === qap_time_with_debug ===
+string qap_time_with_debug() {
+  using namespace std::chrono;
+  system_clock::time_point now = system_clock::now();
+  cerr << "[qap_time] now.time_since_epoch() = " << now.time_since_epoch().count() << endl;
+
+  auto duration = now.time_since_epoch();
+  auto sec = duration_cast<seconds>(duration);
+  auto millis = duration_cast<milliseconds>(duration - sec);
+  cerr << "[qap_time] sec=" << sec.count() << " millis=" << millis.count() << endl;
+
+  std::time_t t_c = sec.count();
+  std::tm utc_tm;
+#if defined(_WIN32) || defined(_WIN64)
+  gmtime_s(&utc_tm, &t_c);
+#else
+  gmtime_r(&t_c, &utc_tm);
+#endif
+  cerr << "[qap_time] UTC time: " << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S") << endl;
+
+  utc_tm.tm_hour += 3;
+  cerr << "[qap_time] After +3h: " << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S") << endl;
+
+  std::mktime(&utc_tm);
+  cerr << "[qap_time] After mktime normalize: " << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S") << endl;
+
+  std::ostringstream oss;
+  oss << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S")
+      << '.' << std::setfill('0') << std::setw(3) << millis.count();
+  cerr << "[qap_time] result = " << oss.str() << endl;
+  return oss.str();
+}
+
+chrono::time_point<chrono::system_clock> parse_qap_time_with_debug(const std::string& s) {
+  using namespace chrono;
+  std::tm tm = {};
+  int millis;
+  char dot;
+  std::istringstream iss(s);
+  iss >> std::get_time(&tm, "%Y.%m.%d %H:%M:%S");
+  iss >> dot >> millis;
+
+  cerr << "[parse_qap_time] input=" << s << endl;
+  cerr << "[parse_qap_time] parsed tm (before -3h): " << std::put_time(&tm, "%Y.%m.%d %H:%M:%S")
+       << " millis=" << millis << endl;
+
+  // Переводим московское время в UTC
+  tm.tm_hour -= 3;
+  cerr << "[parse_qap_time] after -3h: " << std::put_time(&tm, "%Y.%m.%d %H:%M:%S") << endl;
+
+  // ✅ используем UTC-safe версию
+  std::time_t time = timegm_portable(&tm);
+  cerr << "[parse_qap_time] timegm_portable() -> time_t=" << time << endl;
+
+  auto tp = system_clock::from_time_t(time);
+  tp += milliseconds(millis);
+  cerr << "[parse_qap_time] result time_point (ms since epoch)="
+       << tp.time_since_epoch().count() << endl;
+
+  return tp;
+}
+
+
+// === format_time_point_with_debug ===
+std::string format_time_point_with_debug(const chrono::system_clock::time_point& tp) {
+  using namespace chrono;
+  auto duration = tp.time_since_epoch();
+  auto sec = chrono::duration_cast<chrono::seconds>(duration);
+  auto millis = chrono::duration_cast<chrono::milliseconds>(duration - sec);
+  std::time_t t_c = sec.count();
+  std::tm utc_tm;
+#if defined(_WIN32) || defined(_WIN64)
+  gmtime_s(&utc_tm, &t_c);
+#else
+  gmtime_r(&t_c, &utc_tm);
+#endif
+
+  cerr << "[format_time_point] UTC before +3: " 
+       << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S") 
+       << " (tm_hour=" << utc_tm.tm_hour << ")" << endl;
+
+  utc_tm.tm_hour += 3;
+  cerr << "[format_time_point] after +3h: " 
+       << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S") 
+       << " (tm_hour=" << utc_tm.tm_hour << ")" << endl;
+
+  std::mktime(&utc_tm);
+  cerr << "[format_time_point] after mktime normalize: " 
+       << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S") 
+       << " (tm_hour=" << utc_tm.tm_hour << ")" << endl;
+
+  std::ostringstream oss;
+  oss << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S")
+      << '.' << std::setfill('0') << std::setw(3) << millis.count();
+
+  cerr << "[format_time_point] result=" << oss.str() << endl;
+  return oss.str();
+}
+
+// === add_milliseconds_with_debug ===
+chrono::system_clock::time_point add_milliseconds_with_debug(const chrono::system_clock::time_point& tp,int64_t ms) {
+  cerr << "[add_milliseconds] add " << ms << " ms" << endl;
+  return tp + chrono::milliseconds(ms);
+}
+
+// === qap_time_addms_with_debug ===
+string qap_time_addms_with_debug(const string&t,int64_t ms){
+  cerr << "[qap_time_addms] input=" << t << " ms=" << ms << endl;
+  auto tp=parse_qap_time_with_debug(t);
+  auto new_tp=add_milliseconds_with_debug(tp,ms);
+  return format_time_point_with_debug(new_tp);
+}
+
 int main(int argc,char*argv[]){
   //main_test();//t_coder_rec::t_source
   //t_main::sim_main();
   //return 0;
+  cout << qap_time_addms_with_debug("2025.11.05 13:29:47.600", 0) << endl;
+  	cout<<qap_time_addms("2025.11.05 13:29:47.600",0)<<endl;
   signal(SIGPIPE, SIG_IGN);
   srand(time(0));
   if(bool prod=true){
