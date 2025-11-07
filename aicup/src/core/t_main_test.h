@@ -5,7 +5,7 @@
   string visname;
   string token;
   string created_at;
-};
+};/*
 struct t_tracked_info {
     string label;           // "Pure Farmer", "R1-Winner-1", "S2-TOP3-5", ...
     string source_phase;    // фаза, в которой был отмечен
@@ -51,101 +51,102 @@ struct t_season {
   vector<unique_ptr<t_phase>> phases;
   size_t current_phase_idx = 0;
   //mutex participants_mtx;
-};
+};*/
 struct t_main_test{
   vector<t_global_user> garr;
   vector<unique_ptr<t_season>> sarr;
 };
 t_phase* find_phase(t_season& season, const string& phase_id) {
   for (auto& p : season.phases) {
-    if (p->phase_id == phase_id) return p.get();
+    if (p.phase_name == phase_id) return &p;
   }
   return nullptr;
 }
 const t_phase* find_phase(const t_season& season, const string& phase_id) {
   for (auto& p : season.phases) {
-    if (p->phase_id == phase_id) return p.get();
+    if (p.phase_name == phase_id) return &p;
   }
   return nullptr;
 }
 void mark_top_n_as_tracked(t_season& season, const string& phase_id, int top_n = 6) {
     const t_phase* p = find_phase(season, phase_id);
     if (!p) return;
-
-    // Получаем ранжированный список
-    vector<pair<double, int>> ranked;
-    for (int uid : p->uids) {
-        double score = p->uid2score.count(uid) ? p->uid2score.at(uid) : 1500.0;
-        ranked.emplace_back(-score, uid);
-    }
-    sort(ranked.begin(), ranked.end());
-
-    int n = min(top_n, (int)ranked.size());
-    for (int i = 0; i < n; ++i) {
-        int uid = ranked[i].second;
-        auto& coder = season.uid2scoder[uid];
-
-        // Не перезаписываем существующую пометку (например, meta_pack)
-        if (coder.tracked.has_value()) continue;
-
-        coder.tracked = t_tracked_info{
-            /*.label =*/ phase_id + "-TOP"+/*to_string(top_n) + "-" + */to_string(i+1),
-            /*.source_phase =*/ phase_id,
-            /*.source_rank =*/ i+1,
-            /*.phase2rank =*/ {}
-        };
-    }
+    return;
+    //// Получаем ранжированный список
+    //vector<pair<double, uint64_t>> ranked;
+    //for (auto&[uid,rec] : p->uid2rec) {
+    //    double score = rec.score;
+    //    ranked.emplace_back(-score, uid);
+    //}
+    //sort(ranked.begin(), ranked.end());
+    //
+    //int n = min(top_n, (int)ranked.size());
+    //for (int i = 0; i < n; ++i) {
+    //    int uid = ranked[i].second;
+    //    auto& coder = season.uid2scoder[uid];
+    //
+    //    // Не перезаписываем существующую пометку (например, meta_pack)
+    //    if (coder.tracked.has_value()) continue;
+    //
+    //    coder.tracked = t_tracked_info{
+    //        /*.label =*/ phase_id + "-TOP"+/*to_string(top_n) + "-" + */to_string(i+1),
+    //        /*.source_phase =*/ phase_id,
+    //        /*.source_rank =*/ i+1,
+    //        /*.phase2rank =*/ {}
+    //    };
+    //}
 }
 void record_all_tracked_ranks(t_season& season, const string& phase_id) {
     const t_phase* p = find_phase(season, phase_id);
     if (!p) return;
-
-    // Собираем текущие ранги
-    vector<pair<double, int>> ranked;
-    for (int uid : p->uids) {
-        double score = p->uid2score.count(uid) ? p->uid2score.at(uid) : 1500.0;
-        ranked.emplace_back(-score, uid);
-    }
-    sort(ranked.begin(), ranked.end());
-
-    unordered_map<int, int> uid_to_rank;
-    for (size_t i = 0; i < ranked.size(); ++i) {
-        uid_to_rank[ranked[i].second] = (int)i + 1;
-    }
-
-    // Обновляем историю для всех отслеживаемых
-    for (auto& [uid, coder] : season.uid2scoder) {
-        if (!coder.tracked.has_value()) continue;
-
-        if (uid_to_rank.count(uid)) {
-            coder.tracked->phase2rank[phase_id] = uid_to_rank[uid];
-        } else {
-            coder.tracked->phase2rank[phase_id] = -1; // вылетел
-        }
-    }
+    return;
+    //
+    //// Собираем текущие ранги
+    //vector<pair<double, uint64_t>> ranked;
+    //for (auto&[uid,rec] : p->uid2rec) {
+    //    double score = rec.score;
+    //    ranked.emplace_back(-score, uid);
+    //}
+    //sort(ranked.begin(), ranked.end());
+    //
+    //unordered_map<int, int> uid_to_rank;
+    //for (size_t i = 0; i < ranked.size(); ++i) {
+    //    uid_to_rank[ranked[i].second] = (int)i + 1;
+    //}
+    //
+    //// Обновляем историю для всех отслеживаемых
+    //for (auto& [uid, coder] : season.uid2scoder) {
+    //    if (!coder.tracked.has_value()) continue;
+    //
+    //    if (uid_to_rank.count(uid)) {
+    //        coder.tracked->phase2rank[phase_id] = uid_to_rank[uid];
+    //    } else {
+    //        coder.tracked->phase2rank[phase_id] = -1; // вылетел
+    //    }
+    //}
 }
 void print_all_tracked_summary(const t_main_test& mt, const t_season& season) {
-    cout << "\n=== ALL TRACKED STRATEGIES SUMMARY ===\n";
-    for (auto& [uid, coder] : season.uid2scoder) {
-        if (!coder.tracked.has_value()) continue;
-
-        auto& t = coder.tracked.value();
-        cout << t.label << " (UID=" << uid << ")\n";
-        // Печатаем историю по всем фазам
-        for (auto& phase : {"S1", "R1", "S2", "R2", "SF", "F"}) {
-            if (t.phase2rank.count(phase)) {
-                int r = t.phase2rank.at(phase);
-                cout << "  " << phase << ": " << (r == -1 ? "out" : "#" + to_string(r)) << "\n";
-            }
-        }
-        cout << "---\n";
-    }
+    //cout << "\n=== ALL TRACKED STRATEGIES SUMMARY ===\n";
+    //for (auto& [uid, coder] : season.uid2scoder) {
+    //    if (!coder.tracked.has_value()) continue;
+    //
+    //    auto& t = coder.tracked.value();
+    //    cout << t.label << " (UID=" << uid << ")\n";
+    //    // Печатаем историю по всем фазам
+    //    for (auto& phase : {"S1", "R1", "S2", "R2", "SF", "F"}) {
+    //        if (t.phase2rank.count(phase)) {
+    //            int r = t.phase2rank.at(phase);
+    //            cout << "  " << phase << ": " << (r == -1 ? "out" : "#" + to_string(r)) << "\n";
+    //        }
+    //    }
+    //    cout << "---\n";
+    //}
 }
 void ensure_user_in_season(t_season& season, int user_id) {
-    t_phase* active = season.phases[season.current_phase_idx].get();
+    t_phase* active =&season.phases[season.cur_phase];
     if (season.uid2scoder.count(user_id) == 0) {
-        season.uid2scoder[user_id] = t_season_coder{user_id, {}, ""};
-        active->uids.insert(user_id);
+        auto&b=season.uid2scoder[user_id];b.uid=user_id;
+        active->uid2rec[user_id]={};
     }
 }
 uint64_t rnd(){
@@ -179,12 +180,12 @@ void add_some_by_random(vector<t_global_user>& garr, t_season& season) {
     coder.last_submit_time = src.time;
 }
 void init_splinter_2025_season(t_season& s) {
-    s.season_id = "splinter_2025";
-    s.world_base = "t_splinter";
+    s.season_name = "splinter_2025";
+    //s.world = "t_splinter";
     s.title = "Splinter 2025";
 
     // Определяем фазы в порядке их появления
-    vector<tuple<string, string, int, vector<t_phase::QualificationRule>>> phase_specs = {
+    vector<tuple<string, string, int, vector<t_phase::t_qr_decl>>> phase_specs = {
         // {phase_id, type, num_players, qualifying_from}
         {"S1", "sandbox", 16, {}},
         {"R1", "round",   16, {{"S1", 900}}},
@@ -194,23 +195,35 @@ void init_splinter_2025_season(t_season& s) {
         {"F",  "round",   16, {{"R2", 50},  {"SF", 10}}},
         {"S",  "sandbox", 16, {}}
     };
-
+    map<string,int> n2id;
     for (auto& [phase_id, type, num_players, rules] : phase_specs) {
-        auto phase = make_unique<t_phase>();
-        phase->phase_id = phase_id;
+        t_phase p;
+        t_phase*phase=&p;
+        phase->phase=s.phases.size();
+        phase->phase_name = phase_id; n2id[phase_id]=s.phases.size();
         phase->type = type;
         phase->num_players = num_players;
-        phase->qualifying_from = rules;
-        // uids и uid2score заполнятся позже при активации
-        s.phases.push_back(std::move(phase));
+        //phase->qualifying_from = rules;
+        s.phases.push_back(p);
+    }
+    int i=0;
+    for (auto& [phase_id, type, num_players, rules] : phase_specs) {
+        //phase->qualifying_from = rules;
+        auto&p=s.phases[i];
+        for(auto&ex:rules){
+          auto&b=qap_add_back(p.qualifying_from);
+          b.from_phase=n2id[ex.from];
+          b.top_n=ex.top_n;
+        }
+        i++;
     }
 }
 void next_phase(t_season& season, const string& phase_id) {
     // Найдём фазу по ID
     t_phase* target = nullptr;
     for (auto& p : season.phases) {
-        if (p->phase_id == phase_id) {
-            target = p.get();
+        if (p.phase_name == phase_id) {
+            target = &p;
             break;
         }
     }
@@ -220,52 +233,45 @@ void next_phase(t_season& season, const string& phase_id) {
     }
 
     // Деактивировать предыдущую
-    if (season.current_phase_idx < season.phases.size()) {
-        season.phases[season.current_phase_idx]->is_active = false;
+    if (season.cur_phase < season.phases.size()) {
+        season.phases[season.cur_phase].is_active = false;
     }
 
     // Активировать новую
     target->is_active = true;
     // Найдём индекс
     for (size_t i = 0; i < season.phases.size(); ++i) {
-        if (season.phases[i].get() == target) {
-            season.current_phase_idx = i;
+        if (&season.phases[i] == target) {
+            season.cur_phase = i;
             break;
         }
     }
 
     // === Проведём отбор участников ===
-    target->uids.clear();
-    target->uid2score.clear();
+    target->uid2rec.clear();
 
     if (target->type == "sandbox") {
         // В песочницу — все, кто есть в сезоне
         for (const auto& [uid, _] : season.uid2scoder) {
-            target->uids.insert(uid);
+          target->uid2rec[uid]={};
         }
     } else if (target->type == "round") {
         set<int> already_qualified;
 
         for (const auto& rule : target->qualifying_from) {
-            t_phase* src_phase = nullptr;
-            for (auto& p : season.phases) {
-                if (p->phase_id == rule.from_phase_id) {
-                    src_phase = p.get();
-                    break;
-                }
-            }
+            t_phase* src_phase = &season.phases[rule.from_phase];
             if (!src_phase) continue;
 
             // Собираем кандидатов из исходной фазы
-            vector<pair<double, int>> ranked;
-            for (int uid : src_phase->uids) {
+            vector<pair<double,uint64_t>> ranked;
+            for (auto&[uid,rec] : src_phase->uid2rec) {
                 // Пропускаем тех, кто уже отобран
                 if (already_qualified.count(uid)) continue;
 
-                double score = src_phase->uid2score.count(uid) 
-                    ? src_phase->uid2score.at(uid) 
-                    : 1500.0;
-                ranked.emplace_back(-score, uid);
+                double score = rec.score;
+                auto&b=qap_add_back(ranked);
+                b.first=-score;
+                b.second=uid;
             }
             sort(ranked.begin(), ranked.end());
 
@@ -273,16 +279,16 @@ void next_phase(t_season& season, const string& phase_id) {
             int added = 0;
             for (auto& [neg_score, uid] : ranked) {
                 if (added >= rule.top_n) break;
-                target->uids.insert(uid);
+                auto&b=target->uid2rec[uid];b={};
                 already_qualified.insert(uid);
-                target->uid2source_phase[uid] = rule.from_phase_id;
+                b.source_phase = rule.from_phase;
                 added++;
             }
         }
     }
 
     cout << "Activated phase: " << phase_id 
-         << " with " << target->uids.size() << " participants\n";
+         << " with " << target->uid2rec.size() << " participants\n";
 }
 
 using Strategy = std::array<uint8_t, 8>; // 8 states, 1 byte each
@@ -1087,7 +1093,7 @@ std::vector<double> simulate_arena_v11(const std::vector<Strategy>& strategies, 
         // Устанавливаем стратегии, помечаем ручных
         for (int i = 0; i < PLAYERS_PER_BATTLE; ++i) {
             uint64_t v = *reinterpret_cast<const uint64_t*>(&strategies[indices[i]]);
-            if (v == 0||v==1||v==2||v==3||v==4||v==5||(v>=31456&&v<=31456+16)||(v>=32456&&v<=32456+16)) {
+            if (v == 0||v==1||v==2||v==3||v==4||v==5||(v>=31456&&v<=31456+16)||(v>=32456&&v<=32456+32)) {
                 w.agents[i].is_manual = true;
             } else {
                 w.set_strategy(i, strategies[indices[i]]);
@@ -1483,6 +1489,7 @@ std::vector<double> simulate_arena_v11(const std::vector<Strategy>& strategies, 
                   F(17,evaluate_world_v1_by_gemini_v2);
                   F(18,evaluate_world_v1_by_alice_v2);
                   F(19,evaluate_world_v1_by_perplexity_v2);
+                  F(20,evaluate_world_v1_by_gpt5_th);
                   #undef F
                 }
             }
@@ -1564,20 +1571,20 @@ std::vector<double> simulate_arena_v10(const std::vector<Strategy>& strategies, 
 }
 
 bool add_finished_game(const t_main_test& mt, t_season& season, bool* plastwin = nullptr, bool debug = false, bool need_shuffle = true) {
-    t_phase* active = season.phases[season.current_phase_idx].get();
-    if (active->uids.empty()) return false;
-    if ((int)active->uids.size() < active->num_players) return false;
+    t_phase* active =&season.phases[season.cur_phase];
+    if (active->uid2rec.empty()) return false;
+    if (active->uid2rec.size() < active->num_players) return false;
 
     // === Шаг 1: построим список (games_played, uid) и отсортируем по возрастанию ===
-    vector<tuple<int,int,int>> uid_by_games; // (games, uid)
-    for (int uid : active->uids) {
-        int games = active->uid2games[uid]; // если нет — создастся как 0 (OK)
+    vector<tuple<int,int,uint64_t>> uid_by_games; // (games, uid)
+    for (auto&[uid,rec] : active->uid2rec) {
+        int games = rec.games;
         uid_by_games.emplace_back(games,rand(),uid);
     }
     sort(uid_by_games.begin(), uid_by_games.end());
 
     // === Шаг 2: возьмём первых num_players с наименьшим числом игр ===
-    vector<int> players;
+    vector<uint64_t> players;
     players.reserve(active->num_players);
     for (int i = 0; i < active->num_players; ++i) {
         players.push_back(std::get<2>(uid_by_games[i]));
@@ -1588,7 +1595,7 @@ bool add_finished_game(const t_main_test& mt, t_season& season, bool* plastwin =
         shuffle(players.begin(), players.end(), default_random_engine(rand()));
     }
     // === Шаг 3: симуляция ===
-    string&pid = active->phase_id;
+    string&pid = active->phase_name;
     int R = (pid == "R1") ? 1 : (pid == "R2" ? 2 : (pid == "F" ? 3 : 0));
 
     int last=mt.garr.size()-1;int last_pid=-1;
@@ -1629,15 +1636,15 @@ bool add_finished_game(const t_main_test& mt, t_season& season, bool* plastwin =
     game.fg = fg;
     game.status = "finished";
     game.finished_at = qap_time();
-    active->games.push_back(game);
+    //active->games.push_back(game);
 
     // === Шаг 5: обновляем счётчики и рейтинг ===
     for (size_t i = 0; i < players.size(); ++i) {
         int uid = players[i];
-        active->uid2games[uid]++; // ← ключевое: считаем игры
+        active->uid2rec[uid].games++; // ← ключевое: считаем игры
 
-        double old_score = active->uid2score.count(uid) ? active->uid2score[uid] : 1500.0;
-        active->uid2score[uid] = old_score + fg.slot2score[i];
+        double old_score = active->uid2rec[uid].score;
+        active->uid2rec[uid].score = old_score + fg.slot2score[i];
     }
 
     return true;
@@ -1647,11 +1654,11 @@ void print_top(const t_main_test&mt,const t_season& season, const string& phase_
   auto*p = find_phase(season, phase_id);
   if (!p) { cout << "Phase " << phase_id << " not found\n"; return; }
   cout << "Phase " << phase_id << " has " << p->games.size() << " games\n";
-  auto&pid=p->phase_id;
+  auto&pid=p->phase_name;
   int R=pid=="R1"?1:("R2"==pid?2:("F"==pid?3:0));
-  vector<pair<double, int>> ranked;
-  for (int uid : p->uids) {
-    double score = p->uid2score.count(uid) ? p->uid2score.at(uid) : 1500.0;
+  vector<pair<double,uint64_t>> ranked;
+  for (auto&[uid,rec] : p->uid2rec) {
+    double score = rec.score;
     ranked.emplace_back(-score, uid);
   }
   sort(ranked.begin(), ranked.end());
@@ -1671,9 +1678,9 @@ void print_top(const t_main_test&mt,const t_season& season, const string& phase_
     auto s=ranked[i].second;
     auto&sc=season.uid2scoder.at(s);
     auto&uid=ranked[i].second;
-    auto git=p->uid2games.find(uid);
-    auto g=git==p->uid2games.end()?0:git->second;
-    cout << (i+1) << ". UID=" << uid
+    auto git=p->uid2rec.find(uid);
+    auto g=git==p->uid2rec.end()?0:git->second.games;
+    cout << (i+1) << ". UID=" << uid << " "<< (sc.meta_name.empty()?"new":sc.meta_name) << " "
          << " score=" << -ranked[i].first << " "<< g<< " "<< tostr(season.uid2scoder.at(uid).sarr.back().cdn_bin_url) <<"\n";
   }
   detailed=std::min(detailed,(int)ranked.size());
@@ -1682,9 +1689,9 @@ void print_top(const t_main_test&mt,const t_season& season, const string& phase_
     auto s=ranked[i].second;
     auto&sc=season.uid2scoder.at(s);
     auto&uid=ranked[i].second;
-    auto git=p->uid2games.find(uid);
-    auto g=git==p->uid2games.end()?0:git->second;
-    cout << (i+1) << ". UID=" << uid
+    auto git=p->uid2rec.find(uid);
+    auto g=git==p->uid2rec.end()?0:git->second.games;
+    cout << (i+1) << ". UID=" << uid << " "<< (sc.meta_name.empty()?"new":sc.meta_name) << " "
          << " score=" << -ranked[i].first << " "<< g<< " "<< tostr(season.uid2scoder.at(uid).sarr.back().cdn_bin_url) <<"\n";
   
     pri(season.uid2scoder.at(ranked[i].second).sarr.back().cdn_bin_url);
@@ -1704,10 +1711,10 @@ void record_meta_ranks(t_season& season, const string& phase_id) {
   if (!p) return;
 
   // Собираем рейтинги
-  vector<pair<double, int>> ranked;
-  for (int uid : p->uids) {
-      double score = p->uid2score.count(uid) ? p->uid2score.at(uid) : 1500.0;
-      ranked.emplace_back(-score, uid);
+  vector<pair<double, uint64_t>> ranked;
+  for (auto&[uid,rec] : p->uid2rec) {
+    double score = rec.score;
+    ranked.emplace_back(-score, uid);
   }
   sort(ranked.begin(), ranked.end());
 
@@ -1716,54 +1723,46 @@ void record_meta_ranks(t_season& season, const string& phase_id) {
       int uid = ranked[i].second;
       auto it = season.uid2scoder.find(uid);
       if (it != season.uid2scoder.end() && it->second.is_meta) {
-          it->second.phase2rank[phase_id] = (int)i + 1; // места с 1
+          it->second.phase2rank[p->phase] = i + 1; // места с 1
       }
   }
 
   // Также запишем ранг для тех, кто НЕ в фазе (вылетел) → ранг = -1
   for (auto& [uid, coder] : season.uid2scoder) {
-      if (coder.is_meta && coder.phase2rank.count(phase_id) == 0) {
-          coder.phase2rank[phase_id] = -1; // вылетел
+      if (coder.is_meta && coder.phase2rank.count(p->phase) == 0) {
+          coder.phase2rank[p->phase] = p->uid2rec.size()+1; // вылетел
       }
   }
 }
 void print_meta_top16(const t_main_test& mt, const t_season& season, const string& current_phase) {
+#if(1)
     const t_phase* p = find_phase(season, current_phase);
     if (!p /*|| p->type != "round"*/) return;
 
     // Собираем текущие ранги
-    vector<pair<double, int>> ranked;
-    for (int uid : p->uids) {
-        double score = p->uid2score.count(uid) ? p->uid2score.at(uid) : 1500.0;
-        ranked.emplace_back(-score, uid);
+    vector<pair<double, uint64_t>> ranked;
+    for (auto&[uid,rec] : p->uid2rec) {
+      double score = rec.score;
+      ranked.emplace_back(-score, uid);
     }
     sort(ranked.begin(), ranked.end());
 
-    unordered_map<int, int> uid_to_current_rank;
+    unordered_map<uint64_t, uint64_t> uid_to_current_rank;
     for (size_t i = 0; i < ranked.size(); ++i) {
-        uid_to_current_rank[ranked[i].second] = (int)i + 1;
+        uid_to_current_rank[ranked[i].second] = (uint64_t)i + 1;
     }
 
     // Собираем meta-стратегии
-    vector<tuple<int, int, string, string, int>> meta_list;
-    // (curr_rank, uid, name, source_phase, source_rank)
+    vector<tuple<uint64_t, uint64_t, string>> meta_list;
+    // (curr_rank, uid, name)
 
     for (auto& [uid, coder] : season.uid2scoder) {
         if (!coder.is_meta) continue;if (coder.hide) continue;
-        if (p->uids.count(uid) == 0) continue;
+        if (p->uid2rec.count(uid) == 0) continue;
 
-        int curr_rank = uid_to_current_rank[uid];
-        string source_phase = p->uid2source_phase.count(uid) 
-            ? p->uid2source_phase.at(uid) 
-            : "unknown";
+        uint64_t curr_rank = uid_to_current_rank[uid];
 
-        // Получим ранг в фазе-источнике
-        int source_rank = -1;
-        if (coder.phase2rank.count(source_phase)) {
-            source_rank = coder.phase2rank.at(source_phase);
-        }
-
-        meta_list.emplace_back(curr_rank, uid, coder.meta_name, source_phase, source_rank);
+        meta_list.emplace_back(curr_rank, uid, coder.meta_name);
     }
 
     sort(meta_list.begin(), meta_list.end());
@@ -1771,29 +1770,30 @@ void print_meta_top16(const t_main_test& mt, const t_season& season, const strin
       return (uint64_t&)src[0];
     };
     cout << "\n=== META STRATEGIES TOP (current: " << current_phase << ") ===\n";
-    int n = meta_list.size();
-    for (int i = 0; i < n; ++i) {
-        auto [curr, uid, name, src_phase, src_rank] = meta_list[i];
+    uint64_t n = meta_list.size();
+    for (uint64_t i = 0; i < n; ++i) {
+        auto [curr, uid, name] = meta_list[i];
         auto&sc=season.uid2scoder.at(uid);
         string way;//="F"+to_string(i+1)+":";
         vector<string> f;
         for(auto&r:sc.phase2rank){
-          f.push_back(r.first+"#"+to_string(r.second));
+          f.push_back(season.phases[r.first].phase_name+"#"+to_string(r.second));
         }
         reverse(f.begin(),f.end());
         way+=join(f,"/");
-        auto score=p->uid2score.count(uid)?p->uid2score.at(uid):1500;
-        cout << (i+1) << ". " << name <<" "<<way<<" UID="<<uid<<" "<<(p->uid2games.count(uid)?p->uid2games.at(uid):0)<<" "<<score<<" "<<get(sc.sarr[0].cdn_bin_url)<<"\n";
-        continue;
+        auto score=p->uid2rec.count(uid)?p->uid2rec.at(uid).score:1500;
+        cout << (i+1) << ". " << name <<" "<<way<<" UID="<<uid<<" "<<(p->uid2rec.count(uid)?p->uid2rec.at(uid).games:0)<<" "<<score<<" "<<get(sc.sarr[0].cdn_bin_url)<<"\n";
+        continue;/*
         cout << (i+1) << ". " << name 
              << " | curr: #" << curr 
              << " | from " << src_phase << ": " 
              << (src_rank == -1 ? "out" : "#" + to_string(src_rank))
-             << " (UID=" << uid << ")\n";
+             << " (UID=" << uid << ")\n";*/
     }
+#endif
 }
 void print_meta_summary(const t_season& season) {
-    cout << "\n=== META STRATEGY FULL HISTORY ===\n";
+    /*cout << "\n=== META STRATEGY FULL HISTORY ===\n";
     for (auto& [uid, coder] : season.uid2scoder) {
         if (!coder.is_meta) continue;
         cout << coder.meta_name << " (UID=" << uid << "):\n";
@@ -1804,17 +1804,17 @@ void print_meta_summary(const t_season& season) {
             }
         }
         cout << "---\n";
-    }
+    }*/
 }
 void record_all_ranks(t_season& season, const string& phase_id) {
     const t_phase* p = find_phase(season, phase_id);
     if (!p) return;
 
     // 1. Собираем ранги для участников текущей фазы
-    vector<pair<double, int>> ranked;
-    for (int uid : p->uids) {
-        double score = p->uid2score.count(uid) ? p->uid2score.at(uid) : 1500.0;
-        ranked.emplace_back(-score, uid);
+    vector<pair<double, uint64_t>> ranked;
+    for (auto&[uid,rec] : p->uid2rec) {
+      double score = rec.score;
+      ranked.emplace_back(-score, uid);
     }
     sort(ranked.begin(), ranked.end());
 
@@ -1826,16 +1826,16 @@ void record_all_ranks(t_season& season, const string& phase_id) {
     // 2. Обновляем ВСЕХ участников сезона
     for (auto& [uid, coder] : season.uid2scoder) {
         if (uid_to_rank.count(uid)) {
-            coder.phase2rank[phase_id] = uid_to_rank[uid];
+            coder.phase2rank[p->phase] = uid_to_rank[uid];
         } else {
             // Не в фазе → либо не прошёл отбор, либо не участвовал
-            coder.phase2rank[phase_id] = -1;
+            coder.phase2rank[p->phase] = p->uid2rec.size()+1;
         }
     }
 }
 void print_top_with_context(const t_main_test& mt, const t_season& season, const string& phase_id, int n = 16) {
-    const t_phase* p = find_phase(season, phase_id);
-    vector<pair<double, int>> ranked;
+    /*const t_phase* p = find_phase(season, phase_id);
+    vector<pair<double, uint64_t>> ranked;
     for (int uid : p->uids) {
         double score = p->uid2score.count(uid) ? p->uid2score.at(uid) : 1500.0;
         ranked.emplace_back(-score, uid);
@@ -1861,7 +1861,7 @@ void print_top_with_context(const t_main_test& mt, const t_season& season, const
              << " | from " << source
              << " | prev_rank: " << (coder.phase2rank.count(source) ? to_string(coder.phase2rank.at(source)) : "?")
              << " " << tag << "\n";
-    }
+    }*/
 }
 uint64_t generate_strategy(std::mt19937& rng,int ATTEMPTS=100) {
     return rnd();
@@ -1966,6 +1966,9 @@ vector<pair<uint64_t,string>> make_meta_pack(){
   F(32456+17,"evaluate_world_v1_by_gimini_v2");
   F(32456+18,"evaluate_world_v1_by_alice_v2");
   F(32456+19,"evaluate_world_v1_by_perplexity_v2");
+  //out.clear();
+  F(32456+20,"evaluate_world_v1_by_gpt5_th");
+  //return out;
   /*
   
 1. evaluate_world_v1_by_chatgpt SF#2/S2#2/S1#2/R2#4/R1#3/F#1 UID=4 880 121306 32461
@@ -4716,12 +4719,12 @@ int main_test_gen(){
       ((uint64_t*)&coder.sarr[0].cdn_bin_url[0])[i] = v;
     coder.is_meta = true;
     coder.meta_name = name;
-    t_tracked_info t;
+    /*t_tracked_info t;
     t.label = name;
     t.source_phase = phase;
     t.source_rank = 0;
     t.phase2rank = {};
-    coder.tracked=t;
+    coder.tracked=t;*/
     if(psrc)coder.sarr[0].cdn_bin_url=*psrc;
     return &coder;
   };
@@ -4782,28 +4785,6 @@ int main_test_gen(){
     //print_top_with_context(mt,s,phase,16);
   };
   auto SG=[&](const string&phase,double koef=1.0){
-    if(phase=="S1-"){
-      for(int i=0;i<59;i++){
-        add_some_by_random(mt.garr,s);
-      }
-      for(int i=0;i<1000;i++){
-        bool lastwin=false;
-        add_some_by_random(mt.garr,s);
-        if(add_finished_game(mt,s,&lastwin)){if(!lastwin){
-          mt.garr.pop_back();
-          s.phases[0]->uids.erase(mt.garr.size());
-          if(i%100==0)cout<<i<<" - dropped\n";
-        }else{
-          cout<<i<<" - new\n";
-          auto src=((uint64_t*)&s.uid2scoder[mt.garr.size()-1].sarr.back().cdn_bin_url[0])[0];
-          mt.garr.pop_back();
-          s.phases[0]->uids.erase(mt.garr.size());
-          q(src,"lastwin"+IToS(i),0,"lastwin");
-        }}
-      }
-      s.phases[0]->uid2score={};
-      s.phases[0]->uid2games={};
-    }
     for(int i=0;i<mt_games_per_phase*koef;i++){
       //if(rand()%500==0)add_some_by_random(mt.garr,s);
       if(add_finished_game(mt,s,0,false,false)){}
@@ -4827,7 +4808,7 @@ int main_test_gen(){
     //print_strategy(e);
     f(e);
   }
-  mt_games_per_phase=((mt.garr.size()*1.0/16)+1)*3;//*110;//*5*15;
+  mt_games_per_phase=((mt.garr.size()*1.0/16)+1)*3*5;//*110;//*5*15;
   auto N=min<double>(mt.garr.size(),900);
   cur="S1";SP(2.0);
   cur="R1";RP(2*900.0/N);
@@ -4838,9 +4819,9 @@ int main_test_gen(){
   print_top(mt,s,"F",60);
   {
     auto*p=find_phase(s,cur);
-    vector<pair<double, int>> ranked;
-    for (int uid : p->uids) {
-      double score = p->uid2score.count(uid) ? p->uid2score.at(uid) : 1500.0;
+    vector<pair<double, uint64_t>> ranked;
+    for (auto&[uid,rec] : p->uid2rec) {
+      double score = rec.score;
       ranked.emplace_back(-score, uid);
     }
     sort(ranked.begin(), ranked.end());
@@ -4848,18 +4829,21 @@ int main_test_gen(){
     for(int i=0;i<N;i++){
       auto uid=ranked[i].second;
       auto&sc=s.uid2scoder[uid];
-      if(sc.tracked&&sc.tracked->source_phase=="init")continue;
-      string way="F"+to_string(i+1)+":";
-      vector<string> f;
-      for(auto&r:sc.phase2rank){
-        f.push_back(r.first+"#"+to_string(r.second));
-      }
-      reverse(f.begin(),f.end());
-      way+=join(f,"/");
-      genpack.push_back({way,s.uid2scoder[uid].sarr.back().cdn_bin_url});
+      //if(sc.meta_name.empty()||)
+      //if(sc.tracked&&sc.tracked->source_phase=="init")continue;
+      //string way="F"+to_string(i+1)+":";
+      //vector<string> f;
+      //for(auto&r:sc.phase2rank){
+      //  f.push_back(r.first+"#"+to_string(r.second));
+      //}
+      //reverse(f.begin(),f.end());
+      //way+=join(f,"/");
+      //genpack.push_back({way,s.uid2scoder[uid].sarr.back().cdn_bin_url});
     }
     print_meta_top16(mt,s,cur);
   }
+  cout<<"end of test."<<endl;
+  exit(0);
   /*
   next_phase(s,"S");
   for(int i=0;i<mt_games_per_phase;i++){

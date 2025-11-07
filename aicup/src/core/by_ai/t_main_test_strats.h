@@ -3389,3 +3389,86 @@ double evaluate_world_v1_by_perplexity_v2(const t_pubg_world& world_before, cons
 
     return score;
 }
+double evaluate_world_v1_by_gpt5_th(const t_pubg_world& world_before, const t_pubg_world& world_after, int my_id) {
+    const auto& me0 = world_before.agents[my_id];
+    const auto& me1 = world_after.agents[my_id];
+
+    // Мгновенная смерть — большой штраф
+    if (!me1.alive) return -1e9;
+
+    // База: прирост по финальной метрике за два шага
+    auto my_ddmg   = me1.damage_dealt - me0.damage_dealt;
+    auto my_dfrag  = me1.frags        - me0.frags;
+    auto my_dsurv  = me1.ticks_survived - me0.ticks_survived;
+    double my_gain = my_dsurv + 0.314 * my_ddmg + 50.0 * my_dfrag;
+
+    // Средний прирост соперников (чтобы максимально обгонять среднее, как в финальном минус-среднем)
+    double others_sum = 0.0;
+    int n = (int)world_after.agents.size();
+    for (int i = 0; i < n; ++i) if (i != my_id) {
+        const auto& b = world_before.agents[i];
+        const auto& a = world_after.agents[i];
+        others_sum += (a.ticks_survived - b.ticks_survived)
+                    + 0.314 * (a.damage_dealt - b.damage_dealt)
+                    + 50.0  * (a.frags - b.frags);
+    }
+    double score = my_gain - (others_sum / (double)n);
+
+    // Доп. shaping: ценим живучесть и экономию энергии
+    score += 0.20 * me1.hp;      // до +20
+    score += 0.03 * me1.energy;  // до +3
+
+    // Штраф за выход за круг (пропорционально превышению радиуса)
+    long long d2 = 1LL*me1.x*me1.x + 1LL*me1.y*me1.y;
+    long long R2 = 1LL*world_after.R*world_after.R;
+    if (d2 > R2) score -= 0.00005 * (double)(d2 - R2);
+
+    // Сдвиг к центру: небольшой бонус за приближение к центру
+    {
+        const auto& p0 = me0;
+        double r0 = sqrt(1.0 * p0.x * p0.x + 1.0 * p0.y * p0.y);
+        double r1 = sqrt(1.0 * me1.x * me1.x + 1.0 * me1.y * me1.y);
+        score += 0.02 * (r0 - r1);
+    }
+
+    // Тактическая позиция относительно врагов
+    double closest = 1e9;
+    int close_cnt = 0;
+    int closest_id = -1;
+    for (int j = 0; j < n; ++j) {
+        if (j == my_id || !world_after.agents[j].alive) continue;
+        int dx = me1.x - world_after.agents[j].x;
+        int dy = me1.y - world_after.agents[j].y;
+        int dsq = dx*dx + dy*dy;
+        double d = sqrt((double)dsq);
+        if (d < closest) { closest = d; closest_id = j; }
+        if (dsq <= 150*150) ++close_cnt;
+    }
+
+    // Бонус за выгодную дистанцию для атаки на следующем тике (если есть энергия)
+    if (me1.energy >= 2 && closest < 1e8) {
+        double clamp_d = closest < 120.0 ? closest : 120.0;
+        score += (120.0 - clamp_d) / 120.0 * 8.0; // до +8
+    }
+    // Риск толпы — штраф, сильнее при низком HP
+    if (close_cnt > 1) {
+        double risk = (me1.hp < 60 ? 8.0 : 3.0) * (close_cnt - 1);
+        score -= risk;
+    }
+    // Антирывок вплотную при малых HP/энергии
+    if (closest < 80.0 && me1.hp < 35 && me1.energy < 2) score -= 25.0;
+
+    // Возможность мгновенного добивания на следующем тике
+    for (int j = 0; j < n; ++j) {
+        if (j == my_id || !world_after.agents[j].alive) continue;
+        int dx = me1.x - world_after.agents[j].x;
+        int dy = me1.y - world_after.agents[j].y;
+        double d = sqrt(1.0*dx*dx + 1.0*dy*dy);
+        if (d <= 100.0) {
+            if (me1.energy >= 3 && world_after.agents[j].hp <= 50) score += 60.0; // фьюри-килл
+            if (me1.energy >= 2 && world_after.agents[j].hp <= 10) score += 30.0; // обычный добор
+        }
+    }
+
+    return score;
+}

@@ -537,14 +537,16 @@ typedef map<uint64_t,uint64_t> t_uid2games;
 typedef map<uint64_t,string> t_uid2source_phase;
 struct t_phase {
   struct t_qr_decl {
-    #define DEF_PRO_COPYABLE()
+    /*#define DEF_PRO_COPYABLE()
     #define DEF_PRO_CLASSNAME()t_qr_decl
     #define DEF_PRO_VARIABLE(ADD)\
     ADD(string,from_phase,{})\
     ADD(uint64_t,top_n,50)\
     //===
     #include "defprovar.inl"
-    //===
+    //===*/
+    string from;
+    uint64_t top_n;
   };
   struct t_qualification_rule {
     #define DEF_PRO_COPYABLE()
@@ -1914,6 +1916,8 @@ struct t_main : t_http_base {
     F("ainews.html");
     F("admin.html");
     F("strategies.html");
+    F("thirdparty/sweetalert2@11.js");
+    #undef F
     srv.set_logger([](const httplib::Request& req, const httplib::Response& res) {
         std::cout <<"["<<qap_time()<<"]t_site: "<< "Request: " << req.method << " " << req.path;
         if (!req.remote_addr.empty()) {

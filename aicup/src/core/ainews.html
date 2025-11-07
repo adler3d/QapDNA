@@ -232,6 +232,56 @@
             display: block;
         }
     </style>
+    <script src="thirdparty/sweetalert2@11.js"></script>
+    <script>
+        // При нажатии кнопки вызывает popup выбора
+        function showDonatePopup() {
+            Swal.fire({
+                title: 'Выберите направление доната',
+                input: 'select',
+                inputOptions: {
+                    'author': 'Автор сайта',
+                    'sandbox': 'Увеличение частоты игр в песочницах',
+                    'rounds': 'Увеличение числа игр в раундах/финале',
+                    'custom_games': 'Создание не рейтинговых игр',
+                    'account': 'Свои ресурсы (пока без использования)'
+                },
+                inputPlaceholder: 'Выберите вариант',
+                inputValue: 'sandbox',
+                showCancelButton: true,
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const target = result.value;
+                    Swal.fire({
+                        title: 'Введите сумму доната',
+                        input: 'number', 
+                        inputValue: 256,
+                        inputAttributes: {
+                            min: 1,
+                            step: 1
+                        },
+                        showCancelButton: true,
+                    }).then((amountResult) => {
+                        if (amountResult.isConfirmed) {
+                            const amount = amountResult.value;
+                            // Отправляем на сервер {target, amount}
+                            fetch('/donate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ target, amount })
+                            }).then(response => {
+                                if (response.ok) {
+                                    Swal.fire('Спасибо!', 'Ваш донат принят.', 'success');
+                                } else {
+                                    Swal.fire('Ошибка', 'Не удалось принять донат.', 'error');
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+        }
+    </script>
 </head>
 <body>
     <!-- Режим ленты новостей -->
