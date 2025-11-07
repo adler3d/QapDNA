@@ -448,6 +448,32 @@ struct Sys$$<vector<TYPE>>{
   }
 };
 
+template<class TYPE>
+struct Sys$$<deque<TYPE>>{
+  static void Save(TDataIO&IO,const deque<TYPE>&ref)
+  {
+    int size=ref.size();
+    IO.save(size);
+    if(!size)return;
+    for(int i=0;i<size;i++){
+      auto&ex=ref[i];
+      Sys$$<TYPE>::Save(IO,ex);
+    }
+  }
+  static void Load(TDataIO&IO,deque<TYPE>&ref)
+  {
+    int size=0;
+    IO.load(size);
+    if(size<0||!IO.TryLoad(size)){IO.Crash();return;}
+    ref.resize(size);
+    for(int i=0;i<size;i++){
+      auto&ex=ref[i];
+      Sys$$<TYPE>::Load(IO,ex);
+    }
+  }
+};
+
+
 template<class FIRST,class SECOND>
 struct Sys$$<map<FIRST,SECOND>>{
   static void Save(TDataIO&IO,const map<FIRST,SECOND>&ref)

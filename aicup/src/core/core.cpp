@@ -16,6 +16,7 @@ void LOG(const std::string&str);
 #include <random>
 #include <array>
 #include <stack>
+#include <queue>
 using namespace std;
 
 #include "../../QapLR/QapLR/qap_assert.inl"
@@ -33,7 +34,6 @@ using namespace std;
 #include <string>
 #include <chrono>
 #include <future>
-#include <queue>
 #include <condition_variable>
 #include <thread>
 #include <atomic>
@@ -277,7 +277,7 @@ struct Scheduler {
     }
     return nullptr;
   };
-  void add_game_decl(const t_game_decl&gd){
+  void add_game_decl(const t_game_decl&gd,double ms){
     lock_guard<mutex> lock(mtx);
     c2rarr[gd.arr.size()].push(gd);
   }
@@ -458,6 +458,18 @@ struct t_ban{
   //===
 };
 struct t_coder_rec{
+  struct t_average{
+    #define DEF_PRO_COPYABLE()
+    #define DEF_PRO_CLASSNAME()t_average
+    #define DEF_PRO_VARIABLE(ADD)\
+    ADD(double,sum,0)\
+    ADD(uint64_t,n,0)\
+    //===
+    #include "defprovar.inl"
+    //===
+    double avg()const{return n?sum/n:0;}
+    void add(double v){sum+=v;n++;}
+  };
   struct t_source{
     #define DEF_PRO_COPYABLE()
     #define DEF_PRO_CLASSNAME()t_source
@@ -468,6 +480,7 @@ struct t_coder_rec{
     ADD(string,prod_time,{})\
     ADD(string,status,{})\
     ADD(uint64_t,size,0)\
+    ADD(t_average,ms,{})\
     //===
     #include "defprovar.inl"
     //===
@@ -593,6 +606,8 @@ struct t_phase {
   ADD(bool,is_closed,false)\
   ADD(bool,is_completed,false)\
   ADD(vector<vector<uint64_t>>,wave2gid,{})\
+  ADD(vector<uint64_t>,wave2games_finished,{})\
+  ADD(uint64_t,new_completed_waves,3)\
   ADD(string,last_wave_time,"2025.10.31,19:08:07.120")\
   ADD(uint64_t,sandbox_wave_interval_ms,5*60*1000)\
   ADD(double,games_per_coder_per_hour,1.0)\
@@ -654,10 +669,10 @@ struct t_main : t_http_base {
   ADD(vector<t_game>,garr,{})\
   ADD(vector<t_comment>,comments,{})\
   ADD(vector<t_season>,seasons,{})\
+  ADD(WaveManager,waveman,{})\
   //===
   #include "defprovar.inl"
   //===
-  WaveManager waveman;
   mutex mtx;
   //map<string, string> node2ipport;
   //t_net_api capi;
@@ -683,6 +698,16 @@ struct t_main : t_http_base {
               auto&p=s.phases[g.gd.phase];
               p.finished_games++;
               p.on_prev_wave_end=p.prev_wave_done();
+              if(qap_check_id(p.wave2games_finished,g.gd.wave)){
+                auto&gf=p.wave2games_finished[g.gd.wave];
+                gf++;
+                if(gf==p.wave2gid.size())p.new_completed_waves++;
+              }
+            }
+            for(uint64_t i=0;i<g.gd.arr.size();i++){
+              auto&ex=g.gd.arr[i];
+              auto v=ex.v;
+              s.uid2scoder[ex.uid].sarr[v].ms.add(g.fg.slot2ms[i]);
             }
           }
           sch.on_game_finished(node(client_id),g.gd.arr.size());
@@ -1645,8 +1670,11 @@ struct t_main : t_http_base {
           game.author = "manual:" + carr[uid].sysname;
           garr.push_back(std::move(game));
         }
-
-        sch.add_game_decl(gd);
+        double ms=0;
+        for(auto&ex:gd.arr){
+          ms+=season->uid2scoder[ex.uid].sarr[ex.v].ms.avg();
+        }
+        sch.add_game_decl(gd,ms);
 
         json resp = {
           {"game_id", gd.game_id},
@@ -2207,6 +2235,7 @@ struct t_main : t_http_base {
       RATE_LIMITER(15);
       auto [uid, ok] = auth_by_bearer(req);
       if (!ok||uid) { res.status = 404; return; }
+      waveman.saveAtMS=waveman.roundClock.MS();
       auto s=QapSaveToStr(*this);
       file_put_contents("save.qap",s);
       res.set_content("["+qap_time()+"]: size="+to_string(s.size()/1024.0/1024.0)+"MB", "text/plain");
@@ -2642,56 +2671,67 @@ public:
 
     auto now = qap_time();
 
-    bool should_launch_wave = false;
-    string wave_start_time=qap_time();
-
+    if(!phase.new_completed_waves)return;
     if (phase.type == "round") {
-      //if (phase.current_wave >= phase.total_waves) return; // всё сделано
-      should_launch_wave = phase.prev_wave_done()&&phase.on_prev_wave_end;
+      if (!waveman.canStartNewWave()) {
+        LOG("Not enough time to start a new wave.");
+        return;
+      }
     } else if (phase.type == "sandbox") {
-      if (qap_time_diff(phase.last_wave_time,now)>=phase.sandbox_wave_interval_ms) {
-        should_launch_wave = phase.prev_wave_done()&&phase.on_prev_wave_end;
+      if(!(phase.prev_wave_done()&&phase.on_prev_wave_end))return;
+      if (qap_time_diff(phase.last_wave_time, now) < phase.sandbox_wave_interval_ms) {
+        return;
       }
     }
-
-    if(!should_launch_wave)return;
-    waveman.roundDurationMS=qap_time_diff(phase.scheduled_start_time,phase.scheduled_end_time);
-    if(!waveman.tryStartNextWave())return;
 
     vector<t_game_decl> wave = generate_wave(phase, season);
     if (wave.empty()) return;
-    
-    phase.on_prev_wave_end=false;
-    if(phase.games.size())waveman.markWaveEnd();
-    waveman.markWaveStart();
-    vector<uint64_t> new_gids;
-    {
-      //lock_guard<mutex> lock(mtx);
-      for (auto& gd : wave) {
-        gd.game_id = garr.size();
-        gd.season=season.season;
-        gd.phase=phase.phase;
-        gd.wave=phase.wave2gid.size();
-        t_game game;
-        game.gd = gd;
-        game.status = "scheduled";
-        game.ordered_at = wave_start_time;
-        game.author = "system";//:season:" + season.season_name + ":" + phase.phase_name + ":wave" + to_string(phase.current_wave);
-        garr.push_back(std::move(game));
-        new_gids.push_back(gd.game_id);
+
+    int newWaveNumber = waveman.startNewWave();
+    if (newWaveNumber < 0) {
+      LOG("WaveManager rejected starting a new wave (resource/time constraints).");
+      return;
+    }
+
+    vector<std::pair<t_game_decl, double>> wave_with_times;
+    for (auto &gd : wave) {
+      double ms = 0;
+      for (auto &ex : gd.arr) {
+        ms += season.uid2scoder[ex.uid].sarr[ex.v].ms.avg();
       }
+      wave_with_times.emplace_back(gd, ms);
+    }
+    std::sort(wave_with_times.begin(), wave_with_times.end(), [](auto &a, auto &b) { return a.second < b.second; });
+
+    vector<uint64_t> new_gids;
+    for (auto &[gd, ms] : wave_with_times) {
+      gd.game_id = garr.size();
+      gd.season = season.season;
+      gd.phase = phase.phase;
+      gd.wave = newWaveNumber;
+
+      t_game game;
+      game.gd = gd;
+      game.status = "scheduled";
+      game.ordered_at = now;
+      game.author = "system";
+
+      garr.push_back(std::move(game));
+      new_gids.push_back(gd.game_id);
+
+      sch.add_game_decl(gd, ms);
     }
 
-    phase.games.insert(phase.games.end(),new_gids.begin(),new_gids.end());
+    phase.games.insert(phase.games.end(), new_gids.begin(), new_gids.end());
+
     phase.wave2gid.push_back(std::move(new_gids));
-    phase.last_wave_time = wave_start_time;
-    //phase.current_wave++;
-    LOG("Launched wave for " + phase.phase_name +
-      " (" + phase.type + ") with " + to_string(wave.size()) + " games");
+    phase.wave2games_finished.push_back(0);
+    phase.new_completed_waves--;
+    phase.last_wave_time = now;
 
-    for (auto& gd : wave) {
-      sch.add_game_decl(gd);
-    }
+    LOG("Launched new wave #" + to_string(newWaveNumber) +
+      " for phase " + phase.phase_name +
+      " with " + to_string(wave.size()) + " games.");
   }
   default_random_engine dre{time(0)};
   vector<t_game_decl> generate_wave(t_phase& phase, t_season& season) {
@@ -3384,6 +3424,7 @@ static void sim_sleep(uint64_t ms) {
               auto&p=m.seasons[ex.gd.season].phases[ex.gd.phase];
               p.finished_games++;
               p.on_prev_wave_end=p.prev_wave_done();
+              //TODO: add wave2games_finished logic here
             }
           }
         }
@@ -3542,6 +3583,7 @@ bool ensure_runner_image() {
 void setup_main(t_main&m){
   auto mem=file_get_contents("save.qap");
   bool ok=QapLoadFromStr(m,mem);
+  m.waveman.restoreAfterLoad();
   if(!ok){
     m={};
     t_season s;
