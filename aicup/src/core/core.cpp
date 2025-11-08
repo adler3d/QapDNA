@@ -1672,7 +1672,7 @@ struct t_main : t_http_base {
         }
         double ms=0;
         for(auto&ex:gd.arr){
-          ms+=season->uid2scoder[ex.uid].sarr[ex.v].ms.avg();
+          ms+=season->uid2scoder[ex.uid].sarr[ex.v].ms.avg(phase->msPerTick*phase->ticksPerGame);
         }
         sch.add_game_decl(gd,ms);
 
