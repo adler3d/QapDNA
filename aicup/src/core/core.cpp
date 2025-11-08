@@ -467,7 +467,7 @@ struct t_coder_rec{
     //===
     #include "defprovar.inl"
     //===
-    double avg()const{return n?sum/n:0;}
+    double avg(double def)const{return n?sum/n:def;}
     void add(double v){sum+=v;n++;}
   };
   struct t_source{
@@ -2697,7 +2697,7 @@ public:
     for (auto &gd : wave) {
       double ms = 0;
       for (auto &ex : gd.arr) {
-        ms += season.uid2scoder[ex.uid].sarr[ex.v].ms.avg();
+        ms += season.uid2scoder[ex.uid].sarr[ex.v].ms.avg(phase.msPerTick*phase.ticksPerGame);
       }
       wave_with_times.emplace_back(gd, ms);
     }
