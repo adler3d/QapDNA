@@ -994,11 +994,11 @@ struct t_main : t_http_base {
             }
             if (c.last_ip == req.remote_addr)users_on_ip++;
           }
-          if(users_on_ip>2){
+          /*if(users_on_ip>2){
             res.status = 409;
             res.set_content("No way - ban by IP unordered", "text/plain");
             return;
-          }
+          }*/
           t_coder_rec b;
           b.last_ip=req.remote_addr;
           b.id = carr.size();
@@ -1295,7 +1295,7 @@ struct t_main : t_http_base {
         res.status = 500;
         res.set_content(e.what(), "text/plain");
       }
-    });*//*
+    });*/
     auto game2json=[](const t_game&g,json&j){
       j = {
         {"game_id", g.gd.game_id},
@@ -1324,7 +1324,7 @@ struct t_main : t_http_base {
 
         vector<json> recent;
         {
-          lock_guard<mutex> lock(garr_mtx);
+          lock_guard<mutex> lock(mtx);
           int start = max(0, (int)garr.size() - n);
           for (int i = start; i < (int)garr.size(); ++i) {
             const auto& g = garr[i];
@@ -1345,7 +1345,7 @@ struct t_main : t_http_base {
       string coder = LowerStr(req.matches[1]);
       vector<json> games;
       {
-        lock_guard<mutex> lock(garr_mtx);
+        lock_guard<mutex> lock(mtx);
         for (const auto& g : garr) {
           bool found=false;
           for (const auto& p : g.gd.arr) {
@@ -1359,7 +1359,7 @@ struct t_main : t_http_base {
       }
       res.status=200;
       res.set_content(json(games).dump(2), "application/json");
-    });
+    });/*
     srv.Get("/me", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(25);
       try {

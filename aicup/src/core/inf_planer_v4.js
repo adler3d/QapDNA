@@ -1,4 +1,4 @@
-// Hybrid planner — FIXED: sandboxes have fixed duration, storage is cumulative
+// Hybrid planner вЂ” FIXED: sandboxes have fixed duration, storage is cumulative
 // All output in English
 let ticks=7500; let TL=35; let stderrKB=64;
 let config = {
@@ -39,17 +39,19 @@ let config = {
 };
 config.phases1=[];
 config.phases2=[];
-config.phases.map(e=>e.world="t_splinter");
+let time_scale=3.0/24/60;
+config.phases.map(e=>{e.world="t_splinter";e.durationHours*=time_scale;});
 let get_phase=p=>config.phases.filter(e=>e.name===p)[0];
 get_phase("R1").qualifyingFrom=[{"fromPhaseName":"S1","topN":900}];
 get_phase("R2").qualifyingFrom=[{"fromPhaseName":"R1","topN":300},{"fromPhaseName":"S2","topN":60}];
 get_phase("F").qualifyingFrom=[{"fromPhaseName":"R2","topN":50},{"fromPhaseName":"SF","topN":10}];
-
-let config2=buildAbsoluteConfig("2025-11-01T21:00:00.000Z",config.phases);
+let sec_shift=(t,s)=>{t.setSeconds(t.getSeconds()+s);};
+let t0=new Date();sec_shift(t0,+30);
+let config2=buildAbsoluteConfig(t0.toJSON(),config.phases);
 delete config.phases;
 config={...config,...config2};
 function buildAbsoluteConfig(seasonStart, phases) {
-  let currentTime = new Date(seasonStart); // например, "2025-11-03T00:00:00.000Z"
+  let currentTime = new Date(seasonStart); // РЅР°РїСЂРёРјРµСЂ, "2025-11-03T00:00:00.000Z"
   let endTime=currentTime;
   const result = {
     seasonName: "splinter_2025",
@@ -59,7 +61,7 @@ function buildAbsoluteConfig(seasonStart, phases) {
 
   for (const p of phases) {
     const phaseStart = new Date(currentTime);
-    currentTime.setHours(currentTime.getHours() + p.durationHours);
+    sec_shift(currentTime,p.durationHours*3600);
     result.phases.push({
       ...p,
       startTime: formatDate(phaseStart),
@@ -71,7 +73,7 @@ function buildAbsoluteConfig(seasonStart, phases) {
 }
 
 function formatDate(d) {
-  // Формат: "2025.11.03 00:00:00.000"
+  // Р¤РѕСЂРјР°С‚: "2025.11.03 00:00:00.000"
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
