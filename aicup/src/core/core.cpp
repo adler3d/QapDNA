@@ -383,8 +383,8 @@ struct CompileQueue {
     }
     cv.notify_one();
   }
-
-private:
+public:
+  bool debug_with_fake_compiler_resp=false;
   void worker_loop() {
     while (!stopping) {
       CompileJob job;
@@ -397,6 +397,14 @@ private:
       }
       auto s=http_put_with_auth(job.cdn_src_url,job.src,UPLOAD_TOKEN);
       if(s!=200){jobs_upe++;job.on_uploaderror(s);continue;}
+      if(debug_with_fake_compiler_resp){
+        t_post_resp resp;
+        resp.status=200;
+        resp.body="{\"success\":true,\"...with_fake_compiler_resp";
+        jobs_done++;
+        job.on_complete(resp);
+        continue;
+      }
       auto resp=http_post_json_with_auth("compile",job.json,UPLOAD_TOKEN,COMPILER_URL);
       jobs_done++;
       job.on_complete(resp);
