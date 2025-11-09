@@ -44,7 +44,8 @@ struct t_pubg{
     ADD(int,your_id,-1)\
     ADD(vector<Agent>,agents,{})\
     ADD(int,R,1000)\
-    ADD(int,tick,0)\
+    ADD(int64_t,tick,0)\
+    ADD(int64_t,ticks,200)\
     ADD(int,alive_count,0)\
     ADD(bool,is_finished,false)\
     //===
@@ -78,7 +79,7 @@ struct t_pubg{
       }
     }
     void step(bool end=false){
-      if (is_finished || alive_count <= 1 || tick >= 200) {
+      if (is_finished || alive_count <= 1 || tick >= ticks) {
         is_finished = true;
         return;
       }
@@ -318,9 +319,10 @@ struct t_pubg{
       w.your_id=player;
       out=QapSaveToStr(w);
     }
-    void init(uint32_t seed,uint32_t num_players)override{
+    void init(uint32_t seed,uint32_t num_players,int64_t ticks)override{
       gen=mt19937(seed);
       init_world(w,gen,num_players);
+      if(ticks>=0)w.ticks=ticks;
     }
     int init_from_config(const string&cfg,string&outmsg)override{
       outmsg="no impl";

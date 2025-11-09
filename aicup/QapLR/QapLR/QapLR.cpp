@@ -370,6 +370,7 @@ struct ProgramArgs {
   int debug = -1;
   bool remote = false;
   int ports_from = -1;
+  int ticks_limit=-1;
   // Служебное
   bool show_help = false;
   bool show_version = false;
@@ -2856,7 +2857,7 @@ struct i_world{
   virtual void get_score(vector<double>&out)=0;
   virtual void is_alive(vector<int>&out)=0;
   virtual void get_vpow(int player,string&out)=0;
-  virtual void init(uint32_t seed,uint32_t num_players)=0;
+  virtual void init(uint32_t seed,uint32_t num_players,int64_t ticks)=0;
   virtual int init_from_config(const string&cfg,string&outmsg)=0;
   virtual unique_ptr<i_world> clone()=0;
   virtual void renderV0(QapDev&qDev){}
@@ -2938,7 +2939,7 @@ struct GameSession {
     }
     void init(){
       world=TGame_mk_world(g_args.world_name);
-      world->init(g_args.seed_initial,g_args.num_players);
+      world->init(g_args.seed_initial,g_args.num_players,g_args.ticks_limit);
       carr.resize(g_args.num_players,nullptr);
       connected.assign(g_args.num_players,false);
       start_new_tick();
@@ -4713,6 +4714,7 @@ Options:
   -d, --debug 0             Enable debug(repeat) mode for player 0
   -r, --remote              Enable remote mode
   -p, --ports_from 31000    Use ports 31000..31003 if players==4
+  -t, --ticks-limit N       Limit game to N ticks/frames
   -h, --help                Show this help
   -v, --version             Show version
 )";
@@ -4746,6 +4748,7 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
         {"-d", "--debug"},
         {"-r", "--remote"},
         {"-p", "--ports_from"},
+        {"-t", "--ticks-limit"},
         {"-h", "--help"},
         {"-v", "--version"}
     };
@@ -4784,7 +4787,7 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
 
             Token tok{Token::FLAG, arg};
 
-            if(arg=="--replay-in"||arg=="--replay-out"||arg=="--state-file"||arg=="--debug"||arg=="--ports_from"){
+            if(arg=="--replay-in"||arg=="--replay-out"||arg=="--state-file"||arg=="--debug"||arg=="--ports_from"||arg=="--ticks-limit"){
                 if (i + 1 >= argc) {
                     std::cerr << arg << " requires an argument\n";
                     return false;
@@ -4850,6 +4853,15 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
                 args.remote = true;
             } else if (flag == "--ports_from") {
                 args.ports_from = std::stoi(tok.payload[0]);
+            } else if (flag == "--ticks-limit") {
+                try {
+                    int limit = std::stoi(tok.payload[0]);
+                    if (limit <= 0) throw std::exception{};
+                    args.ticks_limit = limit;
+                } catch (...) {
+                    std::cerr << "--ticks-limit must be a positive integer\n";
+                    return false;
+                }
             }
         } else {
             positional_args.push_back(tok.value);
@@ -4857,6 +4869,14 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
     }
 
     // === Обработка режимов ===
+    if (args.mode == ProgramArgs::Mode::ReplayIn) {
+        // В режиме -i не требуем позиционных аргументов
+        if (positional_args.size() != 0) {
+            std::cerr << "Replay-in mode accepts no positional arguments\n";
+            return false;
+        }
+        return true;
+    }
 
     // Для Normal и ReplayOut: должно быть ровно 4 позиционных аргумента
     if (positional_args.size() != 4) {
@@ -4901,15 +4921,6 @@ bool parseArgs(int argc,char*argv[],ProgramArgs&args){
                       << ") does not match num_players (" << args.num_players << ")\n";
             return false;
         }
-    }
-
-    if (args.mode == ProgramArgs::Mode::ReplayIn) {
-        //if (!positional_args.empty()) {
-        //    std::cerr << "Replay-in mode accepts no positional arguments\n";
-        //    return false;
-        //}
-        // player_names можно проверить позже (по данным из реплея)
-        return true;
     }
 
     return true;

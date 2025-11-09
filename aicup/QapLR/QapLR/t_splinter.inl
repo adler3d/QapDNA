@@ -71,7 +71,8 @@ struct t_splinter{
     #define DEF_PRO_CLASSNAME()t_world
     #define DEF_PRO_VARIABLE(ADD)\
     ADD(int,your_id,0)\
-    ADD(int,tick,0)\
+    ADD(int64_t,tick,0)\
+    ADD(int64_t,ticks,20000)\
     ADD(double,ARENA_RADIUS,512.0)\
     ADD(vector<t_ball>,balls,{})\
     ADD(vector<t_spring>,springs,{})\
@@ -238,7 +239,7 @@ struct t_splinter{
           for(auto&ex:slot2deaded){
             if(!ex)n++;
           }
-          finished_flag=n<=1;
+          finished_flag=n<=1||tick>=ticks;
           vector<int> p2n(slot2score.size());
           for(auto&ex:parr){
             p2n[ex.color]++;
@@ -426,9 +427,10 @@ static std::string compare_worlds(const t_world& a, const t_world& b) {
       w.your_id=player;
       out=QapSaveToStr(w);
     }
-    void init(uint32_t seed,uint32_t num_players)override{
+    void init(uint32_t seed,uint32_t num_players,int64_t ticks)override{
       gen=mt19937(seed);
       init_world(w,gen,num_players);
+      if(ticks>=0)w.ticks=ticks;
     }
     int init_from_config(const string&cfg,string&outmsg)override{
       outmsg="no impl";
