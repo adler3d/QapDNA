@@ -329,7 +329,7 @@ public:
     if (play_pause_btn.pressed) {
       step_by_step = !step_by_step;
     }
-    double rsgfgt=replay_stream.g.fg.tick?replay_stream.g.fg.tick+1:1e9;
+    double rsgfgt=replay_stream.g.fg.tick?replay_stream.g.fg.tick:1e9;
     EWorldType wtype = get_world_type();
     vec2d mpos = kb.MousePos;
 
@@ -361,7 +361,7 @@ public:
           int steps = (int)(elapsed / target_interval);
 
           // Но не выходим за границы
-          int max_possible = (int)rsgfgt - 1 - frame;
+          int max_possible = (int)rsgfgt - frame;
           if (max_possible <= 0) {
             // Достигли конца
             //step_by_step = true;

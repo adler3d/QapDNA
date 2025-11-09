@@ -414,7 +414,7 @@ static std::string compare_worlds(const t_world& a, const t_world& b) {
     ~t_world_impl(){};
     void use(int player,const string&cmd,string&outmsg)override{
       t_world::t_cmd out;
-      bool ok=QapLoadFromStr(out,cmd);
+      bool ok=cmd.size()&&QapLoadFromStr(out,cmd);
       if(!ok){outmsg="cmd load failed";return;}else{outmsg.clear();}
       w.use(player,out);
     }

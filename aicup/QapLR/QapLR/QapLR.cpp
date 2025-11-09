@@ -2846,6 +2846,8 @@ QapTexMem*LoadTexture(string fn,FUNC&&func){
   return nullptr;
 }
 #endif
+#include "by_ai/mapgen.cpp"
+#include "../../src/core/aicup_structs.inl"
 struct i_world{
   virtual ~i_world(){};
   virtual void use(int player,const string&cmd,string&outmsg)=0;
@@ -2900,11 +2902,38 @@ struct GameSession {
             connected[player_id] = state;
         }
     }
-    void save(){
+    void save_v0(){
       if(!g_args.replay_out_file||!g_args.replay_out_file->size())return;
       vector<vector<string>> tick2slot2cmd;
       for(auto&ex:history)tick2slot2cmd.push_back(ex.commands);
       auto s=QapSaveToStr(tick2slot2cmd);
+      file_put_contents(*g_args.replay_out_file,s);
+    }
+    void save(){
+      if(!g_args.replay_out_file||!g_args.replay_out_file->size())return;
+      vector<vector<string>> tick2slot2cmd;
+      for(auto&ex:history)tick2slot2cmd.push_back(ex.commands);
+      //auto s=QapSaveToStr(tick2slot2cmd);
+      t_cdn_game replay;auto&out=replay;
+      out.gd.world=g_args.world_name;
+      out.gd.arr.resize(g_args.num_players);
+      out.gd.seed_initial=g_args.seed_initial;
+      out.gd.seed_strategies=g_args.seed_strategies;
+      out.fg.tick=history.size();
+      out.slot2tick2elem.resize(g_args.num_players);
+      out.slot2err.resize(g_args.num_players);
+      for(int i=0;i<g_args.num_players;i++){
+        //out.slot2err[i]=a.err;
+        auto&tick2elem=out.slot2tick2elem[i];
+        auto m=history.size();
+        tick2elem.resize(m);
+        for(int tick=0;tick<m;tick++){
+          auto&e=tick2elem[tick];
+          e.ms=-0.001;//e.ms=tick<tls?a.time_log[tick]:-0.001;
+          e.cmd=tick<m?history[tick].commands[i]:"";
+        }
+      }
+      auto s=to_cgs_str(replay);
       file_put_contents(*g_args.replay_out_file,s);
     }
     void init(){
@@ -3110,8 +3139,6 @@ struct GameSession {
 #ifdef _WIN32
 #include "inetdownloader.hpp"
 #endif
-#include "by_ai/mapgen.cpp"
-#include "../../src/core/aicup_structs.inl"
 struct t_replay_stream{
   t_cdn_game g;
   t_cdn_game_builder b{g};
@@ -3135,8 +3162,8 @@ struct t_replay_stream{
       //for(auto&w:session.ws){
       //  string s;w->get_vpow(-1,s);worlds.push_back(s);
       //}
-      auto s=file_get_contents("15.bin");
-      QapLoadFromStr(worlds,s);
+      //auto s=file_get_contents("15.bin");
+      //QapLoadFromStr(worlds,s);
     }
     packet++;
     return;
@@ -3187,7 +3214,7 @@ struct t_replay_stream{
     auto&arr=g.slot2tick2elem;
     if(!feed_rv)return true;
     for(const auto&p:arr){
-      if(tick+1<p.size())return true;
+      if(tick<p.size())return true;
     }
     return false;
   }
@@ -3203,7 +3230,7 @@ struct t_replay_stream{
       auto&p=arr[i];
       if(tick>=p.size())continue;
       string outerr;
-      session.world->use(i,arr[i][tick].cmd,outerr);
+      session.world->use(i,p[tick].cmd,outerr);
       if(outerr.size()){
         int gg=1;
         n++;

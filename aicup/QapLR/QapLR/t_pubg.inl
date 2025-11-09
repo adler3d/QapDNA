@@ -306,7 +306,7 @@ struct t_pubg{
     ~t_world_impl(){};
     void use(int player,const string&cmd,string&outmsg)override{
       t_world::t_cmd out;
-      bool ok=QapLoadFromStr(out,cmd);
+      bool ok=cmd.size()&&QapLoadFromStr(out,cmd);
       if(!ok){outmsg="cmd load failed";return;}else{outmsg.clear();}
       w.agents[player].a=out;
     }
