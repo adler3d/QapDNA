@@ -709,7 +709,7 @@ struct t_main : t_http_base {
               if(qap_check_id(p.wave2games_finished,g.gd.wave)){
                 auto&gf=p.wave2games_finished[g.gd.wave];
                 gf++;
-                if(gf==p.wave2gid.size())p.new_completed_waves++;
+                if(qap_check_id(p.wave2gid,g.gd.wave)&&gf==p.wave2gid[g.gd.wave].size())p.new_completed_waves++;
               }
             }
             for(uint64_t i=0;i<g.gd.arr.size();i++){
