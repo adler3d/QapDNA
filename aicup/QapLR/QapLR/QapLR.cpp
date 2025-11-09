@@ -2022,6 +2022,13 @@ public:
       #undef F
     }
   }
+  void DrawRect(const vec2d& min_pos, const vec2d& max_pos) {
+      float x = (min_pos.x + max_pos.x) / 2.0f;
+      float y = (min_pos.y + max_pos.y) / 2.0f;
+      float w = max_pos.x - min_pos.x;
+      float h = max_pos.y - min_pos.y;
+      DrawQuad(x, y, w, h);
+  }
   void DrawLine(vec2d a, vec2d b, double ls)
   {
     BatchScope Scope(*this);

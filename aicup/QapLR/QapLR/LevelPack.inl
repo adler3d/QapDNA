@@ -109,12 +109,14 @@ public:
 
 #define I_WORLD
 #include "t_splinter.inl"
+#include "t_pubg.inl"
 
 static unique_ptr<i_world> mk_world(const string&world){
   #define F(LVL)
   LEVEL_LIST(F)
   #undef F
   if(world=="t_splinter")return t_splinter::mk_world(0);
+  if(world=="t_pubg")return t_pubg::mk_world(0);
   return nullptr;
 }
 
@@ -151,7 +153,12 @@ public:
     vector<int> is_alive;if(world)world->is_alive(is_alive);
     vector<double> scores;if(world)world->get_score(scores);
     int ppad=0;
-    for(int i=0;i<g_args.num_players;i++){ppad=max(ppad,g_args.player_names[i].size());}
+    if(g_args.player_names.empty()){
+      for(int i=0;i<g_args.num_players;i++)g_args.player_names.push_back("Player"+to_string(i));
+    }
+    for(int i=0;i<g_args.num_players;i++){
+      ppad=max(ppad,g_args.player_names[i].size());
+    }
     auto pad=[](int n,const string&s){return string(n-s.size(),' ')+s;};
     for(int i=0;i<g_args.num_players;i++){
       string color="^3waiting";
