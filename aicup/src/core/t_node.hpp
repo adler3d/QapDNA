@@ -269,6 +269,8 @@ struct t_node:t_node_cache{
                   //("--seed-strategies=" + to_string(gd.seed_strategies)).c_str(),
                   //"--no-gui",
                   "--remote",
+                  "-t",
+                  to_string(gd.maxtick).c_str(),
                   nullptr
               );
               perror("execl QapLR failed");
