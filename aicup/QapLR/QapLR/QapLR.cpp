@@ -3222,7 +3222,7 @@ struct t_replay_stream{
   bool step(){
     bool next_ready=check_next_ready();
     if(!next_ready)return false;
-    #ifndef _WIN32
+    #ifdef QAP_EMCC
     EM_ASM({console.log("tick",$0);},tick);
     #endif
     int n=0;
@@ -3272,7 +3272,7 @@ struct t_replay_stream{
     g_args.gui_mode=true;
     session.init();
     for(int tick=0;tick<g.fg.tick;tick++){
-      #ifndef _WIN32
+      #ifdef QAP_EMCC
       EM_ASM({console.log("tick",$0);},tick);
       #endif
       //if(tick>108)break;
@@ -3339,11 +3339,11 @@ extern "C" {
     replay_stream.frags.push_back(s);
     //replay_stream.b2.feed(s);
     //return;
-    #ifndef _WIN32
+    #ifdef QAP_EMCC
     EM_ASM({console.log("replay_stream.b.feed::bef");});
     #endif
     replay_stream.feed_rv=replay_stream.b.feed(s);//if feed say false then all done
-    #ifndef _WIN32
+    #ifdef QAP_EMCC
     EM_ASM({console.log("replay_stream.b.feed::aft");});
     #endif
     replay_stream.update();
