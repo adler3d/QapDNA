@@ -325,13 +325,13 @@ private:
   emitter_on_data_decoder decoder_;
   AIProcessManager ai_manager_;
   
-  std::string tmp_dir_ = "/tmpfs";
+  std::string tmp_dir_ = ".";
   std::string ai_bin_name_ = "./ai.bin";
   
   std::mutex write_mutex_;
 
 public:
-  ClientSession(int client_fd, const std::string& tmp_dir = "/tmpfs")
+  ClientSession(int client_fd, const std::string& tmp_dir = ".")
     : client_fd_(client_fd), tmp_dir_(tmp_dir),
      ai_manager_(tmp_dir + "/" + ai_bin_name_, 
            [this](const std::string& z, const std::string& data) {
@@ -419,10 +419,10 @@ private:
 
 // Main application
 class DokconServer {
-private:
+public:
   std::unique_ptr<UnixSocketServer> server_;
   std::string socket_path_ = "/tmp/dokcon.sock";
-  std::string tmp_dir_ = "/tmpfs";
+  std::string tmp_dir_ = ".";
 
 public:
   void run() {
@@ -467,6 +467,7 @@ private:
 int main(int argc, char* argv[]) {
   if (argc > 1 && std::string(argv[1]) == "server_unix") {
     DokconServer server;
+    server.socket_path_=std::getenv("SOCKET_PATH");
     server.run();
   } else {
     std::cout << "Usage: " << argv[0] << " [server_unix]" << std::endl;
