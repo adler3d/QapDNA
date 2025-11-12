@@ -82,7 +82,7 @@ public:
   virtual int GetSize()const=0;
   virtual void WriteTo(QapIO&ref)=0;
 public:
-  #define LIST(F)F(int)F(unsigned int)F(char)F(unsigned char)F(bool)F(int64)F(uint64)F(float)F(real)F(short)F(unsigned short)F(vec2i)F(vec2d)F(vec2f)
+  #define LIST(F)F(long unsigned int)F(long int)F(int)F(unsigned int)F(char)F(unsigned char)F(bool)F(int64)F(uint64)F(float)F(real)F(short)F(unsigned short)F(vec2i)F(vec2d)F(vec2f)
   #define F(TYPE)void load(TYPE&ref){if(!TryLoad(sizeof(ref))){Crash();return;}LoadPOD(&ref,sizeof(ref));}
   LIST(F)
   #undef F
@@ -514,7 +514,7 @@ struct Sys$$<map<FIRST,SECOND>>{
     }\
   };
 //---
-#define LIST(F)F(int)F(unsigned int)F(char)F(unsigned char)F(bool)F(int64)F(uint64)F(float)F(real)F(short)F(unsigned short)F(string)
+#define LIST(F)F(long unsigned int)F(long int)F(int)F(unsigned int)F(char)F(unsigned char)F(bool)F(int64)F(uint64)F(float)F(real)F(short)F(unsigned short)F(string)
 #define F(TYPE)SYS_SIMPLE_TYPE(TYPE)
 LIST(F)
 #undef F
