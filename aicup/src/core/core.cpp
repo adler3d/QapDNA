@@ -2241,6 +2241,7 @@ struct t_main : t_http_base {
     });
     srv.Get("/save", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(15);
+      lock_guard<mutex> lock(mtx);
       auto [uid, ok] = auth_by_bearer(req);
       if (!ok||uid) { res.status = 404; return; }
       waveman.saveAtMS=waveman.roundClock.MS();
@@ -2322,9 +2323,6 @@ struct t_main : t_http_base {
 
     srv.Post(R"(/api/vote/user/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(15);
-
-      lock_guard<mutex> lock(mtx);
-
       uint64_t target_uid;
       try {
         target_uid = stoull(req.matches[1]);
@@ -2333,7 +2331,7 @@ struct t_main : t_http_base {
         res.set_content(R"({"error":"invalid user id"})", "application/json");
         return;
       }
-
+      lock_guard<mutex> lock(mtx);
       auto [voter_uid, ok] = auth_by_bearer(req);
       if (!ok || get_karma(voter_uid, chrono::system_clock::now()) <= 0) {
         res.status = 401;
