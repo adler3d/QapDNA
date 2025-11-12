@@ -19,6 +19,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <fstream>
+#include <memory>
 using namespace std;
 void add_hours_to_tm(std::tm& tm, int hours) {
   std::time_t t = timegm_portable(&tm);
@@ -64,7 +65,7 @@ struct emitter_on_data_decoder{
   t_cb cb;
   string buffer;
   struct t_parse_result{
-    size_t s='o';
+    unsigned char s='o';
     string to_str()const{
       if(s=='o')return "WTF?";
       if(s=='0')return "wait_size";
