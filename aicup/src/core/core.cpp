@@ -694,6 +694,10 @@ struct t_main : t_http_base {
   ADD(vector<t_comment>,comments,{})\
   ADD(vector<t_season>,seasons,{})\
   ADD(WaveManager,waveman,{})\
+  ADD(int,reserved_for_future_vectors0,{})\
+  ADD(int,reserved_for_future_vectors1,{})\
+  ADD(int,reserved_for_future_vectors2,{})\
+  ADD(int,reserved_for_future_vectors3,{})\
   //===
   #include "defprovar.inl"
   //===
