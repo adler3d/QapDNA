@@ -1969,11 +1969,50 @@ struct t_main : t_http_base {
     //---
     F("index.html");
     F("comments.html");
-    F("ainews.html");
+    //F("ainews.html");
     F("admin.html");
     F("strategies.html");
     F("thirdparty/sweetalert2@11.js");
     #undef F
+
+    srv.Get("/ainews.html", [](const httplib::Request &req, httplib::Response &res) {
+      string file_path = "/ainews.html";
+      auto file = std::make_shared<std::ifstream>(file_path, std::ios::binary);
+      if (!file->is_open()) {
+        res.status = 404;
+        res.set_content("File not found", "text/plain");
+        return;
+      }
+
+      // Узнаем размер файла
+      file->seekg(0, std::ios::end);
+      size_t file_size = file->tellg();
+      file->seekg(0, std::ios::beg);
+
+      res.set_header("Content-Type", "application/octet-stream");
+      res.set_header("Content-Length", std::to_string(file_size));
+
+      res.set_content_provider(
+        file_size,
+        "application/octet-stream",
+        [file](size_t offset, size_t length, httplib::DataSink &sink) {
+          constexpr size_t buffer_size = 64 * 1024;
+          char buffer[buffer_size];
+          file->seekg(offset, std::ios::beg);
+
+          while (length > 0) {
+            size_t to_read = std::min(buffer_size, length);
+            if (!file->read(buffer, to_read)) {
+              return false; // ошибка чтения
+            }
+            sink.write(buffer, to_read);
+            length -= to_read;
+          }
+          return true;
+        }
+      );
+    });
+
     srv.set_logger([](const httplib::Request& req, const httplib::Response& res) {
         std::cout <<"["<<qap_time()<<"]t_site: "<< "Request: " << req.method << " " << req.path;
         if (!req.remote_addr.empty()) {
