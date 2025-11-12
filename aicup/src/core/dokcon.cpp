@@ -19,9 +19,18 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <fstream>
+using namespace std;
+void add_hours_to_tm(std::tm& tm, int hours) {
+  std::time_t t = timegm_portable(&tm);
+  t += static_cast<std::time_t>(hours) * 3600; // сдвигаем UTC-время
+#if defined(_WIN32) || defined(_WIN64)
+  gmtime_s(&tm, &t);
+#else
+  gmtime_r(&t, &tm);
+#endif
+}
 
-// Ваши готовые функции
-std::string qap_time() {
+string qap_time() {
   using namespace std::chrono;
   system_clock::time_point now = system_clock::now();
   auto duration = now.time_since_epoch();
@@ -30,72 +39,62 @@ std::string qap_time() {
   std::time_t t_c = sec.count();
 
   std::tm utc_tm;
+#if defined(_WIN32) || defined(_WIN64)
+  gmtime_s(&utc_tm, &t_c);
+#else
   gmtime_r(&t_c, &utc_tm);
+#endif
 
   // Москва = UTC + 3
-  utc_tm.tm_hour += 3;
-  mktime(&utc_tm); // нормализация
+  add_hours_to_tm(utc_tm, 3);
 
   std::ostringstream oss;
   oss << std::put_time(&utc_tm, "%Y.%m.%d %H:%M:%S")
-    << '.' << std::setfill('0') << std::setw(3) << millis.count();
+      << '.' << std::setfill('0') << std::setw(3) << millis.count();
   return oss.str();
 }
 
-std::string qap_zchan_write(const std::string& z, const std::string& data) {
-  std::string n = std::to_string(data.size());
-  std::string sep(1, '\0');
-  return n + sep + z + sep + data;
+string qap_zchan_write(const string&z,const string&data){
+  string n=std::to_string(data.size());auto sep=string("\0",1);
+  return n+sep+z+sep+data;
 }
 
-struct emitter_on_data_decoder {
-  typedef std::function<void(const std::string&, const std::string&)> t_cb;
+struct emitter_on_data_decoder{
+  typedef std::function<void(const string&, const string&)> t_cb;
   t_cb cb;
-  std::string buffer;
-  
-  struct t_parse_result {
-    size_t s = 'o';
-    std::string to_str() const {
-      if (s == 'o') return "WTF?";
-      if (s == '0') return "wait_size";
-      if (s == '1') return "wait_zchan";
-      if (s == '2') return "wait_data";
-      if (s == 's') return "size_atk";
-      if (s == 'd') return "digit_atk";
-      if (s == 'z') return "zchan_atk";
-      if (s == '3') return "ok?";
+  string buffer;
+  struct t_parse_result{
+    size_t s='o';
+    string to_str()const{
+      if(s=='o')return "WTF?";
+      if(s=='0')return "wait_size";
+      if(s=='1')return "wait_zchan";
+      if(s=='2')return "wait_data";
+      if(s=='s')return "size_atk";
+      if(s=='d')return "digit_atk";
+      if(s=='z')return "zchan_atk";
+      if(s=='3')return "ok?";
       return "no_impl";
     }
-    bool ok() { 
-      switch(s) { 
-        case '0': case '1': case '2': return true; 
-      } 
-      return false; 
-    }
+    bool ok(){switch(s){case '0':case '1':case '2':return true;}return false;}
   };
-  
-  static bool is_digits(const std::string& s) {
-    for(char c : s) 
-      if(c < '0' || c > '9') return false;
-    return true;
-  }
-  
+  static bool is_digits(const string&s){for(char c:s)if(c<'0'||c>'9')return false;return true;}
   t_parse_result feed(const char* data, size_t len) {
     buffer.append(data, len);
     while (true) {
       auto e1 = buffer.find('\0');
-      if (e1 == std::string::npos) return {'0'};
-      std::string len_str = buffer.substr(0, e1);
-      if(len_str.size() >= 7) return {'s'};
-      if(!is_digits(len_str)) return {'d'};
-      int len_val = std::stoi(len_str);
+      if (e1 == string::npos)return {'0'};
+      string len_str = buffer.substr(0, e1);
+      if(len_str.size()>=7)return {'s'};
+      if(!is_digits(len_str))return {'d'};
+      int len = stoi(len_str);
       auto e2 = buffer.find('\0', e1 + 1);
-      if (e2 == std::string::npos) return {'1'};
-      if(e2 > 512) return {'z'};
-      int total = e2 + 1 + len_val;
-      if (buffer.size() < total) return {'2'};
-      std::string z = buffer.substr(e1 + 1, e2 - e1 - 1);
-      std::string payload = buffer.substr(e2 + 1, len_val);
+      if (e2 == string::npos)return {'1'};
+      if(e2>512)return {'z'};
+      int total = e2 + 1 + len;
+      if (buffer.size() < total)return {'2'};
+      string z = buffer.substr(e1 + 1, e2 - e1 - 1);
+      string payload = buffer.substr(e2 + 1, len);
       buffer.erase(0, total);
       cb(z, payload);
     }
