@@ -47,3 +47,5 @@ g++ --version | head -1
 clang --version | head -1
 node --version
 docker --version
+
+npm install express
