@@ -2248,6 +2248,12 @@ struct t_main : t_http_base {
       file_put_contents("save.qap",s);
       res.set_content("["+qap_time()+"]: size="+to_string(s.size()/1024.0/1024.0)+"MB", "text/plain");
     });
+    srv.Get("/save.qap",[this](const httplib::Request&req,httplib::Response&res){\
+      RATE_LIMITER(25);
+      auto [uid, ok] = auth_by_bearer(req);
+      if (!ok||uid) { res.status = 404; return; }
+      res.set_file_content("save.qap","text/html");\
+    });
     srv.Post(R"(/api/vote/comment/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(15);
 
