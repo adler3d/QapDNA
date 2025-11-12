@@ -465,6 +465,19 @@ struct t_ban{
   #include "defprovar.inl"
   //===
 };
+typedef map<uint64_t,uint64_t> t_msgbox;
+struct t_msg{
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_msg
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(uint64_t,from,{})\
+  ADD(uint64_t,to,{})\
+  ADD(string,msg,{})\
+  ADD(string,time,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+};
 struct t_coder_rec{
   struct t_average{
     #define DEF_PRO_COPYABLE()
@@ -507,6 +520,8 @@ struct t_coder_rec{
   ADD(string,time,{})\
   ADD(t_votes,karma,{})\
   ADD(vector<t_ban>,bans,{})\
+  ADD(t_msgbox,inbox,{})\
+  ADD(t_msgbox,outbox,{})\
   //===
   #include "defprovar.inl"
   //===
@@ -674,6 +689,7 @@ struct t_main : t_http_base {
   #define DEF_PRO_CLASSNAME()t_main
   #define DEF_PRO_VARIABLE(ADD)\
   ADD(vector<t_coder_rec>,carr,{})\
+  ADD(vector<t_msg>,msgs,{})\
   ADD(vector<t_game>,garr,{})\
   ADD(vector<t_comment>,comments,{})\
   ADD(vector<t_season>,seasons,{})\
