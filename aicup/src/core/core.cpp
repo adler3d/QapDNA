@@ -2765,8 +2765,9 @@ public:
       " for phase " + phase.phase_name +
       " with " + to_string(wave.size()) + " games.");
   }
-  default_random_engine dre{time(0)};
+  default_random_engine dre;QapClock g_clock;bool need_init_dre=true;
   vector<t_game_decl> generate_wave(t_phase& phase, t_season& season) {
+    if(need_init_dre){need_init_dre=false;dre.seed(int(g_clock.MS()*1000));}
     vector<t_game_decl> wave;
     //lock_guard<mutex> lock(mtx);
 
