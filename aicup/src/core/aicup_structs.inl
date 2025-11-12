@@ -1,4 +1,4 @@
-static constexpr uint32_t kInvalidIndex = std::numeric_limits<uint64_t>::max();
+static constexpr uint64_t kInvalidIndex = std::numeric_limits<uint64_t>::max();
 struct t_game_uploaded_ack{
   #define DEF_PRO_COPYABLE()
   #define DEF_PRO_CLASSNAME()t_game_uploaded_ack

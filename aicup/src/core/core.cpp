@@ -2421,7 +2421,7 @@ struct t_main : t_http_base {
       }
 
       string reason;
-      int64_t dt = 1000i64 * 3600 * 24 * 7 * 2; // 2 недели по умолчанию
+      int64_t dt = 1000LL * 3600 * 24 * 7 * 2; // 2 недели по умолчанию
       bool hide_all = false;
 
       try {
