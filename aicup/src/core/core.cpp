@@ -1976,7 +1976,7 @@ struct t_main : t_http_base {
     #undef F
 
     srv.Get("/ainews.html", [](const httplib::Request &req, httplib::Response &res) {
-      string file_path = "/ainews.html";
+      string file_path = "ainews.html";
       auto file = std::make_shared<std::ifstream>(file_path, std::ios::binary);
       if (!file->is_open()) {
         res.status = 404;
