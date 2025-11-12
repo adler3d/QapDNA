@@ -684,6 +684,57 @@ public:
   operator bool(){return pos>=0;}
 };
 //-------------------------------------------//
+/*template<class TYPE>
+class FindData{
+public:
+  WIN32_FIND_DATA ffd;
+  //string Ext;
+  string Dir;
+  HANDLE hFind;
+  char buff[1024];
+  TYPE&Functor;
+  FindData(const string&dir,TYPE&Functor,bool manual=false):hFind(nullptr),Functor(Functor){
+    //Ext=LowerStr(ext);
+    Dir=dir;
+    if(manual)return;
+    Start();
+    do{}while(Next());
+    Stop();
+  }
+  void Start(){
+    if(hFind)return;
+    string filename=Dir+"/*";
+    hFind=FindFirstFileA(filename.c_str(),&ffd);
+    if(INVALID_HANDLE_VALUE==hFind){QapDebugMsg("INVALID_HANDLE_VALUE");return;}
+  }
+  bool Next(){
+    if(!hFind)return false;
+    string fn=ffd.cFileName;
+    //if(LowerStr(GetFileExt(fn))==Ext)
+    {
+      fn=Dir+"/"+fn;
+      Functor(fn,bool(ffd.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY));
+    }
+    if(!FindNextFile(hFind,&ffd))
+    {
+      auto dwError=GetLastError();
+      if(dwError!=ERROR_NO_MORE_FILES){
+        QapDebugMsg("failed");
+      }
+      Stop();
+      return false;
+    }
+    return true;
+  }
+  void Stop(){
+    if(!hFind)FindClose(hFind);hFind=nullptr;
+  }
+  operator bool(){return hFind;}
+  ~FindData(){
+    Stop();
+  }
+};
+*///-------------------------------------------//
 static string gen_dip(char from,char to){
   auto f=(uchar)from;
   auto t=(uchar)to;
