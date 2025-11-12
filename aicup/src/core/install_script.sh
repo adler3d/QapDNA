@@ -36,6 +36,7 @@ cd emsdk
 
 # Добавляем emsdk в PATH
 echo 'source /opt/emsdk/emsdk_env.sh' >> /etc/profile
+echo "alias ll='ls -lht --color=auto'" >> /etc/profile
 
 # Добавление пользователя в группу docker
 usermod -aG docker $USER
