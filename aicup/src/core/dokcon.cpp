@@ -21,6 +21,15 @@
 #include <fstream>
 #include <memory>
 using namespace std;
+
+std::time_t timegm_portable(std::tm* tm) {
+#if defined(_WIN32) || defined(_WIN64)
+  return _mkgmtime(tm);
+#else
+  return timegm(tm);
+#endif
+}
+
 void add_hours_to_tm(std::tm& tm, int hours) {
   std::time_t t = timegm_portable(&tm);
   t += static_cast<std::time_t>(hours) * 3600; // сдвигаем UTC-время
