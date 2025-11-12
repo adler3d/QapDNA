@@ -1,0 +1,1 @@
+g++ -O2 -std=c++11 -pthread -o dokcon dokcon.cpp
