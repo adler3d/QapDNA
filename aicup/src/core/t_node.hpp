@@ -495,7 +495,7 @@ struct t_node:t_node_cache{
     t_docker_api_v2() {
       decoder.cb = [this](const string& z, const string& msg) {
         //LOG("t_node::t_docker_api_v2::cb::z='"+z+"' len="+to_string(msg.size())+" msg='"+msg+"' sock="+to_string(socket.sock));
-        if(z=="hi from dokcon.js"){
+        if(z=="hi from dokcon.js"||z=="hi from dokcon.cpp"){
           write_stdin_raw(qap_zchan_write("ai_binary",binary));
           write_stdin_raw(qap_zchan_write("ai_start","2025.10.18 12:55:05.686"));
         }
