@@ -4,31 +4,45 @@ set -e
 
 export DEBIAN_FRONTEND=noninteractive
 
-# Предварительная настройка debconf
-{
-echo "iptables-persistent iptables-persistent/autosave_v4 boolean false"
-echo "iptables-persistent iptables-persistent/autosave_v6 boolean false"
-} | debconf-set-selections
-
-# Установка
+# Обновление пакетов
 apt-get update -y
-apt-get install -y -q --no-install-recommends \
-    g++ \
-    clang++ \
-    nodejs \
-    npm \
-    docker.io \
-    docker-compose \
-    git \
-    python3
 
-# Emscripten
-git clone https://github.com/emscripten-core/emsdk.git /opt/emsdk
-cd /opt/emsdk
+# Сначала устанавливаем git и базовые зависимости
+apt-get install -y -q \
+    git \
+    curl \
+    wget \
+    python3 \
+    python3-pip
+
+# Установка Node.js (официальный репозиторий)
+curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+apt-get install -y nodejs
+
+# Установка Docker
+curl -fsSL https://get.docker.com | bash -
+
+# Установка компиляторов (без лишних зависимостей)
+apt-get install -y -q \
+    g++ \
+    clang
+
+# Установка Emscripten через git (без системных пакетов)
+cd /opt
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
 ./emsdk install latest
 ./emsdk activate latest
 
-# Права для docker
+# Добавляем emsdk в PATH
+echo 'source /opt/emsdk/emsdk_env.sh' >> /etc/profile
+
+# Добавление пользователя в группу docker
 usermod -aG docker $USER
 
-echo "all components installed!"
+echo "=== Install Done ==="
+echo "Installed versions:"
+g++ --version | head -1
+clang --version | head -1
+node --version
+docker --version
