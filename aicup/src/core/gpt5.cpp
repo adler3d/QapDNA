@@ -21,6 +21,7 @@
 #include <iomanip>
 #include <random>
 #include <array>
+#include <queue>
 using namespace std;
 
 #include "../../QapLR/QapLR/qap_assert.inl"

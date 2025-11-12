@@ -69,7 +69,7 @@ async function uploadToCdn(path, dataBuffer, token) {
 
 // Компиляция с песочницей
 async function compileSource(data) {
-  const { coder_id, elf_version, source_code, timeout_ms, memory_limit_mb } = data;
+  const { coder_id, elf_version, source_code, timeout_ms, memory_limit_mb, season } = data;
 
   const tempDir = path.join(TEMP_DIR, `${coder_id}_${elf_version}_${Date.now()}`);
   const sourcePath = path.join(tempDir, 'ai.cpp');
@@ -115,7 +115,7 @@ async function compileSource(data) {
       var compilationSuccess=true;
       if (compilationSuccess) {
         const binaryBuffer = await fs.readFile(binaryPath);
-        await uploadToCdn(`binary/${coder_id}_${elf_version}.elf`, binaryBuffer, process.env.UPLOAD_TOKEN);
+        await uploadToCdn(`binary/${season}_${coder_id}_${elf_version}.elf`, binaryBuffer, process.env.UPLOAD_TOKEN);
       }
       return {
         success: true,
