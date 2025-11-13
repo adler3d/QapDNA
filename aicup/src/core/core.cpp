@@ -1718,6 +1718,11 @@ struct t_main : t_http_base {
     });
     srv.Post("/api/seasons/current/config", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(10);
+      {
+        lock_guard<mutex> lock(mtx);
+        auto [uid, ok] = auth_by_bearer(req);
+        if (!ok||uid) { res.status = 404; return; }
+      }
       try {
         if (req.body.empty()) {
           res.status = 400;
@@ -2642,7 +2647,7 @@ public:
       }
     }
     LOG("Activated phase: "+to_string(phase)+" with "+to_string(target->uid2rec.size())+" participants");
-    waveman.startRound(qap_time_diff(target->scheduled_start_time,target->scheduled_end_time));
+    waveman.startRound(qap_time_diff(target->scheduled_start_time,target->scheduled_end_time),target->scheduled_end_time);
   }
   void update_seasons() {
     lock_guard<mutex> lock(mtx);
@@ -2744,7 +2749,7 @@ public:
 
     if(!phase.new_completed_waves)return;
     if (phase.type == "round") {
-      if (!waveman.canStartNewWave()) {
+      if (!waveman.canStartNewWave(phase.scheduled_end_time)) {
         LOG("Not enough time to start a new wave.");
         return;
       }
@@ -2758,7 +2763,7 @@ public:
     vector<t_game_decl> wave = generate_wave(phase, season);
     if (wave.empty()) return;
 
-    int newWaveNumber = waveman.startNewWave();
+    int newWaveNumber = waveman.startNewWave(phase.scheduled_end_time);
     if (newWaveNumber < 0) {
       LOG("WaveManager rejected starting a new wave (resource/time constraints).");
       return;

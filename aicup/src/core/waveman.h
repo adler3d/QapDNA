@@ -95,6 +95,7 @@ struct WaveManager {
   ADD(int,lastNCount,0)\
   ADD(int,lastNLimit,3)\
   ADD(double,saveAtMS,0.0)\
+  ADD(string,roundEndTime,0.0)\
   //===
   #include "defprovar.inl"
   //===
@@ -102,10 +103,8 @@ struct WaveManager {
 
   void restoreAfterLoad() {
     roundClock.Start();
-    for(auto& wave : activeWaves) {
-      if(wave.startTimeMS > 0) {
-        wave.startTimeMS = (wave.startTimeMS > saveAtMS) ? (wave.startTimeMS - saveAtMS) : 0.0;
-      }
+    for(auto&wave:activeWaves){
+      wave.startTimeMS=wave.startTimeMS-saveAtMS;
     }
     LOG("WaveManager restored: timer reset and wave start times adjusted by saveAtMS=" + std::to_string(saveAtMS) + " ms");
   }
@@ -120,7 +119,12 @@ struct WaveManager {
     return sum;
   }
 
-  bool canStartNewWave() {
+  bool canStartNewWave(const string&round_end_time) {
+    if(roundEndTime!=round_end_time){
+      roundEndTime=round_end_time;
+      roundDurationMS=qap_time_diff(round_end_time,qap_time());
+      roundClock.Start();
+    }
     double elapsedMS = roundClock.MS();
     double remainingTimeMS = roundDurationMS - elapsedMS;
     double predictedDurationMS = predictNextWaveDurationMS();
@@ -129,8 +133,8 @@ struct WaveManager {
   }
 
   // Запуск новой волны: фиксируем старт, возвращаем номер волны
-  int startNewWave() {
-    if (!canStartNewWave()) {
+  int startNewWave(const string&round_end_time) {
+    if (!canStartNewWave(round_end_time)) {
       LOG("Not enough time for new wave. Round ended.");
       return -1;
     }
@@ -171,7 +175,8 @@ struct WaveManager {
     activeWaves.erase(it);
   }
 
-  void startRound(double ms) {
+  void startRound(double ms,const string&round_end_time) {
+    roundEndTime=round_end_time;
     roundDurationMS = ms;
     roundClock.Start();
     nextWaveNumber = 0;

@@ -1,6 +1,6 @@
 // Hybrid planner — FIXED: sandboxes have fixed duration, storage is cumulative
 // All output in English
-let ticks=7500; let TL=35; let stderrKB=64;
+let ticks=7500; let TL=35*0+100; let stderrKB=64;
 let config = {
   machineTypes: [
     { cores: 4,  pricePerDay: 50 },/*
@@ -39,7 +39,7 @@ let config = {
 };
 config.phases1=[];
 config.phases2=[];
-let time_scale=3.0/24/60;
+let time_scale=1.0+0*3.0/24/60;
 config.phases.map(e=>{e.world="t_splinter";e.durationHours*=time_scale;});
 let get_phase=p=>config.phases.filter(e=>e.name===p)[0];
 get_phase("R1").qualifyingFrom=[{"fromPhaseName":"S1","topN":900}];
