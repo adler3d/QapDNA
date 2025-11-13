@@ -564,7 +564,8 @@ struct t_phase {
     #define DEF_PRO_COPYABLE()
     #define DEF_PRO_CLASSNAME()t_uid_rec
     #define DEF_PRO_VARIABLE(ADD)\
-    ADD(double,score,1500)\
+    ADD(t_score,prev,{})\
+    ADD(t_score,cur,{})\
     ADD(uint64_t,games,0)\
     ADD(uint64_t,source_phase,0)\
     //===
@@ -697,6 +698,30 @@ struct t_main : t_http_base {
                 auto&gf=p.wave2games_finished[g.gd.wave];
                 gf++;
                 if(qap_check_id(p.wave2gid,g.gd.wave)&&gf==p.wave2gid[g.gd.wave].size())p.new_completed_waves++;
+              }
+              if(g.author=="system")
+              {
+                vector<t_player_with_score> players;players.reserve(g.gd.arr.size());
+                for(uint64_t i=0;i<g.gd.arr.size();i++){
+                  auto&slot=g.gd.arr[i];
+                  if(!p.uid2rec.count(slot.uid))continue;
+                  auto&r=p.uid2rec[slot.uid];
+                  auto&b=qap_add_back(players);
+                  b.uid=slot.uid;
+                  b.cur=r.cur;
+                  b.game_score=g.fg.slot2score[i];
+                }
+                if(players.size()==g.gd.arr.size()){
+                  update_score_with_smart_ranking(players);
+                  for(uint64_t i=0;i<players.size();i++){
+                    auto&ex=players[i];
+                    auto&r=p.uid2rec[ex.uid];
+                    r.prev=r.cur;
+                    r.cur=ex.next;
+                  }
+                }else{
+                  LOG("system game finished but players.size()!=g.gd.arr.size(); game_id="+to_string(gid));
+                }
               }
             }
             for(uint64_t i=0;i<g.gd.arr.size();i++){
@@ -1524,7 +1549,7 @@ struct t_main : t_http_base {
       }
       vector<pair<double, uint64_t>> ranked;
       for (const auto& [uid, rec] : phase->uid2rec) {
-        ranked.emplace_back(-rec.score, uid);
+        ranked.emplace_back(-rec.cur.get(), uid);
       }
       sort(ranked.begin(), ranked.end());
       json lb = json::array();
@@ -1813,7 +1838,7 @@ struct t_main : t_http_base {
         const auto& rec = active_phase->uid2rec.at(uid);
         vector<pair<double, uint64_t>> ranked;
         for (const auto& [u, r] : active_phase->uid2rec) {
-          ranked.emplace_back(-r.score, u);
+          ranked.emplace_back(-r.cur.get(), u);
         }
         sort(ranked.begin(), ranked.end());
         int rank = 1;
@@ -1826,7 +1851,10 @@ struct t_main : t_http_base {
           {"type", active_phase->type},
           {"rank", rank},
           {"rank_of", ranked.size()},
-          {"score", rec.score},
+          {"prev_score", rec.prev.get()},
+          {"prev_score_volatility", rec.prev.volatility},
+          {"score", rec.cur.get()},
+          {"score_volatility", rec.cur.volatility},
           {"games_played", rec.games}
         };
       }
@@ -2599,7 +2627,7 @@ public:
           // Пропускаем тех, кто уже отобран
           if (already_qualified.count(uid)) continue;
 
-          double score = rec.score;
+          double score = rec.cur.get();
           ranked.emplace_back(-score, uid);
         }
         std::sort(ranked.begin(), ranked.end());

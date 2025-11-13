@@ -1,12 +1,19 @@
 //2025.11.13 17:21:10.860
-struct t_score {
-  double rating;
-  double volatility;
+struct t_score{
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_score
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(double,rating,1200)\
+  ADD(double,volatility,150)\
+  //===
+  #include "defprovar.inl"
+  //===
+  t_score(double r,double v):rating(r),volatility(v){}
+  double get()const{return rating;}
 };
-
 struct t_player_with_score {
   uint64_t uid;
-  t_score current;   // Текущее состояние
+  t_score cur;   // Текущее состояние
   t_score next;     // Вычисленное следующее состояние
   double game_score;
   double smart_score;
@@ -14,7 +21,7 @@ struct t_player_with_score {
 
 // Вспомогательные функции для работы с t_score
 t_score create_score(double rating = 1200.0, double volatility = 150.0) {
-  return {rating, volatility};
+  return t_score{rating, volatility};
 }
 
 bool operator==(const t_score& a, const t_score& b) {
@@ -26,7 +33,7 @@ t_player_with_score create_new_player(uint64_t uid, double initial_rating = 1200
 }
 
 void major_update(t_player_with_score& player) {
-  player.current.volatility = std::min(player.current.volatility * 1.5, 200.0);
+  player.cur.volatility = std::min(player.cur.volatility * 1.5, 200.0);
 }
 
 struct t_player_rank {
@@ -53,11 +60,11 @@ vector<t_player_rank> calculate_ranks(vector<t_player_with_score>& players) {
   
   size_t i = 0;
   while (i < ranks.size()) {
-    double current_score = ranks[i].game_score;
+    double cur_score = ranks[i].game_score;
     size_t start_index = i;
     size_t count_same = 0;
     
-    while (i < ranks.size() && std::abs(ranks[i].game_score - current_score) < 1e-9) {
+    while (i < ranks.size() && std::abs(ranks[i].game_score - cur_score) < 1e-9) {
       count_same++;
       i++;
     }
@@ -91,7 +98,7 @@ void update_smart_scores(vector<t_player_with_score>& players) {
   convert_to_smart_score(ranks);
 }
 
-void update_score_with_smart_ranking(vector<t_player_with_score>& players, double delta_time = 1.0) {
+void update_score_with_smart_ranking(vector<t_player_with_score>& players) {
   constexpr double K = 32.0;
   constexpr double VOLATILITY_DECAY = 0.9;
   constexpr double MAX_VOLATILITY = 200.0;
@@ -100,15 +107,15 @@ void update_score_with_smart_ranking(vector<t_player_with_score>& players, doubl
   if (n < 2) return;
   update_smart_scores(players);
   for (size_t i = 0; i < n; ++i) {
-    double Ri = players[i].current.rating;
-    double Vi = players[i].current.volatility;
+    double Ri = players[i].cur.rating;
+    double Vi = players[i].cur.volatility;
     
     double expected_score = 0.0;
     for (size_t j = 0; j < n; ++j) {
       if (i == j) continue;
       
-      double Rj = players[j].current.rating;
-      double Vj = players[j].current.volatility;
+      double Rj = players[j].cur.rating;
+      double Vj = players[j].cur.volatility;
       
       double combined_variance = sqrt(Vi * Vi + Vj * Vj);
       double expected = 1.0 / (1.0 + pow(10.0, (Rj - Ri) / (400.0 + combined_variance)));
@@ -136,7 +143,7 @@ void update_score_with_smart_ranking(vector<t_player_with_score>& players, doubl
     players[i].next.volatility = new_volatility;
   }
   for (size_t i = 0; i < n; ++i) {
-    players[i].current = players[i].next;
+    players[i].cur = players[i].next;
   }
 }
 
@@ -146,7 +153,7 @@ void print_player_states(const vector<t_player_with_score>& players) {
   for (const auto& player : players) {
     printf("%llu\t\t%.1f\t\t%.1f\t\t%.1f\t\t%.1f\t\t%.2f\n", 
         player.uid, 
-        player.current.rating, player.current.volatility,
+        player.cur.rating, player.cur.volatility,
         player.next.rating, player.next.volatility,
         player.game_score);
   }
