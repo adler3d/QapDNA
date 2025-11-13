@@ -45,6 +45,7 @@ let get_phase=p=>config.phases.filter(e=>e.name===p)[0];
 get_phase("R1").qualifyingFrom=[{"fromPhaseName":"S1","topN":900}];
 get_phase("R2").qualifyingFrom=[{"fromPhaseName":"R1","topN":300},{"fromPhaseName":"S2","topN":60}];
 get_phase("F").qualifyingFrom=[{"fromPhaseName":"R2","topN":50},{"fromPhaseName":"SF","topN":10}];
+config.phases.map(e=>e.max_concurrent_waves=(e.type==="round"?3:1));
 let sec_shift=(t,s)=>{t.setSeconds(t.getSeconds()+s);};
 let t0=new Date();sec_shift(t0,+30);
 let config2=buildAbsoluteConfig(t0.toJSON(),config.phases);

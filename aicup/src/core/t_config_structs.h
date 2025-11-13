@@ -14,6 +14,7 @@ struct TPhaseConfig {
   uint64_t stderrKB = 16;
   uint64_t replayBytesPerTick = 100;
   double gamesPerCoderPerHour = 1.0;
+  uint64_t max_concurrent_waves=3;
 
   vector<TQualRuleConfig> qualifyingFrom;
   string startTime;
@@ -43,6 +44,7 @@ void from_json(const json& j, TPhaseConfig& p) {
   if (j.contains("stderrKB")) j.at("stderrKB").get_to(p.stderrKB);
   if (j.contains("replayBytesPerTick")) j.at("replayBytesPerTick").get_to(p.replayBytesPerTick);
   if (j.contains("gamesPerCoderPerHour")) j.at("gamesPerCoderPerHour").get_to(p.gamesPerCoderPerHour);
+  if (j.contains("max_concurrent_waves")) j.at("max_concurrent_waves").get_to(p.max_concurrent_waves);
 
   if (j.contains("qualifyingFrom")) {
     j.at("qualifyingFrom").get_to(p.qualifyingFrom);

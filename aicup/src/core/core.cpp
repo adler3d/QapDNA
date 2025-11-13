@@ -631,6 +631,7 @@ struct t_phase {
   ADD(vector<vector<uint64_t>>,wave2gid,{})\
   ADD(vector<uint64_t>,wave2games_finished,{})\
   ADD(uint64_t,new_completed_waves,3)\
+  ADD(uint64_t,max_concurrent_waves,3)\
   ADD(string,last_wave_time,"2025.10.31 19:08:07.120")\
   ADD(uint64_t,sandbox_wave_interval_ms,5*60*1000)\
   ADD(double,games_per_coder_per_hour,1.0)\
@@ -1772,6 +1773,8 @@ struct t_main : t_http_base {
         pj["ticksPerGame"] = p.ticksPerGame;
         pj["msPerTick"] = p.msPerTick;
         pj["stderrKB"] = p.stderrKB;
+        pj["new_completed_waves"] = p.new_completed_waves;
+        pj["max_concurrent_waves"] = p.max_concurrent_waves;
 
         if (p.type == "round") {
           json rules = json::array();
@@ -2648,6 +2651,7 @@ public:
     }
     LOG("Activated phase: "+to_string(phase)+" with "+to_string(target->uid2rec.size())+" participants");
     waveman.startRound(qap_time_diff(target->scheduled_start_time,target->scheduled_end_time),target->scheduled_end_time);
+    target->new_completed_waves=target->max_concurrent_waves;
   }
   void update_seasons() {
     lock_guard<mutex> lock(mtx);
@@ -2748,11 +2752,11 @@ public:
     auto now = qap_time();
 
     if(!phase.new_completed_waves)return;
+    if (!waveman.canStartNewWave(phase.scheduled_end_time)) {
+      LOG("Not enough time to start a new wave.");
+      return;
+    }
     if (phase.type == "round") {
-      if (!waveman.canStartNewWave(phase.scheduled_end_time)) {
-        LOG("Not enough time to start a new wave.");
-        return;
-      }
     } else if (phase.type == "sandbox") {
       if(!(phase.prev_wave_done()&&phase.on_prev_wave_end))return;
       if (qap_time_diff(phase.last_wave_time, now) < phase.sandbox_wave_interval_ms) {
@@ -3207,6 +3211,9 @@ public:
       target->ticksPerGame=pc.ticksPerGame;
       target->msPerTick=pc.msPerTick;
       target->stderrKB=pc.stderrKB;
+      auto dv=pc.max_concurrent_waves-target->max_concurrent_waves;
+      target->new_completed_waves+=dv;
+      target->max_concurrent_waves=pc.max_concurrent_waves;
 
       //target->is_active = false;
       if (pc.type == "sandbox") {
