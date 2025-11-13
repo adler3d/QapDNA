@@ -129,43 +129,8 @@ bool has_cached_image(const string&image_tag){
   string cmd="docker image inspect "+image_tag+" > /dev/null 2>&1";
   return system(cmd.c_str())==0;
 }
-/*
-struct t_elo_score {
-  double a;//, b, c, d;
-  double get() const { return a;}//0.25 * (a + b + c + d); }
-  void set(double val) { a=val;}// = b = c = d = val; }
-};*/
 
-struct t_player_with_score{
-  uint64_t uid;
-  //string coder;
-  double cur, next;
-  double game_score;
-};
-
-void update_score(vector<t_player_with_score>& players) {
-  constexpr double K = 32.0;
-  size_t n = players.size();
-  for (size_t i = 0; i < n; ++i) {
-    double Ri = players[i].cur;
-    double expected_score = 0.0;
-    for (size_t j = 0; j < n; ++j) {
-      if (i == j) continue;
-      double Rj = players[j].cur;
-      double expected = 1.0 / (1.0 + pow(10.0, (Rj - Ri) / 400.0));
-      expected_score += expected;
-    }
-    expected_score /= (n - 1);
-    double max_score = 0.0;
-    for (const auto& p : players) {
-      if (p.game_score > max_score) max_score = p.game_score;
-    }
-    double actual_score = max_score > 0 ? players[i].game_score / max_score : 0;
-    double new_rating = Ri + K * (actual_score - expected_score);
-    players[i].next=new_rating;
-  }
-}
-
+#include "game_score.inl"
 
 using namespace std;
 string local_main_ip_port="127.0.0.1:"+to_string(MAIN_PORT);
