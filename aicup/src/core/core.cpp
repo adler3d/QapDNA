@@ -129,16 +129,17 @@ bool has_cached_image(const string&image_tag){
   string cmd="docker image inspect "+image_tag+" > /dev/null 2>&1";
   return system(cmd.c_str())==0;
 }
-
+/*
 struct t_elo_score {
-  double a, b, c, d;
-  double get() const { return 0.25 * (a + b + c + d); }
-  void set(double val) { a = b = c = d = val; }
-};
+  double a;//, b, c, d;
+  double get() const { return a;}//0.25 * (a + b + c + d); }
+  void set(double val) { a=val;}// = b = c = d = val; }
+};*/
 
 struct t_player_with_score{
-  string coder;
-  t_elo_score cur, next;
+  uint64_t uid;
+  //string coder;
+  double cur, next;
   double game_score;
 };
 
@@ -146,11 +147,11 @@ void update_score(vector<t_player_with_score>& players) {
   constexpr double K = 32.0;
   size_t n = players.size();
   for (size_t i = 0; i < n; ++i) {
-    double Ri = players[i].cur.get();
+    double Ri = players[i].cur;
     double expected_score = 0.0;
     for (size_t j = 0; j < n; ++j) {
       if (i == j) continue;
-      double Rj = players[j].cur.get();
+      double Rj = players[j].cur;
       double expected = 1.0 / (1.0 + pow(10.0, (Rj - Ri) / 400.0));
       expected_score += expected;
     }
@@ -161,7 +162,7 @@ void update_score(vector<t_player_with_score>& players) {
     }
     double actual_score = max_score > 0 ? players[i].game_score / max_score : 0;
     double new_rating = Ri + K * (actual_score - expected_score);
-    players[i].next.set(new_rating);
+    players[i].next=new_rating;
   }
 }
 
@@ -1996,13 +1997,13 @@ struct t_main : t_http_base {
       file->seekg(0, std::ios::end);
       size_t file_size = file->tellg();
       file->seekg(0, std::ios::beg);
-
-      res.set_header("Content-Type", "application/octet-stream");
+      auto ct=1?"text/html":"application/octet-stream";
+      res.set_header("Content-Type", ct);
       res.set_header("Content-Length", std::to_string(file_size));
 
       res.set_content_provider(
         file_size,
-        "application/octet-stream",
+        ct,
         [file](size_t offset, size_t length, httplib::DataSink &sink) {
           constexpr size_t buffer_size = 64 * 1024;
           char buffer[buffer_size];
