@@ -623,15 +623,15 @@ struct t_phase {
   ADD(vector<uint64_t>,games,{})\
   ADD(uint64_t,finished_games,0)\
   ADD(bool,on_prev_wave_end,true)\
-  ADD(string,scheduled_start_time,"2025.11.02,16:36:37.447")\
-  ADD(string,scheduled_end_time,"2025.11.03,09:46:51.632")\
+  ADD(string,scheduled_start_time,"2025.11.02 16:36:37.447")\
+  ADD(string,scheduled_end_time,"2025.11.03 09:46:51.632")\
   ADD(bool,is_active,false)\
   ADD(bool,is_closed,false)\
   ADD(bool,is_completed,false)\
   ADD(vector<vector<uint64_t>>,wave2gid,{})\
   ADD(vector<uint64_t>,wave2games_finished,{})\
   ADD(uint64_t,new_completed_waves,3)\
-  ADD(string,last_wave_time,"2025.10.31,19:08:07.120")\
+  ADD(string,last_wave_time,"2025.10.31 19:08:07.120")\
   ADD(uint64_t,sandbox_wave_interval_ms,5*60*1000)\
   ADD(double,games_per_coder_per_hour,1.0)\
   //===
