@@ -25,7 +25,8 @@ curl -fsSL https://get.docker.com | bash -
 # Установка компиляторов (без лишних зависимостей)
 apt-get install -y -q \
     g++ \
-    clang
+    clang \
+    gdb
 
 # Установка Emscripten через git (без системных пакетов)
 cd /opt

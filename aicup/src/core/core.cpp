@@ -692,15 +692,15 @@ struct t_main : t_http_base {
             auto&s=seasons[g.gd.season];
             if(qap_check_id(s.phases,g.gd.phase)){
               auto&p=s.phases[g.gd.phase];
-              p.finished_games++;
-              p.on_prev_wave_end=p.prev_wave_done();
-              if(qap_check_id(p.wave2games_finished,g.gd.wave)){
-                auto&gf=p.wave2games_finished[g.gd.wave];
-                gf++;
-                if(qap_check_id(p.wave2gid,g.gd.wave)&&gf==p.wave2gid[g.gd.wave].size())p.new_completed_waves++;
-              }
               if(g.author=="system")
               {
+                p.finished_games++;
+                p.on_prev_wave_end=p.prev_wave_done();
+                if(qap_check_id(p.wave2games_finished,g.gd.wave)){
+                  auto&gf=p.wave2games_finished[g.gd.wave];
+                  gf++;
+                  if(qap_check_id(p.wave2gid,g.gd.wave)&&gf==p.wave2gid[g.gd.wave].size())p.new_completed_waves++;
+                }
                 vector<t_player_with_score> players;players.reserve(g.gd.arr.size());
                 for(uint64_t i=0;i<g.gd.arr.size();i++){
                   auto&slot=g.gd.arr[i];
@@ -710,6 +710,7 @@ struct t_main : t_http_base {
                   b.uid=slot.uid;
                   b.cur=r.cur;
                   b.game_score=g.fg.slot2score[i];
+                  r.games++;
                 }
                 if(players.size()==g.gd.arr.size()){
                   update_score_with_smart_ranking(players);
