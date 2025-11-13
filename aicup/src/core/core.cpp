@@ -2866,8 +2866,11 @@ public:
       }
 
       if (slots.size() == phase.num_players) {
+        std::uniform_int_distribution<uint32_t> uniform_dist(0,numeric_limits<uint32_t>::max());
         t_game_decl gd;
         gd.arr = slots;
+        gd.seed_initial = uniform_dist(dre);
+        gd.seed_strategies = uniform_dist(dre);
         gd.config = phase.game_config;
         gd.world = phase.world;
         gd.stderr_max=phase.stderrKB;
