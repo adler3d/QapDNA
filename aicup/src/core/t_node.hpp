@@ -905,11 +905,17 @@ struct t_node:t_node_cache{
                  "universal-runner:latest";
 
     LOG("spawn_docker::say\n" + cmd);
-    int result = system(cmd.c_str());
-    if (result != 0) {
-      LOG("spawn_docker::docker run failed: " + to_string(result) + " for " + cdn_url);
-      api.on_stderr("docker run failed: " + to_string(result) + "\n");
-      return false;
+    for(int attempt=1;;attempt++){
+      int result = system(cmd.c_str());
+      if (result != 0) {
+        LOG("spawn_docker::docker run failed: " + to_string(result) + " for " + cdn_url);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        if(attempt==5){
+          api.on_stderr("docker run failed: " + to_string(result) + "\n");
+          return false;
+        }
+
+      }else break;
     }
     auto*api_ptr=&api;api.binary=binary;
     bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr](){
