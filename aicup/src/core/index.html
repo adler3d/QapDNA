@@ -45,18 +45,19 @@
             white-space: pre-wrap;
             font-family: monospace;
         }
+        pre { background: #f4f4f4; padding: 10px; overflow-x: auto; white-space: pre-wrap; }
     </style>
     
     <script>
   const API = () => document.getElementById('baseUrl').value;
-
+  let token=getToken();
   // Универсальная функция для поиска .result рядом с кнопкой
   function getResultDiv(button) {
     const form = button.closest('.form');
     return form ? form.querySelector('.result') : null;
   }
 
-  async function request(url, method = 'GET', body = null, resultDiv) {
+  async function request(url, method = 'GET', body = null, resultDiv,cb=null) {
     try {
       const res = await fetch(url, {
         method,
@@ -65,6 +66,7 @@
       });
       const text = await res.text();
       resultDiv.textContent = `${res.status} ${res.statusText}\n${text}`;
+      if(cb)cb(text);
     } catch (e) {
       resultDiv.textContent = `Ошибка: ${e.message}`;
     }
@@ -74,15 +76,64 @@
     const name = document.getElementById('coderName').value;
     const email = document.getElementById('coderEmail').value;
     const resultDiv = document.getElementById('resultRegister');
-    request(`${API()}/coder/new`, 'POST', { name, email }, resultDiv);
+    let cb=s=>setToken(JSON.parse(s).token);
+    request(`${API()}/coder/new`, 'POST', { name, email }, resultDiv,cb);
+  }
+
+  const API_BASE = window.location.origin;
+
+  function getToken() {
+    return localStorage.getItem('token') || '';
+  }
+
+  function setToken(token) {
+    localStorage.setItem('token', token);
+  }
+
+  async function apiCall(method, path, body = null) {
+    const url = API_BASE + path;
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    const token = getToken();
+    if (token) {
+      headers['Authorization'] = 'Bearer ' + token;
+    }
+
+    const options = { method, headers };
+    if (body) options.body = JSON.stringify(body);
+
+    try {
+      const res = await fetch(url, options);
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        data = { raw: text, status: res.status };
+      }
+      return { ok: res.ok, status: res.status, data };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   }
 
   function uploadSource() {
+    return submitSource();
     const coder = document.getElementById('srcCoder').value;
     const token = document.getElementById('srcToken').value;
     const src = document.getElementById('srcCode').value;
     const resultDiv = document.getElementById('resultSource');
     request(`${API()}/source/new`, 'POST', { coder, src, token }, resultDiv);
+  }
+
+  async function submitSource() {
+    const src = document.getElementById('srcCode').value;
+    const res = await apiCall('POST', '/api/seasons/current/submit', { src });
+    const out = document.getElementById('resultSource');
+    out.className = res.ok ? 'success' : 'error';
+    out.textContent = JSON.stringify(res.data, null, 2);
+    document.getElementById('srcToken').value=getToken();
   }
 
   function createGame() {
@@ -140,7 +191,8 @@
         <input type="text" placeholder="Токен" id="srcToken" />
         <textarea id="srcCode" placeholder="Ваш код..."></textarea>
         <button onclick="uploadSource()">Загрузить</button>
-        <div class="result" id="resultSource"></div>
+        <!--<div class="result" id="resultSource"></div>-->
+        <pre id="resultSource"></pre>
     </div>
     <!-- Создание игры -->
     <div class="form">
