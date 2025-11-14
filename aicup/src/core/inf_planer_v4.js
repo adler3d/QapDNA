@@ -10,7 +10,7 @@ let config = {
     { cores: 64, pricePerDay: 650 }*/
   ],
   diskPricePerGBPerDay: 60 / 5 / 30, // ~0.4 RUB/GB/day
-  seasonName: "splinter_2025",
+  seasonName: "splinter2025",
   startTime: "2025.11.03 00:00:00.000",
   phases1: [
     { name: "S1", type: "sandbox", durationHours: 24*7, coders:  75, gamesPerCoderPerHour: 1, ticksPerGame: ticks, msPerTick: TL, playersPerGame: 4, stderrKB, replayBytesPerTick: 100 },
@@ -55,7 +55,7 @@ function buildAbsoluteConfig(seasonStart, phases) {
   let currentTime = new Date(seasonStart); // например, "2025-11-03T00:00:00.000Z"
   let endTime=currentTime;
   const result = {
-    seasonName: "splinter_2025",
+    seasonName: "splinter2025",
     startTime: formatDate(currentTime),
     phases: []
   };

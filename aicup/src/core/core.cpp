@@ -2563,9 +2563,9 @@ public:
   //  }
   //}
   //void init_splinter_2025_season(t_season& s) {
-  //  s.season_name = "splinter_2025";
+  //  s.season_name = "splinter2025";
   //  //s.world = "t_splinter";
-  //  s.title = "Splinter 2025";
+  //  s.title = "Splinter2025";
   //
   //  // Определяем фазы в порядке их появления
   //  vector<tuple<string, string, uint64_t, vector<t_phase::t_qr_decl>>> phase_specs = {
@@ -3258,7 +3258,7 @@ public:
     }
   ],
   "diskPricePerGBPerDay": 0.4,
-  "seasonName": "splinter_2025",
+  "seasonName": "splinter2025",
   "startTime": "2025.11.02 00:00:00.000",
   "phases1": [],
   "phases2": [],
@@ -3481,8 +3481,8 @@ static void sim_sleep(uint64_t ms) {
       lock_guard<mutex> lock(m.mtx);
       t_season s;
       s.season = 0;
-      s.season_name = "splinter_2025";
-      s.title = "Splinter 2025";
+      s.season_name = "splinter2025";
+      s.title = "Splinter2025";
       m.seasons.push_back(s);
     }
     try {
@@ -3670,8 +3670,8 @@ void setup_main(t_main&m){
     m={};
     t_season s;
     s.season = 0;
-    s.season_name = "splinter_2025";
-    s.title = "Splinter 2025";
+    s.season_name = "splinter2025";
+    s.title = "Splinter2025";
     m.seasons.push_back(s);
   }
   //auto&b=qap_add_back(m.carr);
