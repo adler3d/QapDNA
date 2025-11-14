@@ -3797,7 +3797,7 @@ void sigchld_handler(int signo) {
     // здесь можно логировать или ничего не делать
   }
 }
-void setup_zombie_terminator(){
+int setup_zombie_terminator(){
   struct sigaction sa;
   sa.sa_handler = sigchld_handler;
   sigemptyset(&sa.sa_mask);
@@ -3809,6 +3809,7 @@ void setup_zombie_terminator(){
     perror("sigaction");
     return 1;
   }
+  return 0;
 }
 #else
 void setup_zombie_terminator(){}
