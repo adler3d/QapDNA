@@ -571,6 +571,7 @@ struct t_node:t_node_cache{
     t_node*pnode=nullptr;
     int num_containers_ready = 0;
     bool qaplr_launched = false;
+    atomic<bool> finished{false};mutex finish_mtx;
     void on_container_ready(int player_id) {
       if (slot2status[player_id].ok()) {
         ++num_containers_ready;
@@ -1000,6 +1001,8 @@ struct t_node:t_node_cache{
     );
   }
   void on_qaplr_finished(t_runned_game& g) {
+    lock_guard<mutex> lock(g.finish_mtx);
+    if (g.finished.exchange(true)) return; // уже завершено
     LOG("t_node::QapLR finished for game " + to_string(g.gd.game_id));
     for (int i = 0; i < (int)g.slot2api.size(); ++i) {
       if (g.slot2status[i].ok()) {
