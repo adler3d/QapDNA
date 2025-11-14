@@ -1428,7 +1428,7 @@ struct t_main : t_http_base {
       RATE_LIMITER(25);
       try {
         int n = req.has_param("n") ? stoi(req.get_param_value("n")) : 10;
-        n = max(1, min(n, 100));
+        n = max(1, min(n, 512));// TODO: limit 100 for user and 512 for me?
 
         vector<json> recent;
         {
