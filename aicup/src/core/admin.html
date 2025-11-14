@@ -184,7 +184,7 @@
     }
 
     // === save ===
-    async function repair() {
+    async function save() {
         const res = await apiCall('POST', '/save', {});
         const out = document.getElementById('saveResult');
         out.className = res.ok ? 'success' : 'error';
