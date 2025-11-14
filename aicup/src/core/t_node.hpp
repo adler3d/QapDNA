@@ -907,8 +907,12 @@ struct t_node:t_node_cache{
     LOG("spawn_docker::say\n" + cmd);
     for(int attempt=1;;attempt++){
       int result = system(cmd.c_str());
+      if(result==32000){
+        LOG("spawn_docker::docker run return: " + to_string(result) + " for " + cdn_url +" at attempt"+to_string(attempt)+" -> ok");
+        break;
+      }
       if (result != 0) {
-        LOG("spawn_docker::docker run failed: " + to_string(result) + " for " + cdn_url);
+        LOG("spawn_docker::docker run failed: " + to_string(result) + " for " + cdn_url +" at attempt"+to_string(attempt));
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         if(attempt==5){
           api.on_stderr("docker run failed: " + to_string(result) + "\n");
