@@ -918,5 +918,5 @@ function start_replay(){
   let h=document.location.hash;
   if(h.length>0)h=h.substr(1);
   h=h.length?h:0;
-  streamProcessReplay('http://5.129.196.254:12346/stream/'+h).catch(console.error);
+  streamProcessReplay(document.location.origin+'/stream/'+h).catch(console.error);
 }
