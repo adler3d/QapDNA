@@ -1,4 +1,36 @@
 static constexpr uint64_t kInvalidIndex = std::numeric_limits<uint64_t>::max();
+struct t_deferred_msg{
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_deferred_msg
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(string,z,{})\
+  ADD(string,msg,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+};
+struct t_node_up_rec{
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_node_up_rec
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(uint64_t,game_id,{})\
+  ADD(string,ordered_at,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+};
+struct t_node_up_msg{
+  #define DEF_PRO_COPYABLE()
+  #define DEF_PRO_CLASSNAME()t_node_up_msg
+  #define DEF_PRO_VARIABLE(ADD)\
+  ADD(uint64_t,cores,{})\
+  ADD(string,unique_token,{})\
+  ADD(vector<t_node_up_rec>,games,{})\
+  ADD(vector<t_deferred_msg>,dmarr,{})\
+  //===
+  #include "defprovar.inl"
+  //===
+};
 struct t_game_uploaded_ack{
   #define DEF_PRO_COPYABLE()
   #define DEF_PRO_CLASSNAME()t_game_uploaded_ack
@@ -38,6 +70,7 @@ struct t_game_decl{
   ADD(uint64_t,stderr_max,1024*64)\
   ADD(double,TL,750.0)\
   ADD(double,TL0,1000.0)\
+  ADD(string,ordered_at,{})\
   //===
   #include "defprovar.inl"
   //===
@@ -87,7 +120,6 @@ struct t_game{
   #define DEF_PRO_VARIABLE(ADD)\
   ADD(t_game_decl,gd,{})\
   ADD(t_finished_game,fg,{})\
-  ADD(string,ordered_at,{})\
   ADD(string,finished_at,{})\
   ADD(string,status,"new")\
   ADD(string,author,{})\

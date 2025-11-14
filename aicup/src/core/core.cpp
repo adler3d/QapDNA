@@ -206,10 +206,10 @@ struct GameQueue {
 
 struct t_node_info {
   string name;
-  int total_cores = 0;
-  int used_cores = 0;
-  bool online = false;
-  string last_heartbeat = 0;
+  int total_cores=0;
+  int used_cores=0;
+  bool online=false;
+  string last_heartbeat=0;
   int available() const { return online ? (total_cores - used_cores) : 0; }
   bool can_run(int players) { return available() >= players; }
 };
@@ -270,8 +270,7 @@ struct Scheduler {
   void on_game_aborted(const string&node,int players){
     add_cores(node,players);
   }
-  bool on_node_up(const string&payload,const string&node) {
-    int cores=stoi(payload);
+  bool on_node_up(int cores,const string&node) {
     if (cores <= 0 || cores > 128){LOG("Scheduler:: more than 128 cores??? cores=="+to_string(cores));cores = 8;}
     lock_guard<mutex> lock(mtx);
     if(auto*p=node2i(node)){
@@ -309,6 +308,28 @@ struct Scheduler {
         }
       }
     }).detach();
+  }
+  void mark_game_running(int game_id, const string& node, int cores_used) {
+    lock_guard<mutex> lock(mtx);
+    for (auto& ex : narr) {
+      if (ex.name == node) {
+        ex.used_cores += cores_used;
+        break;
+      }
+    }
+  }
+  void on_node_up_with_used_cores(int total_cores, int used_cores, const string& node) {
+    lock_guard<mutex> lock(mtx);
+    t_node_info*node_info=nullptr;
+    for(auto&ex:narr){if(ex.name==node){node_info=&ex;break;}}
+    if (!node_info) {
+      narr.push_back({node, total_cores, used_cores, true, qap_time()});
+      return;
+    }
+    node_info->total_cores = total_cores;
+    node_info->used_cores = used_cores;
+    node_info->online = true;
+    node_info->last_heartbeat = qap_time();
   }
 };
 
@@ -678,7 +699,7 @@ struct t_main : t_http_base {
     lock_guard<mutex> lock(cds_mtx);
     auto& decoder = client_decoders[client_id];
     if (!decoder.cb) {
-      decoder.cb = [this, client_id, send](const string& z, const string& payload) {
+      decoder.cb = [this, client_id, send,&decoder](const string& z, const string& payload) {
         if(z=="game_finished:"+UPLOAD_TOKEN){
           auto result=parse<t_finished_game>(payload);
           lock_guard<mutex> lock(mtx);
@@ -758,25 +779,65 @@ struct t_main : t_http_base {
           LOG("game aborted "+to_string(gid));
         }
         if(z=="node_up:"+UPLOAD_TOKEN){
-          auto a=split(payload,",");
-          if(a.size()!=2)return;
+          auto msg=parse<t_node_up_msg>(payload);
+          lock_guard<mutex> lock(mtx);
+          //auto a=split(payload,",");
+          //if(a.size()!=2)return;
           {
-            lock_guard<mutex> lock(cid2i_mtx);
-            for(auto&ex:cid2i){
-              if(ex.second.ut!=a[1])continue;
-              auto&n=cid2i[client_id];
-              n=ex.second;n.cid=client_id;n.our=true;
-              sch.on_node_up(a[0],n.ut);
-              ex.second.deaded=true;
-              return;
+            for(auto&ex:msg.games){
+              if(!qap_check_id(garr,ex.game_id)){
+                LOG("t_main::node_up: unknown game_id " + to_string(ex.game_id) + ", ignoring");
+                continue;
+              }
+      
+              auto& g = garr[ex.game_id];
+              if(g.gd.ordered_at!=ex.ordered_at){
+                LOG("t_main::node_up: game " + to_string(ex.game_id) + " order time mismatch, ignoring");
+                continue;
+              }
+      
+              if (g.status == "scheduled" || g.status == "assigned") {
+                g.status = "running";
+                LOG("t_main::node_up: recovered running game " + to_string(ex.game_id));
+                sch.mark_game_running(ex.game_id, node(client_id), g.gd.arr.size());
+              } else if (g.status == "running") {
+                LOG("t_main::node_up: confirmed running game " + to_string(ex.game_id));
+              } else {
+                LOG("t_main::node_up: game " + to_string(ex.game_id) + " in unexpected state: " + g.status);
+              }
             }
-            auto&r=cid2i[client_id];
-            QapAssert(a[1].size());
-            QapAssert(!r.ut.size());
-            r.ut=a[1];
-            r.our=true;
+            for(auto&ex:msg.dmarr){
+              decoder.cb(ex.z,ex.msg);
+            }
+            {
+              lock_guard<mutex> lock(cid2i_mtx);
+              bool found_old = false;
+              for (auto& ex : cid2i) {
+                if (ex.second.ut == msg.unique_token) {
+                  auto& n = cid2i[client_id];
+                  n = ex.second; 
+                  n.cid = client_id; 
+                  n.our = true;
+                  ex.second.deaded = true;
+                  found_old = true;
+                  break;
+                }
+              }
+              if (!found_old) {
+                auto& r = cid2i[client_id];
+                r.ut = msg.unique_token;
+                r.our = true;
+              }
+            }
+            int running_games_cores=0;
+            for(auto&ex:msg.games){
+              if(!qap_check_id(garr,ex.game_id))continue;
+              auto&g=garr[ex.game_id];
+              running_games_cores+=g.gd.arr.size();
+            }
+            sch.on_node_up_with_used_cores(msg.cores, running_games_cores, node(client_id));
           }
-          sch.on_node_up(a[0],node(client_id));
+          //sch.on_node_up(msg.cores,node(client_id));
         }
         if(z=="ping:"+UPLOAD_TOKEN){
           auto n=node(client_id,true);
@@ -892,6 +953,26 @@ struct t_main : t_http_base {
     };
     return std::move(out);
   }
+  int repair_failed_games(){
+    int n=0;
+    for(auto&ex:garr){
+      if(ex.status!="assign_failed")continue;
+      if(!qap_check_id(seasons,ex.gd.season))continue;
+      auto&s=seasons[ex.gd.season];
+      double ms=0;
+      for(auto&slot:ex.gd.arr){
+        if(!s.uid2scoder.count(slot.uid))continue;
+        auto&sc=s.uid2scoder[slot.uid];
+        if(!qap_check_id(sc.sarr,slot.v))continue;
+        ms+=sc.sarr[slot.v].ms.avg(ex.gd.maxtick*ex.gd.TL);
+      }
+      ex.status = "scheduled";
+      sch.add_game_decl(ex.gd,ms);
+      n++;
+    }
+    LOG("t_main::repair_failed_games: n = "+to_string(n));
+    return n;
+  }
   struct t_sch_api:i_sch_api{
     t_main*pmain=nullptr;
     bool assign_game(const t_game_decl&game,const string&node)override{
@@ -899,12 +980,18 @@ struct t_main : t_http_base {
       auto cid=pmain->node2cid(node);
       //lock_guard<mutex> lock(pmain->cid2i_mtx);
       //auto&cid=pmain->cid2i[cid].cid;
-      return pmain->server.send_to_client(cid,payload);
+      auto ok=pmain->server.send_to_client(cid,payload);
+      lock_guard<mutex> lock(pmain->mtx);
+      auto&g=pmain->garr[game.game_id];
+      g.status=ok?"assigned":"assign_failed";
+      return ok;
     }
   };
   t_server_api server{MAIN_PORT};
   Scheduler sch;t_sch_api sch_api;
   int main(int port=MAIN_PORT){
+    std::random_device rd;
+    dre.seed(rd());
     sch.api=&sch_api;sch_api.pmain=this;
     thread([this]{sch.main();}).detach();
     thread update_seasons_thread([this]() {
@@ -912,7 +999,7 @@ struct t_main : t_http_base {
     });
     update_seasons_thread.detach();
     client_killer();
-    carr.reserve(31456*3);
+    //carr.reserve(31456*3);
     server.port=port;
     server.onClientConnected = [this](int id, socket_t sock, const string& ip) {
       on_client_connected(id, sock, ip);
@@ -1322,7 +1409,7 @@ struct t_main : t_http_base {
         {"game_id", g.gd.game_id},
         {"tick", g.fg.tick},
         {"size", g.fg.size},
-        {"ot", g.ordered_at},
+        {"ot", g.gd.ordered_at},
         {"ft", g.finished_at},
         {"status", g.status},
         {"author", g.author},
@@ -1687,7 +1774,7 @@ struct t_main : t_http_base {
           t_game game;
           game.gd = gd;
           game.status = "manual";
-          game.ordered_at = qap_time();
+          game.gd.ordered_at = qap_time();
           game.author = "manual:" + carr[uid].sysname;
           garr.push_back(std::move(game));
         }
@@ -1906,6 +1993,7 @@ struct t_main : t_http_base {
           {"prod_time", v.prod_time},
           {"status", v.status},
           {"size", v.size},
+          {"ms_avg", v.ms.avg(0.0)},
           {"cdn_src_url", v.cdn_src_url},
           {"cdn_bin_url", v.cdn_bin_url}
         });
@@ -1972,12 +2060,12 @@ struct t_main : t_http_base {
     //---
     F("index.html");
     F("comments.html");
-    //F("ainews.html");
+    F("ainews.html");
     F("admin.html");
     F("strategies.html");
     F("thirdparty/sweetalert2@11.js");
     #undef F
-
+    /*
     srv.Get("/ainews.html", [](const httplib::Request &req, httplib::Response &res) {
       string file_path = "ainews.html";
       auto file = std::make_shared<std::ifstream>(file_path, std::ios::binary);
@@ -2015,7 +2103,7 @@ struct t_main : t_http_base {
         }
       );
     });
-
+    */
     srv.set_logger([](const httplib::Request& req, const httplib::Response& res) {
         std::cout <<"["<<qap_time()<<"]t_site: "<< "Request: " << req.method << " " << req.path;
         if (!req.remote_addr.empty()) {
@@ -2301,7 +2389,7 @@ struct t_main : t_http_base {
       json tree = build_comment_tree(id, comments, carr,uid);
       res.set_content(tree.dump(2), "application/json");
     });
-    srv.Get("/save", [this](const httplib::Request& req, httplib::Response& res) {
+    srv.Post("/api/save", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(15);
       lock_guard<mutex> lock(mtx);
       auto [uid, ok] = auth_by_bearer(req);
@@ -2310,6 +2398,14 @@ struct t_main : t_http_base {
       auto s=QapSaveToStr(*this);
       file_put_contents("save.qap",s);
       res.set_content("["+qap_time()+"]: size="+to_string(s.size()/1024.0/1024.0)+"MB", "text/plain");
+    });
+    srv.Post("/api/repair", [this](const httplib::Request& req, httplib::Response& res) {
+      RATE_LIMITER(25);
+      auto [uid, ok] = auth_by_bearer(req);
+      if (!ok||uid) { res.status = 404; return; }
+      lock_guard<mutex> lock(mtx);
+      auto n=repair_failed_games();
+      res.set_content("["+qap_time()+"]: n="+to_string(n), "text/plain");
     });
     srv.Get("/save.qap",[this](const httplib::Request&req,httplib::Response&res){\
       RATE_LIMITER(25);
@@ -2788,7 +2884,7 @@ public:
       t_game game;
       game.gd = gd;
       game.status = "scheduled";
-      game.ordered_at = now;
+      game.gd.ordered_at = now;
       game.author = "system";
 
       garr.push_back(std::move(game));
@@ -2808,9 +2904,8 @@ public:
       " for phase " + phase.phase_name +
       " with " + to_string(wave.size()) + " games.");
   }
-  default_random_engine dre;QapClock g_clock;bool need_init_dre=true;
+  default_random_engine dre;
   vector<t_game_decl> generate_wave(t_phase& phase, t_season& season) {
-    if(need_init_dre){need_init_dre=false;dre.seed(int(g_clock.MS()*1000));}
     vector<t_game_decl> wave;
     //lock_guard<mutex> lock(mtx);
 

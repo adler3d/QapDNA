@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -46,6 +46,16 @@
   <textarea id="manualPlayers" placeholder="my_coder&#10;other_coder&#10;...">my_coder</textarea>
   <button onclick="createManualGame()">🎲 Launch Manual Game</button>
   <pre id="manualGameResult"></pre>
+
+  <!-- 3. save -->
+  <h2>⚙️ save</h2>
+  <button onclick="save()">✅ save</button>
+  <pre id="saveResult"></pre>
+
+  <!-- 3. repair -->
+  <h2>⚙️ repair</h2>
+  <button onclick="repair()">✅ repair</button>
+  <pre id="repairResult"></pre>
 
   <!-- 3. Apply DSL config -->
   <h2>⚙️ Apply DSL Command</h2>
@@ -173,6 +183,22 @@
       out.textContent = JSON.stringify(res.data, null, 2);
     }
 
+    // === save ===
+    async function repair() {
+        const res = await apiCall('POST', '/save', {});
+        const out = document.getElementById('saveResult');
+        out.className = res.ok ? 'success' : 'error';
+        out.textContent = JSON.stringify(res.data, null, 2);
+    }
+
+    // === repair ===
+    async function repair() {
+      const res = await apiCall('POST', '/repair', {});
+      const out = document.getElementById('repairResult');
+      out.className = res.ok ? 'success' : 'error';
+      out.textContent = JSON.stringify(res.data, null, 2);
+    }
+    
     // === DSL ===
     async function applyDsl() {
       const cmd = document.getElementById('dslCommand').value;

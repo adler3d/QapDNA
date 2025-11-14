@@ -919,7 +919,7 @@ struct t_node:t_node_cache{
     return ok;
   }
   static string config2seed(const string&config){return {};}
-  vector<unique_ptr<t_runned_game>> rgarr;
+  vector<unique_ptr<t_runned_game>> rgarr;mutex rgarr_mutex;
   // Асинхронная отправка
   void t_cdn_api_upload_async(
       const string& path,
@@ -938,18 +938,24 @@ struct t_node:t_node_cache{
       on_done(error);
     }).detach();
   }
-  //t_net_api capi;
+  vector<t_deferred_msg> dmarr;mutex dmarr_mutex;
   void t_main_api_send(const string& z, const t_finished_game& ref) {
-    //string payload=qap_zchan_write("game_finished:"+UPLOAD_TOKEN,serialize(ref));
-    //capi.write_to_socket(local_main_ip_port,payload);
-    swd->try_write("game_finished:"+UPLOAD_TOKEN,serialize(ref));
+    auto payload=serialize(ref);
+    if(swd->try_write("game_finished:"+UPLOAD_TOKEN,payload))return;
+    lock_guard<mutex> lock(dmarr_mutex);
+    auto&b=qap_add_back(dmarr);
+    b.z="game_finished:"+UPLOAD_TOKEN;
+    b.msg=payload;
   }
   void t_main_api_send(const string& z, const t_game_uploaded_ack& ref) {
-    //string payload=qap_zchan_write("game_uploaded:"+UPLOAD_TOKEN,serialize(ref));
-    //capi.write_to_socket(local_main_ip_port,payload);
-    swd->try_write("game_uploaded:"+UPLOAD_TOKEN,serialize(ref));
+    auto payload=serialize(ref);
+    if(swd->try_write("game_uploaded:"+UPLOAD_TOKEN,payload))return;
+    lock_guard<mutex> lock(dmarr_mutex);
+    auto&b=qap_add_back(dmarr);
+    b.z="game_uploaded:"+UPLOAD_TOKEN;
+    b.msg=payload;
   }
-  int game_n=0;mutex rgarr_mutex;
+  int game_n=0;
   bool new_game(const t_game_decl&gd){
     t_runned_game*pgame=nullptr;
     {lock_guard<mutex> lock(rgarr_mutex);auto&gu=qap_add_back(rgarr);gu=make_unique<t_runned_game>();pgame=gu.get();}
@@ -1197,12 +1203,28 @@ struct t_node:t_node_cache{
   unique_ptr<SocketWithDecoder> swd;
   string unique_token;
   int main(){
-    static auto cores=to_string(thread::hardware_concurrency()*32);
+    static auto cores=(thread::hardware_concurrency()*32);
     atomic<bool> pong_received{false};
     auto cb=[&](const string&z,const string&payload){
       if(z=="hi"){
         if(unique_token.empty())unique_token=payload;
-        bool ok=swd->try_write("node_up:"+UPLOAD_TOKEN,cores+","+unique_token);
+        t_node_up_msg msg;
+        msg.cores=cores;
+        msg.unique_token=unique_token;
+        {
+          lock_guard<mutex> lock(rgarr_mutex);
+          for(auto&p:rgarr){
+            auto&rg=*p;
+            auto&b=qap_add_back(msg.games);
+            b.ordered_at=rg.gd.ordered_at;
+            b.game_id=rg.gd.game_id;
+          }
+        }
+        {
+          lock_guard<mutex> lock(dmarr_mutex);
+          msg.dmarr=std::move(dmarr);
+        }
+        bool ok=swd->try_write("node_up:"+UPLOAD_TOKEN,serialize(msg));
         LOG("t_node::node_up result:"+string(ok?"true":"false"));
         //if(!ok)return;
         //swd->reconnect();
