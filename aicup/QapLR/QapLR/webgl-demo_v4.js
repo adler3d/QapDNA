@@ -918,7 +918,5 @@ function start_replay(){
   let h=document.location.hash;
   if(h.length>0)h=h.substr(1);
   h=h.length?h:0;
-  var s=document.location.origin.split(":");
-  if(s.length>"http::".split(":").length)s.pop();
-  streamProcessReplay(s.join(":")+':12346/stream/'+h).catch(console.error);
+  streamProcessReplay(document.location.host.split(":")[0]+':12346/stream/'+h).catch(console.error);
 }
