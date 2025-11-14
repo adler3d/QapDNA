@@ -918,6 +918,6 @@ function start_replay(){
   let h=document.location.hash;
   if(h.length>0)h=h.substr(1);
   h=h.length?h:0;
-  var srv=document.location.protocol.split(":")[0]+"::/"+document.location.host.split(":")[0];
+  var srv=document.location.protocol+"//"+document.location.host.split(":")[0];
   streamProcessReplay(srv+':3000/stream/'+h).catch(console.error);
 }
