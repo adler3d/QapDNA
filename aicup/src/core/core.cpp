@@ -3657,6 +3657,7 @@ static constexpr int SIGPIPE=0;
 #define fdopen(...)0
 #define qap_read(...)0
 #define send(...)0
+#define waitpid(...)0
 #else
 static inline pollfd make_pollin(int fd){return pollfd{fd,POLLIN,0};}
 static inline pollfd make_pollinout(int fd){return pollfd{fd,POLLIN|POLLOUT,0};}
@@ -3786,14 +3787,41 @@ void setup_main(t_main&m){
   */
 }
 //#include "t_main_test.h"
-#include <signal.h>
+#include <sys/types.h>
+#ifndef _WIN32
+#include <sys/wait.h>
+#include <unistd.h>
+void sigchld_handler(int signo) {
+  // waitpid с WNOHANG чтобы не блокироваться, вызываем в цикле на случай нескольких зомби
+  while (waitpid(-1, NULL, WNOHANG) > 0) {
+    // здесь можно логировать или ничего не делать
+  }
+}
+void setup_zombie_terminator(){
+  struct sigaction sa;
+  sa.sa_handler = sigchld_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_RESTART | SA_NOCLDSTOP; 
+  // SA_RESTART перезапускает системные вызовы после обработки сигнала
+  // SA_NOCLDSTOP игнорирует сигналы для остановленных дочерних процессов
 
+  if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+    perror("sigaction");
+    return 1;
+  }
+}
+#else
+void setup_zombie_terminator(){}
+#endif
+#include <signal.h>
+#include <stdio.h>
 int main(int argc,char*argv[]){
+  setup_zombie_terminator();
+  signal(SIGPIPE, SIG_IGN);
   //main_test();//t_coder_rec::t_source
   //t_main::sim_main();
   //return 0;
   cout<<qap_time_addms("2025.03.01 01:02:47.600",0)<<endl;
-  signal(SIGPIPE, SIG_IGN);
   srand(time(0));
   if(bool prod=true){
     string mode="all";

@@ -590,9 +590,11 @@ struct t_node:t_node_cache{
       if(!qaplr->start(gd)){
         LOG("t_node::qaplr spawn failed, aborting game " + to_string(gd.game_id));
         lock_guard<mutex> lock(pnode->rgarr_mutex);
-        QapCleanIf(pnode->rgarr, [&](const auto& ref) {
-          return ref->gd.game_id == gd.game_id;
-        });
+        for(auto&api:slot2api){
+          t_node::kill(api->conid);
+        }
+        pnode->swd->try_write("game_aborted:"+UPLOAD_TOKEN,to_string(gd.game_id)+",QapLR::spawn_fail");
+        QapCleanIf(pnode->rgarr,[&](auto&ref){return ref->gd.game_id==gd.game_id;});
         return;
       }
       LOG("t_runned_game::QapLR launched after all containers ready");
