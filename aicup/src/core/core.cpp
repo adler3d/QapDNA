@@ -956,7 +956,7 @@ struct t_main : t_http_base {
   int repair_failed_games(){
     int n=0;
     for(auto&ex:garr){
-      if(ex.status!="assign_failed")continue;
+      if(!(ex.status=="assign_failed"||ex.status=="assigned"))continue;
       if(!qap_check_id(seasons,ex.gd.season))continue;
       auto&s=seasons[ex.gd.season];
       double ms=0;
