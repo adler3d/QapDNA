@@ -885,7 +885,7 @@ struct t_node:t_node_cache{
     api.container_socket_dir=baseSocketDir + "/" + api.conid;
     auto mkresult=system(("mkdir -p " + api.container_socket_dir).c_str());
     if(mkresult){
-      LOG("spawn_docker::mkdir failed: " + to_string(mkresult) + " for " + conid);
+      LOG("spawn_docker::mkdir failed: " + to_string(mkresult) + " for " + api.conid);
       return false;
     }
     api.socket_path_on_host = api.container_socket_dir + "/dokcon_" + api.conid + ".sock";
