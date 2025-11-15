@@ -177,70 +177,68 @@ class SocketWithDecoder {
 
   void start_reader() {
     reader_thread = std::thread([this]() {
+      // Устанавливаем сокет в неблокирующий режим
+      #ifdef _WIN32
+          u_long mode = 1;
+          ioctlsocket(sock, FIONBIO, &mode);
+      #else
+          int flags = fcntl(sock, F_GETFL, 0);
+          fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+      #endif
+
       char temp[4096];
-
-      // --- НОВОЕ: Установка сокета в блокирующий режим (по умолчанию) ---
-      // (или можно оставить как есть, если неблокирующий сработает с poll)
-      // #ifdef _WIN32
-      //     u_long mode = 0; // 0 означает блокирующий
-      //     ioctlsocket(sock, FIONBIO, &mode);
-      // #else
-      //     int flags = fcntl(sock, F_GETFL, 0);
-      //     fcntl(sock, F_SETFL, flags & ~O_NONBLOCK); // Убираем O_NONBLOCK
-      // #endif
-      // --- (ПОКА ОСТАВИМ НЕБЛОКИРУЮЩИЙ, poll с ним работает) ---
-
       while (!stopping) {
-        // --- НОВОЕ: Используем poll для ожидания данных или таймаута ---
+        // Используем poll для ожидания данных с таймаутом (например, 100 мс)
+        // Это позволяет потоку проверять флаг stopping без блокировки recv навсегда
         struct pollfd pfd = {sock, POLLIN, 0};
-        int poll_res = poll(&pfd, 1, 100); // Ждём 100мс (можно настроить)
+        int poll_res = poll(&pfd, 1, 100); // 100 мс таймаут
 
         if (poll_res > 0) {
-          // Данные готовы к чтению
-          int n = recv(sock, temp, sizeof(temp), 0);
-          if (n > 0) {
-            decoder.feed(temp, n);
-          } else if (n == 0) {
-            // Соединение закрыто удаленной стороной
-            LOG("Reader: Connection closed by peer.");
-            break;
-          } else {
-            // n < 0
-            #ifdef _WIN32
-              int err = WSAGetLastError();
-              if (err == WSAEWOULDBLOCK || err == WSAEINPROGRESS) {
-                  // Это неожиданно с poll, но обработаем
-                  continue;
-              }
-              LOG("Reader: Winsock error on recv: " + std::to_string(err));
-            #else
-              if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // Это неожиданно с poll, но обработаем
-                    continue;
-              }
-              LOG("Reader: errno on recv: " + std::to_string(errno));
-            #endif
-            // Любая другая ошибка - выходим из цикла
-            break;
-          }
+            // Данные готовы к чтению
+            int n = recv(sock, temp, sizeof(temp), 0);
+            if (n > 0) {
+                decoder.feed(temp, n);
+            } else if (n == 0) {
+                // Соединение закрыто удаленной стороной
+                LOG("Reader: Connection closed by peer.");
+                break;
+            } else {
+                // n < 0
+                #ifdef _WIN32
+                    int err = WSAGetLastError();
+                    if (err == WSAEWOULDBLOCK || err == WSAEINPROGRESS) {
+                        // Это неожиданно с poll, но обработаем
+                        continue;
+                    }
+                    LOG("Reader: Winsock error on recv: " + std::to_string(err));
+                #else
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                         // Это неожиданно с poll, но обработаем
+                         continue;
+                    }
+                    LOG("Reader: errno on recv: " + std::to_string(errno));
+                #endif
+                // Любая другая ошибка - выходим из цикла
+                break;
+            }
         } else if (poll_res == 0) {
-          // Таймаут - продолжаем цикл, проверяя флаг stopping
-          continue; // Явно указываем, что это продолжение
+            // Таймаут - продолжаем цикл, проверяя флаг stopping
+            continue;
         } else { // poll_res < 0
-          // Ошибка poll
-          #ifdef _WIN32
-              int err = WSAGetLastError(); // WSAPoll не всегда доступен, используем errno на *nix
-              LOG("SocketWithDecoder::Reader: Winsock poll error: " + std::to_string(err));
-          #else
-              LOG("SocketWithDecoder::Reader: poll error: " + std::to_string(errno));
-          #endif
-          break; // Выходим из цикла
+            // Ошибка poll
+            #ifdef _WIN32
+                int err = WSAGetLastError(); // WSAPoll не всегда доступен
+                LOG("SocketWithDecoder::Reader: Winsock poll error: " + std::to_string(err));
+            #else
+                LOG("SocketWithDecoder::Reader: poll error: " + std::to_string(errno));
+            #endif
+            break; // Выходим из цикла
         }
       }
 
       // Завершаем работу
       if (sock != INVALID_SOCKET) {
-        ::closesocket(sock); // Закрываем сокет, если ещё не закрыт
+        ::closesocket(sock);
         sock = INVALID_SOCKET;
       }
     });
@@ -248,9 +246,14 @@ class SocketWithDecoder {
 
   void stop_reader() {
     if (reader_thread.joinable()) {
-      stopping = true;
-      reader_thread.join();
-      stopping = false;
+      stopping = true; // Устанавливаем флаг остановки
+      // Прерываем recv в reader_thread через shutdown
+      if (sock != INVALID_SOCKET) {
+        shutdown(sock, SD_BOTH); // Отправляем сигнал о закрытии
+        // closesocket(sock); // Альтернативно, можно закрыть сокет, но shutdown предпочтительнее для прерывания recv
+      }
+      reader_thread.join(); // Теперь join() должен завершиться быстро
+      stopping = false; // Сброс для возможного будущего использования
     }
   }
 
