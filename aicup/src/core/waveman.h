@@ -122,7 +122,7 @@ struct WaveManager {
   bool canStartNewWave(const string&round_end_time) {
     if(roundEndTime!=round_end_time){
       roundEndTime=round_end_time;
-      roundDurationMS=qap_time_diff(round_end_time,qap_time());
+      roundDurationMS=qap_time_diff(qap_time(),round_end_time);
       roundClock.Start();
     }
     double elapsedMS = roundClock.MS();
