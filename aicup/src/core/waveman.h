@@ -128,8 +128,18 @@ struct WaveManager {
     double elapsedMS = roundClock.MS();
     double remainingTimeMS = roundDurationMS - elapsedMS;
     double predictedDurationMS = predictNextWaveDurationMS();
+    double tawd=totalActiveWavesDuration();
+    double rem_sub_tawd=remainingTimeMS-tawd;
+    LOG(
+      "elapsedMS:"+to_string(elapsedMS)+
+      " remainingTimeMS:"+to_string(remainingTimeMS)+
+      " predictedDurationMS:"+to_string(predictedDurationMS)+
+      " tawd:"+to_string(tawd)+
+      " rem_sub_tawd:"+to_string(rem_sub_tawd)+
+      ""
+    );
     // Проверяем что остаётся времени на новую волну с учётом текущих активных волн
-    return (remainingTimeMS - totalActiveWavesDuration()) >= predictedDurationMS;
+    return rem_sub_tawd >= predictedDurationMS;
   }
 
   // Запуск новой волны: фиксируем старт, возвращаем номер волны
