@@ -15,7 +15,7 @@ namespace fs = std::filesystem;
 #ifdef _WIN32
 static const string CDN_DATA_DIR = "./";
 #else
-static const string CDN_DATA_DIR = "/tmp/cdn/"; // Позже можно на /var/lib/cdn
+static const string CDN_DATA_DIR = "/cdn/"; // Позже можно на /var/lib/cdn
 #endif
 static const string UPLOAD_TOKEN = "s3cr3t_t0k3n_f0r_cdn_uploads_2025";
 struct t_http_base{
