@@ -2948,8 +2948,8 @@ public:
     }
     if (phase.type == "round") {
     } else if (phase.type == "sandbox") {
-      LOG("phase.on_prev_wave_end == "+to_string(phase.on_prev_wave_end));
-      LOG("phase.prev_wave_done() == "+to_string(phase.prev_wave_done()));
+      //LOG("phase.on_prev_wave_end == "+to_string(phase.on_prev_wave_end));
+      //LOG("phase.prev_wave_done() == "+to_string(phase.prev_wave_done()));
       if(!(phase.prev_wave_done()&&phase.on_prev_wave_end))return;
       if (qap_time_diff(phase.last_wave_time, now) < phase.sandbox_wave_interval_ms) {
         LOG("qap_time_diff("+phase.last_wave_time+", now) < "+to_string(phase.sandbox_wave_interval_ms));
