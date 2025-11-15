@@ -969,7 +969,7 @@ struct t_main : t_http_base {
     return std::move(out);
   }
   int repair_failed_games(){
-    int n=0;
+    int n=0;int sys_n=0;
     for(auto&ex:garr){
       if(!(ex.status=="assign_failed"||ex.status=="assigned"||ex.status.substr(0,7)=="aborted"||ex.status=="running"))continue;
       if(!qap_check_id(seasons,ex.gd.season))continue;
@@ -983,6 +983,7 @@ struct t_main : t_http_base {
       }
       ex.status = "scheduled";
       sch.add_game_decl(ex.gd,ms);
+      if(ex.author=="system")sys_n++;
       n++;
     }
     LOG("t_main::repair_failed_games: n = "+to_string(n));
@@ -1027,6 +1028,13 @@ struct t_main : t_http_base {
         if(g.gd.wave < phase.wave2games_finished.size()) {
           phase.wave2games_finished[g.gd.wave]++;
         }
+      }
+    }
+    for(auto& season : seasons) {
+      for(auto& phase : season.phases) {
+        if(!phase.is_active)continue;
+        if(!sys_n)phase.on_prev_wave_end=phase.prev_wave_done();
+        LOG("phase.on_prev_wave_end == "+to_string(phase.on_prev_wave_end));
       }
     }
     LOG("t_main::repair_failed_games: recount completed");
