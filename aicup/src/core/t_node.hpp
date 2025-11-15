@@ -878,9 +878,16 @@ struct t_node:t_node_cache{
       //QapCleanIf(tasks,[](const t_task&t){return t.deaded;});
     }
   };
+  string rndstring(){
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<uint32_t> dis;
+    uint32_t v = dis(gen);
+    return to_string(v);
+  }
   t_container_monitor container_monitor;
   bool spawn_docker(const string& cdn_url, t_docker_api_v2& api, int game_id, int player_id, t_runned_game& g) {
-    api.conid = "game_" + to_string(game_id) + "_p" + to_string(player_id) + "_" + to_string(unsigned(rand()<<16)+rand());
+    api.conid = "game_" + to_string(game_id) + "_p" + to_string(player_id) + "_" + rndstring();
 
     // Создаём уникальную папку для сокетов этого контейнера
     string baseSocketDir = "/tmp/dokcon_sockets";
