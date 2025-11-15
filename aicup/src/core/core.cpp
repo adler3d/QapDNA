@@ -986,6 +986,50 @@ struct t_main : t_http_base {
       n++;
     }
     LOG("t_main::repair_failed_games: n = "+to_string(n));
+    // Сначала сбросим все счётчики и контейнеры во всех фазах всех сезонов
+    for(auto& season : seasons) {
+      for(auto& phase : season.phases) {
+        phase.finished_games = 0;
+        phase.games.clear();
+        phase.wave2gid.clear();
+        phase.wave2games_finished.clear();
+      }
+    }
+
+    // Пройдём по t_main::garr и пересчитаем значения
+    for(uint64_t gid = 0; gid < garr.size(); gid++) {
+      auto& g = garr[gid];
+
+      // Учитываем только игры с автором "system"
+      if(g.author != "system") continue;
+
+      // Проверим, что season и phase корректны
+      if(!qap_check_id(seasons, g.gd.season)) continue;
+      auto& season = seasons[g.gd.season];
+      if(!qap_check_id(season.phases, g.gd.phase)) continue;
+      auto& phase = season.phases[g.gd.phase];
+
+      // Добавим game_id в список всех игр фазы
+      phase.games.push_back(gid);
+
+      // Инициализируем wave2gid и wave2games_finished если необходимо
+      if(g.gd.wave >= phase.wave2gid.size()) {
+        phase.wave2gid.resize(g.gd.wave + 1);
+        phase.wave2games_finished.resize(g.gd.wave + 1);
+      }
+
+      // Добавим game_id в соответствующую волну
+      phase.wave2gid[g.gd.wave].push_back(gid);
+
+      // Если игра завершена, увеличим счётчики
+      if(g.status == "finished"||g.status == "uploaded") {
+        phase.finished_games++;
+        if(g.gd.wave < phase.wave2games_finished.size()) {
+          phase.wave2games_finished[g.gd.wave]++;
+        }
+      }
+    }
+    LOG("t_main::repair_failed_games: recount completed");
     return n;
   }
   struct t_assigned_game{
