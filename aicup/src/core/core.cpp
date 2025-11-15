@@ -2,7 +2,7 @@
 #include <algorithm>
 void LOG(const std::string&str);
 #include "netapi.h"
-
+//#include "ReliableSocketWithDecoder.h"
 #include <thread>
 #include <iostream>
 #include <chrono>
@@ -309,14 +309,15 @@ struct Scheduler {
       }
     }).detach();
   }
-  void mark_game_running(int game_id, const string& node, int cores_used) {
+  int mark_game_running(int game_id, const string& node, int cores_used) {
     lock_guard<mutex> lock(mtx);
     for (auto& ex : narr) {
       if (ex.name == node) {
         ex.used_cores += cores_used;
-        break;
+        return ex.used_cores;
       }
     }
+    return 0;
   }
   void on_node_up_with_used_cores(int total_cores, int used_cores, const string& node) {
     lock_guard<mutex> lock(mtx);
@@ -693,13 +694,17 @@ struct t_main : t_http_base {
   mutex mtx;
   //map<string, string> node2ipport;
   //t_net_api capi;
+  //typedef emitter_on_data_decoder ReliableEmitterToClient;
   map<int, emitter_on_data_decoder> client_decoders;mutex cds_mtx;//mutex n2i_mtx;
   CompileQueue compq;
   void on_client_data(int client_id, const string& data, function<void(const string&)> send) {
     lock_guard<mutex> lock(cds_mtx);
     auto& decoder = client_decoders[client_id];
     if (!decoder.cb) {
-      decoder.cb = [this, client_id, send,&decoder](const string& z, const string& payload) {
+      //decoder.init([this,client_id](const string&z,const string&payload){
+      //  server.send_to_client(client_id,qap_zchan_write(z,payload));
+      //});
+      decoder.cb = [this, client_id, &decoder](const string& z, const string& payload) {
         if(z=="game_finished:"+UPLOAD_TOKEN){
           auto result=parse<t_finished_game>(payload);
           lock_guard<mutex> lock(mtx);
@@ -792,14 +797,14 @@ struct t_main : t_http_base {
       
               auto& g = garr[ex.game_id];
               if(g.gd.ordered_at!=ex.ordered_at){
-                LOG("t_main::node_up: game " + to_string(ex.game_id) + " order time mismatch, ignoring");
+                LOG("t_main::node_up: game " + to_string(ex.game_id) + " order time mismatch, ignoring. '"+g.gd.ordered_at+"' vs '"+ex.ordered_at+"'");
                 continue;
               }
       
               if (g.status == "scheduled" || g.status == "assigned") {
                 g.status = "running";
-                LOG("t_main::node_up: recovered running game " + to_string(ex.game_id));
-                sch.mark_game_running(ex.game_id, node(client_id), g.gd.arr.size());
+                auto uc=sch.mark_game_running(ex.game_id, node(client_id), g.gd.arr.size());
+                LOG("t_main::node_up: recovered running game " + to_string(ex.game_id)+". uc="+to_string(uc));
               } else if (g.status == "running") {
                 LOG("t_main::node_up: confirmed running game " + to_string(ex.game_id));
               } else {
@@ -842,7 +847,7 @@ struct t_main : t_http_base {
         if(z=="ping:"+UPLOAD_TOKEN){
           auto n=node(client_id,true);
           if(n.size())sch.on_ping(n);
-          server.send_to_client(client_id,qap_zchan_write("pong",":)"));
+          server.send_to_client(client_id,qap_zchan_write("pong",":)"));//decoder.write("pong",":)");
         }
       };
     }
@@ -956,7 +961,7 @@ struct t_main : t_http_base {
   int repair_failed_games(){
     int n=0;
     for(auto&ex:garr){
-      if(!(ex.status=="assign_failed"||ex.status=="assigned"||ex.status.substr(0,7)=="aborted"))continue;
+      if(!(ex.status=="assign_failed"||ex.status=="assigned"||ex.status.substr(0,7)=="aborted"||ex.status=="running"))continue;
       if(!qap_check_id(seasons,ex.gd.season))continue;
       auto&s=seasons[ex.gd.season];
       double ms=0;
