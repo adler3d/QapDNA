@@ -387,7 +387,7 @@ struct t_node:t_node_cache{
                       pnode->container_monitor.add(pgame, player_id);
                   }
               }else if(z=="new_tick"){
-                  LOG("new_tick="+payload);
+                  //LOG("new_tick="+payload);
                   auto a=split(payload,",");
                   pgame->tick=stoi(a[0]);
               }
@@ -659,12 +659,12 @@ struct t_node:t_node_cache{
               }
             }
             if(!any_pending&&was_done){
-              LOG("game_id="+to_string(gd.game_id)+"; tick="+to_string(tick));
+              if(tick%100==0)LOG("game_id="+to_string(gd.game_id)+"; tick="+to_string(tick));
             }
           }
           if (qaplr) {
             qaplr->write_zchan("p"+to_string(player_id),mk_len_packed(cmd));
-            LOG("slot2decoder["+to_string(player_id)+"]:: passed to QapLR");
+            //LOG("slot2decoder["+to_string(player_id)+"]:: passed to QapLR");
           }
         };
       }
@@ -858,7 +858,7 @@ struct t_node:t_node_cache{
         return t.pgame == pgame && t.player_id == player_id;
       });
       tasks.push_back({pgame,player_id,clock.MS()});
-      LOG("t_node::t_cm::add pid="+to_string(player_id));
+      //LOG("t_node::t_cm::add pid="+to_string(player_id));
     }
     void clear(int game_id){
       lock_guard<mutex> lock(tasks_mtx);
