@@ -1159,37 +1159,37 @@ struct t_node:t_node_cache{
               // data ready
               for (auto& f : fds) {
                 if (f.fd == pfd.fd) {
-                  //f.on_ready(f.fd);
+                  f.on_ready(f.fd);
                   //std::thread([q=f.fd,w=f.on_ready]{
                   //  q.on_ready(f.fd);
-                  arr.push_back(f.fd);
+                  //arr.push_back(f.fd);
                 }
               }
 
             }
           }
         }
-        if(arr.size()==1){
-          for (auto& f : fds) {
-            if (f.fd == arr[0]) {
-              f.on_ready(f.fd);
-            }
-          }
-          continue;
-        }
-        vector<unique_ptr<thread>> tarr(arr.size());
-        for(int i=0;i<arr.size();i++){
-          int&fd=arr[i];
-          tarr[i]=make_unique<thread>([&](){
-            for (auto& f : fds) {
-              if (f.fd == fd) {
-                f.on_ready(f.fd);
-              }
-            }
-          });
-        }
-        for(int i=0;i<tarr.size();i++)tarr[i]->join();
-        if(tarr.size())LOG("fd_thread.len="+to_string(tarr.size()));
+        //if(arr.size()==1){
+        //  for (auto& f : fds) {
+        //    if (f.fd == arr[0]) {
+        //      f.on_ready(f.fd);
+        //    }
+        //  }
+        //  continue;
+        //}
+        //vector<unique_ptr<thread>> tarr(arr.size());
+        //for(int i=0;i<arr.size();i++){
+        //  int&fd=arr[i];
+        //  tarr[i]=make_unique<thread>([&](){
+        //    for (auto& f : fds) {
+        //      if (f.fd == fd) {
+        //        f.on_ready(f.fd);
+        //      }
+        //    }
+        //  });
+        //}
+        //for(int i=0;i<tarr.size();i++)tarr[i]->join();
+        //if(tarr.size())LOG("fd_thread.len="+to_string(tarr.size()));
       }
     }
   };
@@ -1243,7 +1243,9 @@ struct t_node:t_node_cache{
       }
       if(z=="new_game:"+UPLOAD_TOKEN){
         LOG("t_node::new_game bef");
-        new_game(parse<t_game_decl>(payload));
+        auto gd=parse<t_game_decl>(payload);
+        swd->try_write("game_runned:"+UPLOAD_TOKEN,to_string(gd.game_id));
+        new_game(gd);
         LOG("t_node::new_game aft");
       }
       if (z == "pong") {

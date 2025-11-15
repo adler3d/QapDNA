@@ -783,6 +783,16 @@ struct t_main : t_http_base {
           sch.on_game_aborted(node(client_id),g.gd.arr.size());
           LOG("game aborted "+to_string(gid));
         }
+        if(z=="game_runned:"+UPLOAD_TOKEN){
+          auto game_id=stoull(payload);
+          lock_guard<mutex> lock(mtx);
+          auto gid=game_id;
+          if(gid<0||gid>=garr.size()){LOG("t_main::wrong game_id form "+to_string(client_id));return;}
+          auto&g=garr[gid];
+          g.status="running";
+          gid2agarr[gid].need_del=true;
+          LOG("game runned "+to_string(gid));
+        }
         if(z=="node_up:"+UPLOAD_TOKEN){
           auto msg=parse<t_node_up_msg>(payload);
           lock_guard<mutex> lock(mtx);
@@ -978,6 +988,17 @@ struct t_main : t_http_base {
     LOG("t_main::repair_failed_games: n = "+to_string(n));
     return n;
   }
+  struct t_assigned_game{
+    uint64_t game_id=0;
+    string node;
+    string time;
+    bool failed=false;
+    uint64_t num_players=0;
+    double ms=1e9;
+    bool need_del=false;
+  };
+  typedef map<uint64_t,t_assigned_game> t_gid2agarr;
+  t_gid2agarr gid2agarr;
   struct t_sch_api:i_sch_api{
     t_main*pmain=nullptr;
     bool assign_game(const t_game_decl&game,const string&node)override{
@@ -989,6 +1010,7 @@ struct t_main : t_http_base {
       lock_guard<mutex> lock(pmain->mtx);
       auto&g=pmain->garr[game.game_id];
       g.status=ok?"assigned":"assign_failed";
+      pmain->gid2agarr[game.game_id]={game.game_id,node,qap_time(),ok,g.gd.arr.size()};
       return ok;
     }
   };
@@ -1019,7 +1041,27 @@ struct t_main : t_http_base {
     server.start();//server.
     cout << "[t_main] Server started on port "+to_string(port)+"\n";
     //cout << "Press Enter to stop...\n"; string dummy;getline(cin, dummy);
-    for(;;){std::this_thread::sleep_for(1000ms);}
+    for(int iter=0;;iter++){
+      std::this_thread::sleep_for(1000ms);
+      auto now=qap_time();
+      lock_guard<mutex> lock(mtx);
+      for(auto it=gid2agarr.begin();it!=gid2agarr.end();){
+        auto&ag=it->second;
+        if(ag.need_del||qap_time_diff(ag.time,now)<ag.num_players*2*950){
+          if(ag.need_del){
+            it=gid2agarr.erase(it);
+          }else{
+            it++;
+          }
+          continue;
+        }
+        if(!qap_check_id(garr,ag.game_id)){ag.need_del=true;it++;continue;}
+        LOG("game is assigned but not runned a lot of time so reschedule gid="+to_string(ag.game_id));
+        sch.add_game_decl(garr[ag.game_id].gd,ag.ms);
+        ag.need_del=true;
+        it++;
+      }
+    }
     server.stop();
     return 0;
   }
