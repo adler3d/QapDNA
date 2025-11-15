@@ -222,7 +222,7 @@ struct Scheduler {
   mutex mtx;
   //map<string, t_node_info> nodes;
   vector<t_node_info> narr;
-  map<int, queue<t_game_decl>> c2rarr;
+  map<int,deque<t_game_decl>> c2rarr;
   void add_cores(const string& node, int n) {
     lock_guard<mutex> lock(mtx);
     for (auto& ex : narr) {
@@ -968,10 +968,38 @@ struct t_main : t_http_base {
     };
     return std::move(out);
   }
-  int repair_failed_games(){
+  int repair_sys_scheduled_games(){
+    {
+      lock_guard<mutex> lock(sch.mtx);
+      for(auto&[n,arr]:sch.c2rarr){
+        for(auto&gd:arr)if(qap_check_id(garr,gd.game_id)&&garr[gd.game_id].author=="system")return 0;
+      }
+    }
     int n=0;int sys_n=0;
     for(auto&ex:garr){
-      if(!(ex.status=="assign_failed"||ex.status=="assigned"||ex.status.substr(0,7)=="aborted"||ex.status=="running"))continue;
+      if(!(ex.status=="scheduled"))continue;
+      if(!qap_check_id(seasons,ex.gd.season))continue;
+      auto&s=seasons[ex.gd.season];
+      double ms=0;
+      for(auto&slot:ex.gd.arr){
+        if(!s.uid2scoder.count(slot.uid))continue;
+        auto&sc=s.uid2scoder[slot.uid];
+        if(!qap_check_id(sc.sarr,slot.v))continue;
+        ms+=sc.sarr[slot.v].ms.avg(ex.gd.maxtick*ex.gd.TL);
+      }
+      ex.status = "scheduled";
+      sch.add_game_decl(ex.gd,ms);
+      if(ex.author=="system")sys_n++;
+      n++;
+    }
+    LOG("t_main::repair_scheduled_games: n="+to_string(n)+" sys_n="+to_string(sys_n));
+    return n;
+  }
+  int repair_failed_games(){
+    repair_sys_scheduled_games();
+    int n=0;int sys_n=0;
+    for(auto&ex:garr){
+      if(!(ex.status=="assign_failed"||ex.status=="assign_failed"||ex.status=="assigned"||ex.status.substr(0,7)=="aborted"||ex.status=="running"))continue;
       if(!qap_check_id(seasons,ex.gd.season))continue;
       auto&s=seasons[ex.gd.season];
       double ms=0;
