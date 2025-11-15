@@ -82,7 +82,7 @@ public:
   QapColor(uchar A,uchar R,uchar G,uchar B):a(A),r(R),g(G),b(B){}
   QapColor(uchar R,uchar G,uchar B):a(255),r(R),g(G),b(B){}
   QapColor(const QapColor& v):a(v.a),r(v.r),g(v.g),b(v.b){}
-  QapColor(const unsigned int&v){*this=(QapColor&)v;}
+  QapColor(const unsigned int&v){((unsigned int&)*this)=v;}
   bool operator==(const QapColor&v)const{return (a==v.a)&&(r==v.r)&&(g==v.g)&&(b==v.b);}
   QapColor&operator=(const QapColor&v){a=v.a; r=v.r; g=v.g; b=v.b; return *this;}
   QapColor operator+()const{return *this;}
