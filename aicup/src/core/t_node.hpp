@@ -883,8 +883,9 @@ struct t_node:t_node_cache{
     // Создаём уникальную папку для сокетов этого контейнера
     string baseSocketDir = "/tmp/dokcon_sockets";
     api.container_socket_dir=baseSocketDir + "/" + api.conid;
+
     auto mkresult=system(("mkdir -p " + api.container_socket_dir).c_str());
-    if(mkresult){
+    if(mkresult&&mkresult!=-1){
       LOG("spawn_docker::mkdir failed: " + to_string(mkresult) + " for " + api.conid);
       return false;
     }
