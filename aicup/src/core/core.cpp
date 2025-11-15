@@ -875,7 +875,7 @@ struct t_main : t_http_base {
           if(ex.second.deaded){darr.push_back(ex.second.cid);continue;}
           if(ex.second.our)continue;
           auto dt=qap_time_diff(ex.second.time,now);
-          if(dt<1000*3)continue;
+          if(dt<1000*9)continue;
           server.disconnect_client(ex.second.cid);
           darr.push_back(ex.first);
         }
@@ -907,7 +907,7 @@ struct t_main : t_http_base {
   };
   map<int,t_client_info> cid2i;mutex cid2i_mtx;
   void on_client_connected(int client_id, socket_t sock, const string& ip) {
-    cout << "[t_main] client connected: " << ip << " (id=" << client_id << ")\n";
+    LOG("[t_main] client connected: "+ip+" (id="+to_string(client_id)+")");
     //lock_guard<mutex> lock(n2i_mtx);node2ipport[node(client_id)] = ip + ":31456";
     lock_guard<mutex> lock(cid2i_mtx);
     cid2i[client_id]={ip,client_id,/*sock,*/qap_time()};
@@ -915,7 +915,7 @@ struct t_main : t_http_base {
     server.send_to_client(client_id,qap_zchan_write("hi",ut));
   }
   void on_client_disconnected(int client_id) {
-    cout << "[t_main] Node disconnected: " << client_id << "\n";
+    LOG("[t_main] Node disconnected: "+to_string(client_id));
     {lock_guard<mutex> lock(cds_mtx);client_decoders.erase(client_id);}
     //{lock_guard<mutex> lock(n2i_mtx);node2ipport.erase(node(client_id));}
   }
