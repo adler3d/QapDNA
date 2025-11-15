@@ -627,7 +627,7 @@ struct t_phase {
   //===
   #include "defprovar.inl"
   //===
-  bool prev_wave_done()const{return games.size()==finished_games;}
+  bool prev_wave_done()const{return games.size()<=finished_games;}
 };
 typedef map<uint64_t,t_season_coder> t_uid2scoder;
 struct t_season {
