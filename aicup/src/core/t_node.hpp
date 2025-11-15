@@ -1278,7 +1278,7 @@ struct t_node:t_node_cache{
           swd->reconnect();
           continue;
         }
-        this_thread::sleep_for(2s); // ждём ответ
+        this_thread::sleep_for(10s); // ждём ответ
         if (!pong_received) {
           LOG("t_node::pong not received — reconnecting");
           swd->reconnect();
