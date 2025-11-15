@@ -1928,6 +1928,14 @@ struct t_main : t_http_base {
       }
       const auto& s = seasons.back();
       json j;
+      json dj;
+      {
+        lock_guard<mutex> lock(sch.mtx);
+        for(auto&[n,arr]:sch.c2rarr){
+          dj["sch"+to_string(n)] = arr.size();
+        }
+      }
+      j["debug"] = dj;
       j["season_name"] = s.season_name;
       j["title"] = s.title;
       j["cur_phase"] = s.cur_phase;
