@@ -836,8 +836,10 @@ struct t_node:t_node_cache{
       t_docker_api_v2&get(){return *pgame->slot2api[player_id];}
       bool kill_if_TL(double ms){
         if(deaded)return false;
+        if(pgame->finished.load()){deaded=true;return false;}
         auto&gd=pgame->gd;
         auto TL=pgame->tick?gd.TL:gd.TL0;
+        if(pgame->tick>1024*1024*64){deaded=true;LOG("26 hours? keep it, lol");return false;}
         if(ms<=TL)return false;
         LOG("kill_if_TL::kill_with_notify ms="+to_string(ms)+" at tick "+to_string(pgame->tick)+" pid="+to_string(player_id));
         kill_with_notify(*pgame,player_id);
@@ -1025,7 +1027,7 @@ struct t_node:t_node_cache{
   }
   void on_qaplr_finished(t_runned_game& g) {
     lock_guard<mutex> lock(g.finish_mtx);
-    if (g.finished.exchange(true)) return; // уже завершено
+    if(g.finished.exchange(true))return; // уже завершено
     LOG("t_node::QapLR finished for game " + to_string(g.gd.game_id));
     for (int i = 0; i < (int)g.slot2api.size(); ++i) {
       if (g.slot2status[i].ok()) {

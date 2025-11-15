@@ -190,8 +190,12 @@ class SocketWithDecoder {
       while (!stopping) {
         // Используем poll для ожидания данных с таймаутом (например, 100 мс)
         // Это позволяет потоку проверять флаг stopping без блокировки recv навсегда
+        #ifdef _WIN32
+        int poll_res=0;LOG("impl poll on win32 first. no way.");
+        #else
         struct pollfd pfd = {sock, POLLIN, 0};
         int poll_res = poll(&pfd, 1, 100); // 100 мс таймаут
+        #endif
 
         if (poll_res > 0) {
             // Данные готовы к чтению
