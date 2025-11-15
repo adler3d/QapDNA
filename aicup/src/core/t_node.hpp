@@ -883,7 +883,11 @@ struct t_node:t_node_cache{
     // Создаём уникальную папку для сокетов этого контейнера
     string baseSocketDir = "/tmp/dokcon_sockets";
     api.container_socket_dir=baseSocketDir + "/" + api.conid;
-    (void)system(("mkdir -p " + api.container_socket_dir).c_str());
+    auto mkresult=system(("mkdir -p " + api.container_socket_dir).c_str());
+    if(mkresult){
+      LOG("spawn_docker::mkdir failed: " + to_string(mkresult) + " for " + conid);
+      return false;
+    }
     api.socket_path_on_host = api.container_socket_dir + "/dokcon_" + api.conid + ".sock";
     api.socket_path_in_container = "/tmp/dokcon_" + api.conid + ".sock";
 
@@ -914,7 +918,7 @@ struct t_node:t_node_cache{
       if (result != 0) {
         LOG("spawn_docker::docker run failed: " + to_string(result) + " for " + cdn_url +" at attempt"+to_string(attempt));
         std::this_thread::sleep_for(std::chrono::milliseconds(128));
-        if(attempt==5){
+        if(attempt==5||result==32512){
           api.on_stderr("docker run failed: " + to_string(result) + "\n");
           return false;
         }
