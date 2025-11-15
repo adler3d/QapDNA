@@ -2942,6 +2942,7 @@ public:
     } else if (phase.type == "sandbox") {
       if(!(phase.prev_wave_done()&&phase.on_prev_wave_end))return;
       if (qap_time_diff(phase.last_wave_time, now) < phase.sandbox_wave_interval_ms) {
+        LOG("qap_time_diff("+phase.last_wave_time+", now) < "+to_string(phase.sandbox_wave_interval_ms));
         return;
       }
     }
