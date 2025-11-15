@@ -245,7 +245,7 @@ struct Scheduler {
   };
   void add_game_decl(const t_game_decl&gd,double ms){
     lock_guard<mutex> lock(mtx);
-    c2rarr[gd.arr.size()].push(gd);
+    c2rarr[gd.arr.size()].push_back(gd);
   }
   vector<t_game_decl> fails;
   void main() {
@@ -257,7 +257,7 @@ struct Scheduler {
         if(q.empty())continue;
         t_node_info*target=node2i({},cores_needed);
         if(!target)continue;
-        auto game=q.front();q.pop();
+        auto game=q.front();q.pop_front();
         target->used_cores+=cores_needed;
         if(!api->assign_game(game,target->name))fails.push_back(game);
         LOG("Scheduler:: Scheduled game on node: "+target->name+" ; game_id:"+to_string(game.game_id));
