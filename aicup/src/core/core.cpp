@@ -2982,11 +2982,11 @@ public:
       gd.season = season.season;
       gd.phase = phase.phase;
       gd.wave = newWaveNumber;
+      gd.ordered_at = now;
 
       t_game game;
       game.gd = gd;
       game.status = "scheduled";
-      game.gd.ordered_at = now;
       game.author = "system";
 
       garr.push_back(std::move(game));
