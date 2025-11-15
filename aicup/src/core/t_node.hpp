@@ -1222,7 +1222,7 @@ struct t_node:t_node_cache{
   unique_ptr<SocketWithDecoder> swd;
   string unique_token;
   int main(){
-    static auto cores=(thread::hardware_concurrency()*32);
+    static auto cores=(thread::hardware_concurrency()*4);
     atomic<bool> pong_received{false};
     auto cb=[&](const string&z,const string&payload){
       if(z=="hi"){
