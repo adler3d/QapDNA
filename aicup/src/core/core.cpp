@@ -725,7 +725,10 @@ struct t_main : t_http_base {
                 if(qap_check_id(p.wave2games_finished,g.gd.wave)){
                   auto&gf=p.wave2games_finished[g.gd.wave];
                   gf++;
-                  if(qap_check_id(p.wave2gid,g.gd.wave)&&gf>=p.wave2gid[g.gd.wave].size())p.new_completed_waves++;
+                  if(qap_check_id(p.wave2gid,g.gd.wave)&&gf>=p.wave2gid[g.gd.wave].size()){
+                    waveman.endWave(g.gd.wave);
+                    p.new_completed_waves++;
+                  }
                 }
                 vector<t_player_with_score> players;players.reserve(g.gd.arr.size());
                 for(uint64_t i=0;i<g.gd.arr.size();i++){
@@ -968,11 +971,11 @@ struct t_main : t_http_base {
     };
     return std::move(out);
   }
-  int repair_sys_scheduled_games(){
+  tuple<int,int,bool> repair_sys_scheduled_games(){
     {
       lock_guard<mutex> lock(sch.mtx);
       for(auto&[n,arr]:sch.c2rarr){
-        for(auto&gd:arr)if(qap_check_id(garr,gd.game_id)&&garr[gd.game_id].author=="system")return 0;
+        for(auto&gd:arr)if(qap_check_id(garr,gd.game_id)&&garr[gd.game_id].author=="system")return {0,0,true};
       }
     }
     int n=0;int sys_n=0;
@@ -993,10 +996,10 @@ struct t_main : t_http_base {
       n++;
     }
     LOG("t_main::repair_scheduled_games: n="+to_string(n)+" sys_n="+to_string(sys_n));
-    return n;
+    return {n,sys_n,false};
   }
   int repair_failed_games(){
-    repair_sys_scheduled_games();
+    auto[nn,sn,sysgame_in_sch]=repair_sys_scheduled_games();
     int n=0;int sys_n=0;
     for(auto&ex:garr){
       if(!(ex.status=="assign_failed"||ex.status=="assign_failed"||ex.status=="assigned"||ex.status.substr(0,7)=="aborted"||ex.status=="running"))continue;
@@ -1061,7 +1064,10 @@ struct t_main : t_http_base {
     for(auto& season : seasons) {
       for(auto& phase : season.phases) {
         if(!phase.is_active)continue;
-        if(!sys_n)phase.on_prev_wave_end=phase.prev_wave_done();
+        if(!sn&&!sys_n&&!sysgame_in_sch){
+          phase.new_completed_waves=phase.max_concurrent_waves;
+          phase.on_prev_wave_end=phase.prev_wave_done();
+        }
         LOG("phase.on_prev_wave_end == "+to_string(phase.on_prev_wave_end));
       }
     }

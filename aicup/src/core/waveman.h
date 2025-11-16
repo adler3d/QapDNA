@@ -79,6 +79,7 @@ struct WaveManager {
     ADD(double,endTimeMS,{})\
     ADD(double,durationMS,{})\
     ADD(int,waveNumber,{})\
+    ADD(bool,ended,false)\
     //===
     #include "defprovar.inl"
     //===
@@ -167,6 +168,10 @@ struct WaveManager {
       LOG("Trying to end unknown wave: " + std::to_string(waveNumber));
       return;
     }
+    if(it->ended){
+      LOG("Trying to end ended wave: " + std::to_string(waveNumber));
+      return;
+    }else it->ended=true;
     it->endTimeMS = now;
     it->durationMS = it->endTimeMS - it->startTimeMS;
 
