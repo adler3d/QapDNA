@@ -1152,7 +1152,7 @@ struct t_main : t_http_base {
     return 0;
   }
   map<string,string> coder2lgt; mutex coder2lgt_mtx;
-  httplib::Server srv;
+  httplib::Server srv,black_srv;
   void http_server_main(){
     thread([&](){
       this_thread::sleep_for(600s);
@@ -1167,6 +1167,27 @@ struct t_main : t_http_base {
       }
       return 0;
     }).detach();
+    thread([this](){
+      black_srv.set_payload_max_length(1024*1024);
+      setup_black_routes();
+      if(!black_srv.listen("0.0.0.0",11223)){
+        cerr << "[t_back_site] Failed to start server\n";
+        return -1;
+      }
+      return 0;
+    }).detach();
+  }
+  void setup_black_routes(){
+    black_srv.Post("/api/save", [this](const httplib::Request& req, httplib::Response& res) {
+      string auth = req.get_header_value("Authorization");
+      if (auth.substr(0, 7) != "Bearer ") { res.status = 404; return; }
+      string token = auth.substr(7);
+      if (token!=UPLOAD_TOKEN) { res.status = 404; return; }
+      waveman.saveAtMS=waveman.roundClock.MS();
+      auto s=QapSaveToStr(*this);
+      file_put_contents("black_save.qap",s);
+      res.set_content("["+qap_time()+"]: size="+to_string(s.size()/1024.0/1024.0)+"MB", "text/plain");
+    });
   }
   RateLimiter rate_limiter;
   static string get_token_from_request(const httplib::Request& req, httplib::Response& res){
@@ -2554,6 +2575,12 @@ struct t_main : t_http_base {
       if (!ok||uid) { res.status = 404; return; }
       res.set_file_content("save.qap","text/html");\
     });
+    srv.Get("/black_save.qap",[this](const httplib::Request&req,httplib::Response&res){\
+      RATE_LIMITER(25);
+      auto [uid, ok] = auth_by_bearer(req);
+      if (!ok||uid) { res.status = 404; return; }
+      res.set_file_content("black_save.qap","text/html");\
+    });
     srv.Post(R"(/api/vote/comment/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
       RATE_LIMITER(15);
 
@@ -3902,10 +3929,28 @@ bool ensure_runner_image() {
 }
 
 #include "t_node.hpp"
+typedef pair<const string&,const string&> t_newer_files;
+t_newer_files getNewerFile(const string&file1,const string&file2){
+  typedef std::filesystem::path p;
+  if (!std::filesystem::exists(file1)) return {file2,file1};
+  if (!std::filesystem::exists(file2)) return {file1,file2};
+    
+  auto time1 = std::filesystem::last_write_time(file1);
+  auto time2 = std::filesystem::last_write_time(file2);
+    
+  return (time1 > time2)?t_newer_files{file1,file2}:t_newer_files{file2,file1};
+}
 void setup_main(t_main&m){
-  auto mem=file_get_contents("save.qap");
+  string f0="black_save.qap";string f1="save.qap";
+  const auto&[a0,a1]=getNewerFile(f0,f1);
+  auto mem=file_get_contents(a0);
   bool ok=QapLoadFromStr(m,mem);
   m.waveman.restoreAfterLoad();
+  if(!ok){
+    mem=file_get_contents(a1);
+    ok=QapLoadFromStr(m,mem);
+    m.waveman.restoreAfterLoad();
+  }
   if(!ok){
     m={};
     t_season s;
