@@ -23,6 +23,7 @@
   <div>
     <label>🔐 Admin Token:
       <input type="password" id="adminToken" class="token-input" placeholder="Enter your bearer token" />
+      <input type="text" id="blackToken" class="token-input" placeholder="Enter your black token" />
     <!--</button>-->
     <button onclick="saveToken()">💾 Save Token</button>
     <button onclick="clearToken()">🗑️ Clear Token</button>
@@ -46,6 +47,11 @@
   <textarea id="manualPlayers" placeholder="my_coder&#10;other_coder&#10;...">my_coder</textarea>
   <button onclick="createManualGame()">🎲 Launch Manual Game</button>
   <pre id="manualGameResult"></pre>
+
+  <!-- 3. BlackSave -->
+  <h2>⚙️ BlackSave</h2>
+  <button onclick="blackSave()">✅ black save</button>
+  <pre id="blackSaveResult"></pre>
 
   <!-- 3. save -->
   <h2>⚙️ save</h2>
@@ -130,6 +136,34 @@
         alert('Token cannot be empty');
       }
     }
+    async function blackApiCall(method, path, body = null) {
+        const API_BASE = window.location.origin+':11223/api';
+        const url = API_BASE + path;
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        const token = document.getElementById('blackToken').value;
+        if (token) {
+            headers['Authorization'] = 'Bearer ' + token;
+        }
+
+        const options = { method, headers };
+        if (body) options.body = JSON.stringify(body);
+
+        try {
+            const res = await fetch(url, options);
+            const text = await res.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                data = { raw: text, status: res.status };
+            }
+            return { ok: res.ok, status: res.status, data };
+        } catch (err) {
+            return { ok: false, error: err.message };
+        }
+    }
 
     async function apiCall(method, path, body = null) {
       const url = API_BASE + path;
@@ -181,6 +215,14 @@
       const out = document.getElementById('manualGameResult');
       out.className = res.ok ? 'success' : 'error';
       out.textContent = JSON.stringify(res.data, null, 2);
+    }
+
+    // === black save ===
+    async function blackSave() {
+        const res = await blackApiCall('POST', '/save', {});
+        const out = document.getElementById('blackSaveResult');
+        out.className = res.ok ? 'success' : 'error';
+        out.textContent = JSON.stringify(res.data, null, 2);
     }
 
     // === save ===

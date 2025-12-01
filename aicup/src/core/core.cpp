@@ -1178,6 +1178,11 @@ struct t_main : t_http_base {
     }).detach();
   }
   void setup_black_routes(){
+    black_srv.set_default_headers({
+      {"Access-Control-Allow-Origin", "*"},
+      {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
+      {"Access-Control-Allow-Headers", "Authorization, Content-Type"}
+    });
     black_srv.Post("/api/save", [this](const httplib::Request& req, httplib::Response& res) {
       string auth = req.get_header_value("Authorization");
       if (auth.substr(0, 7) != "Bearer ") { res.status = 404; return; }
