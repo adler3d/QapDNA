@@ -215,6 +215,7 @@ struct t_node_info {
 };
 struct i_sch_api{
   virtual bool assign_game(const t_game_decl&gd,const string&node){LOG("assign_game::no_way");return false;}
+  virtual void node_timeout(const string&node){}
 };
 struct Scheduler {
   i_sch_api*api=nullptr;
@@ -299,8 +300,15 @@ struct Scheduler {
         auto now = qap_time();
         lock_guard<mutex> lock(mtx);
         for (auto it = narr.begin(); it != narr.end(); ) {
-          if (qap_time_diff(it->last_heartbeat,now) > 60*1000) {
-            LOG("Scheduler:: Node timeout: "+it->name);
+          auto ping_age_ms = qap_time_diff(it->last_heartbeat, now);
+          bool should_remove = false;
+          if (ping_age_ms > 60 * 1000) {
+            should_remove = true;
+            LOG("Scheduler:: Node timeout: " + it->name);
+          }
+          if (should_remove) {
+            api->node_timeout(it->name);
+            //pmain->notify_tnr_node_status(it->name,"timeout",ping_age_ms);
             it = narr.erase(it);
           } else {
             ++it;
@@ -861,6 +869,22 @@ struct t_main : t_http_base {
           auto n=node(client_id,true);
           if(n.size())sch.on_ping(n);
           server.send_to_client(client_id,qap_zchan_write("pong",":)"));//decoder.write("pong",":)");
+          /*{
+            lock_guard<mutex> lock(mtx);
+            lock_guard<mutex> lock(sch.mtx);
+            auto now = qap_time();
+            for (const auto& ni : sch.narr) {
+              if (ni.name == n) {
+                auto ping_age_ms = qap_time_diff(ni.last_heartbeat, now);
+                if (ping_age_ms < 30000) {
+                  // t_node активен
+                  string status_json = json{{"node", n}, {"status", "active"}, {"ping_age_ms", ping_age_ms}, {"timestamp", now}}.dump();
+                  broadcast_tnr_message("t_node_active", status_json);
+                }
+                break;
+              }
+            }
+          }*/
         }
       };
     }
@@ -1097,11 +1121,169 @@ struct t_main : t_http_base {
       auto&g=pmain->garr[game.game_id];
       g.status=ok?"assigned":"assign_failed";
       pmain->gid2agarr[game.game_id]={game.game_id,node,qap_time(),ok,g.gd.arr.size()};
+      //if(ok)notify_tnr_game_assignment(node,game.game_id,true);
       return ok;
+    }/*
+    void notify_tnr_game_assignment(const string& node, uint64_t game_id, bool success) {
+      if (!pmain) return;
+      json notification;
+      notification["node"] = node;
+      notification["game_id"] = game_id;
+      notification["success"] = success;
+      notification["timestamp"] = qap_time();
+      pmain->broadcast_tnr_message("game_assigned", notification.dump());
+    }*/
+    void node_timeout(const string&node)override{
+      lock_guard<mutex> lock(pmain->tnr_mtx);
+      auto&m=pmain->tnr_tokens;
+      auto it=m.find(node);
+      if(it==m.end()){LOG("[node_timeout] unk node in scheduler: "+node);return;}
+      auto&client=it->second;
+      auto message=qap_zchan_write("t_node_timeout",qap_time());
+      pmain->tnr_server.send_to_client(client.client_id,message);
     }
+  };/*
+  void broadcast_tnr_message(const string& z, const string& payload) {
+    lock_guard<mutex> lock(tnr_mtx);
+    for (const auto& [token, client] : tnr_tokens) {
+      if (client.authenticated) {
+        auto message = qap_zchan_write(z, payload);
+        tnr_server.send_to_client(client.client_id, message);
+      }
+    }
+  }*/
+  void handle_tnr_message(int client_id, const string& z, const string& payload, function<void(const string&)> send) {
+    LOG("[TNR] Received: " + z + " from client " + to_string(client_id));
+  
+    if (z == "register_tnr") {
+      handle_tnr_register(client_id, payload, send);
+    } else if (z == "ping:tnr") {
+      handle_tnr_ping(client_id, payload, send);
+    } else if (z == "restarting") {
+      handle_tnr_restart_notification(client_id, payload);
+    } else {
+      LOG("[TNR] Unknown message type: " + z);
+    }
+  }
+  string get_client_ip(int client_id) {
+    lock_guard<mutex> lock(tnr_server.clientsMutex);
+    auto it = tnr_server.clientIps.find(client_id);
+    return (it != tnr_server.clientIps.end()) ? it->second : "unknown";
+  }
+  void handle_tnr_register(int client_id, const string& payload, function<void(const string&)> send) {
+    try {
+      auto j = json::parse(payload);
+      string upload_token = j["upload_token"];
+      string token = j["token"];
+      if (upload_token != UPLOAD_TOKEN) {
+        LOG("[TNR] Invalid upload token from client " + to_string(client_id));
+        auto error = qap_zchan_write("tnr_error", R"({"error": "invalid_token", "message": "Invalid upload token"})");
+        send(error);
+        return;
+      }/*
+       в этот метод прилетает регистрация от ТНР.
+       есть сценарий когда ТНР передаёт свой токен после того как t_main поднялся после рестарта и не помнит ТНР'ы.
+       мы должны где-то связать ноду и ТНР по этому токену.
+       нода теперь всегда знает свой токен, т.к получает его от ТНР.
+       */
+      string tnr_token = token.size()?token:sha256(qap_time()+"2025.12.01 20:13:32.048"+to_string((rand()<<16)+rand()));//"tnr_" + to_string(time(nullptr)) + "_" + to_string(rand());
+
+      {
+        lock_guard<mutex> lock(tnr_mtx);
+        t_tnr_client client;
+        client.ip = get_client_ip(client_id);
+        client.client_id = client_id;
+        client.connect_time = qap_time();
+        client.upload_token = upload_token;
+        client.authenticated = true;
+        tnr_tokens[tnr_token] = client;
+        string pending_key = "pending_" + to_string(client_id);
+        tnr_tokens.erase(pending_key);
+      }
+      LOG("[TNR] Registered TNR client " + to_string(client_id) + " with token " + tnr_token);
+      if(token.empty()){
+        auto response = qap_zchan_write("tnr_token", R"({"token": ")" + tnr_token + R"(", "status": "registered"})");
+        send(response);
+      }else{
+        auto response = qap_zchan_write("tnr_reg_ack", qap_time());
+        send(response);
+      }
+    } catch (const exception& e) {
+      LOG("[TNR] Failed to register client " + to_string(client_id) + ": " + e.what());
+      auto error = qap_zchan_write("tnr_error", R"({"error": "parse_error", "message": "Failed to parse registration data"})");
+      send(error);
+    }
+  }
+  void handle_tnr_ping(int client_id, const string& payload, function<void(const string&)> send) {
+    auto response = qap_zchan_write("tnr_pong", qap_time());
+    send(response);
+  }
+  void handle_tnr_restart_notification(int client_id, const string& payload) {
+    try {
+      auto j = json::parse(payload);
+      string reason = j["reason"];
+      int restart_count = j["restart_count"];
+    
+      LOG("[TNR] t_node restart notification: " + reason + " (restart #" + to_string(restart_count) + ")");
+    
+    } catch (const exception& e) {
+      LOG("[TNR] Failed to parse restart notification: " + string(e.what()));
+    }
+  }
+  const int TNR_PORT = 11224;
+  t_server_api tnr_server{TNR_PORT};
+  struct t_tnr_client {
+    string ip;
+    int client_id;
+    string connect_time;
+    string upload_token;
+    bool authenticated = false;
   };
+  map<string, t_tnr_client> tnr_tokens; // tnr_token -> client_info
   t_server_api server{MAIN_PORT};
+  mutex tnr_mtx;
   Scheduler sch;t_sch_api sch_api;
+  void tnr_server_start(){
+    tnr_server.onClientConnected = [this](int client_id, socket_t sock, const string& ip) {
+      lock_guard<mutex> lock(tnr_mtx);
+      t_tnr_client client;
+      client.ip = ip;
+      client.client_id = client_id;
+      client.connect_time = qap_time();
+      tnr_tokens["pending_" + to_string(client_id)] = client; // временный токен
+  
+      LOG("[TNR] Client connected from " + ip + " (id=" + to_string(client_id) + ")");
+  
+      // Отправляем приветственное сообщение
+      auto welcome = qap_zchan_write("tnr_welcome", R"({"status": "connected", "server_time": ")" + qap_time() + R"("})");
+      tnr_server.send_to_client(client_id, welcome);
+    };
+
+    tnr_server.onClientDisconnected = [this](int client_id) {
+      lock_guard<mutex> lock(tnr_mtx);
+  
+      // Находим и удаляем TNR токен
+      for (auto it = tnr_tokens.begin(); it != tnr_tokens.end(); ++it) {
+        if (it->second.client_id == client_id) {
+          LOG("[TNR] Client disconnected: " + to_string(client_id) + " (" + it->first + ")");
+          tnr_tokens.erase(it);
+          break;
+        }
+      }
+    };
+
+    tnr_server.onClientData = [this](int client_id, const string& data, function<void(const string&)> send) {
+      emitter_on_data_decoder decoder;
+      decoder.cb = [this, client_id, send](const string& z, const string& payload) {
+        handle_tnr_message(client_id, z, payload, send);
+      };
+      decoder.feed(data.data(), data.size());
+    };
+
+    // Запуск TNR сервера
+    tnr_server.start();
+    LOG("[TNR] TNR server started on port " + to_string(TNR_PORT));
+  }
   int main(int port=MAIN_PORT){
     std::random_device rd;
     dre.seed(rd());
@@ -1126,6 +1308,7 @@ struct t_main : t_http_base {
     http_server_main();
     server.start();//server.
     cout << "[t_main] Server started on port "+to_string(port)+"\n";
+    tnr_server_start();
     //cout << "Press Enter to stop...\n"; string dummy;getline(cin, dummy);
     for(int iter=0;;iter++){
       std::this_thread::sleep_for(1000ms);
@@ -4019,9 +4202,12 @@ int main(int argc,char*argv[]){
   cout<<qap_time_addms("2025.03.01 01:02:47.600",0)<<endl;
   srand(time(0));
   if(bool prod=true){
-    string mode="all";
+    string mode="all";string token;
     if(argc>1)mode=argv[1];
+    if(argc>2)token=argv[2];
     if("all"==mode){
+      cout<<"run with param 't_main' or 't_cdn' or params 't_node <token>'"<<endl;
+      return 0;
       thread([]{
         t_cdn cdn;
         return cdn.main();
@@ -4030,7 +4216,7 @@ int main(int argc,char*argv[]){
       thread([]{
         if(!ensure_runner_image())return -3145601;
         t_node node;
-        return node.main();
+        return node.main("t_node");
       }).detach();
       t_main m;
       setup_main(m);
@@ -4045,7 +4231,7 @@ int main(int argc,char*argv[]){
     if("t_node"==mode){
       if(!ensure_runner_image())return -3145601;
       t_node n;
-      return n.main();
+      return n.main(token);
     }
     if("t_cdn"==mode){
       t_cdn n;
