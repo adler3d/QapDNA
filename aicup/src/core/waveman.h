@@ -139,11 +139,11 @@ struct WaveManager {
       " rem_sub_tawd:"+to_string(rem_sub_tawd)+
       ""
     );
-    // Проверяем что остаётся времени на новую волну с учётом текущих активных волн
+    // РџСЂРѕРІРµСЂСЏРµРј С‡С‚Рѕ РѕСЃС‚Р°С‘С‚СЃСЏ РІСЂРµРјРµРЅРё РЅР° РЅРѕРІСѓСЋ РІРѕР»РЅСѓ СЃ СѓС‡С‘С‚РѕРј С‚РµРєСѓС‰РёС… Р°РєС‚РёРІРЅС‹С… РІРѕР»РЅ
     return rem_sub_tawd >= predictedDurationMS;
   }
 
-  // Запуск новой волны: фиксируем старт, возвращаем номер волны
+  // Р—Р°РїСѓСЃРє РЅРѕРІРѕР№ РІРѕР»РЅС‹: С„РёРєСЃРёСЂСѓРµРј СЃС‚Р°СЂС‚, РІРѕР·РІСЂР°С‰Р°РµРј РЅРѕРјРµСЂ РІРѕР»РЅС‹
   int startNewWave(const string&round_end_time) {
     if (!canStartNewWave(round_end_time)) {
       LOG("Not enough time for new wave. Round ended.");
@@ -159,7 +159,7 @@ struct WaveManager {
     return wave.waveNumber;
   }
 
-  // Завершение волны по номеру, обновление истории и статистики
+  // Р—Р°РІРµСЂС€РµРЅРёРµ РІРѕР»РЅС‹ РїРѕ РЅРѕРјРµСЂСѓ, РѕР±РЅРѕРІР»РµРЅРёРµ РёСЃС‚РѕСЂРёРё Рё СЃС‚Р°С‚РёСЃС‚РёРєРё
   void endWave(int waveNumber) {
     double now = roundClock.MS();
     auto it = std::find_if(activeWaves.begin(), activeWaves.end(),
@@ -175,10 +175,10 @@ struct WaveManager {
     it->endTimeMS = now;
     it->durationMS = it->endTimeMS - it->startTimeMS;
 
-    // Обновляем статистику последних N волн
+    // РћР±РЅРѕРІР»СЏРµРј СЃС‚Р°С‚РёСЃС‚РёРєСѓ РїРѕСЃР»РµРґРЅРёС… N РІРѕР»РЅ
     waveHistory.push_back(*it);
     if (waveHistory.size() > maxHistorySize) {
-      // Обновляем сумму для среднего
+      // РћР±РЅРѕРІР»СЏРµРј СЃСѓРјРјСѓ РґР»СЏ СЃСЂРµРґРЅРµРіРѕ
       lastNSumMS -= waveHistory.front().durationMS;
       waveHistory.pop_front();
     }

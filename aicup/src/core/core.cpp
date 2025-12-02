@@ -823,35 +823,36 @@ struct t_main : t_http_base {
         }
         if(z=="node_up:"+UPLOAD_TOKEN){
           auto msg=parse<t_node_up_msg>(payload);
-          lock_guard<mutex> lock(mtx);
-          //auto a=split(payload,",");
-          //if(a.size()!=2)return;
           {
-            for(auto&ex:msg.games){
-              if(!qap_check_id(garr,ex.game_id)){
-                LOG("t_main::node_up: unknown game_id " + to_string(ex.game_id) + ", ignoring");
-                continue;
-              }
+            {
+              lock_guard<mutex> lock(mtx);
+              for(auto&ex:msg.games){
+                if(!qap_check_id(garr,ex.game_id)){
+                  LOG("t_main::node_up: unknown game_id " + to_string(ex.game_id) + ", ignoring");
+                  continue;
+                }
       
-              auto& g = garr[ex.game_id];
-              if(g.gd.ordered_at!=ex.ordered_at){
-                LOG("t_main::node_up: game " + to_string(ex.game_id) + " order time mismatch, ignoring. '"+g.gd.ordered_at+"' vs '"+ex.ordered_at+"'");
-                continue;
-              }
+                auto& g = garr[ex.game_id];
+                if(g.gd.ordered_at!=ex.ordered_at){
+                  LOG("t_main::node_up: game " + to_string(ex.game_id) + " order time mismatch, ignoring. '"+g.gd.ordered_at+"' vs '"+ex.ordered_at+"'");
+                  continue;
+                }
       
-              if (g.status == "scheduled" || g.status == "assigned") {
-                g.status = "running";
-                auto uc=sch.mark_game_running(ex.game_id, node(client_id), g.gd.arr.size());
-                LOG("t_main::node_up: recovered running game " + to_string(ex.game_id)+". uc="+to_string(uc));
-              } else if (g.status == "running") {
-                LOG("t_main::node_up: confirmed running game " + to_string(ex.game_id));
-              } else {
-                LOG("t_main::node_up: game " + to_string(ex.game_id) + " in unexpected state: " + g.status);
+                if (g.status == "scheduled" || g.status == "assigned") {
+                  g.status = "running";
+                  auto uc=sch.mark_game_running(ex.game_id, node(client_id), g.gd.arr.size());
+                  LOG("t_main::node_up: recovered running game " + to_string(ex.game_id)+". uc="+to_string(uc));
+                } else if (g.status == "running") {
+                  LOG("t_main::node_up: confirmed running game " + to_string(ex.game_id));
+                } else {
+                  LOG("t_main::node_up: game " + to_string(ex.game_id) + " in unexpected state: " + g.status);
+                }
               }
             }
             for(auto&ex:msg.dmarr){
               decoder.cb(ex.z,ex.msg);
             }
+            lock_guard<mutex> lock(mtx);
             {
               lock_guard<mutex> lock(cid2i_mtx);
               bool found_old = false;
