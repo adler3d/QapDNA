@@ -1226,7 +1226,7 @@ struct t_main : t_http_base {
       LOG("[TNR] Failed to parse restart notification: " + string(e.what()));
     }
   }
-  const short int TNR_PORT = 11224;
+  const unsigned short int TNR_PORT = 11224;
   t_server_api tnr_server{TNR_PORT};
   struct t_tnr_client {
     string ip;
