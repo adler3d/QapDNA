@@ -1361,6 +1361,8 @@ struct t_main : t_http_base {
     black_srv.set_default_headers({
       {"Access-Control-Allow-Origin", "*"},
       {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
+      {"Cross-Origin-Opener-Policy", "same-origin"},
+      {"Cross-Origin-Embedder-Policy", "require-corp"},
       {"Access-Control-Allow-Headers", "Authorization, Content-Type"}
     });
     black_srv.Post("/api/save", [this](const httplib::Request& req, httplib::Response& res) {
