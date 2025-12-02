@@ -253,15 +253,32 @@ struct Scheduler {
     cleanup_old_nodes();
     while (true) {
       this_thread::sleep_for(16ms);
-      lock_guard<mutex> lock(mtx);
-      for(auto&[cores_needed,q]:c2rarr){
-        if(q.empty())continue;
-        t_node_info*target=node2i({},cores_needed);
-        if(!target)continue;
-        auto game=q.front();q.pop_front();
-        target->used_cores+=cores_needed;
-        if(!api->assign_game(game,target->name))fails.push_back(game);
-        LOG("Scheduler:: Scheduled game on node: "+target->name+" ; game_id:"+to_string(game.game_id));
+      struct t_rec{
+        t_game_decl gd;
+        string node;
+        bool ok=false;
+      };
+      vector<t_rec> recs;
+      {
+        lock_guard<mutex> lock(mtx);
+        for(auto&[cores_needed,q]:c2rarr){
+          if(q.empty())continue;
+          t_node_info*target=node2i({},cores_needed);
+          if(!target)continue;
+          auto game=q.front();q.pop_front();
+          target->used_cores+=cores_needed;
+          recs.push_back({game,target->name});
+        }
+      }
+      for(auto&ex:recs){
+        ex.ok=api->assign_game(ex.gd,ex.node);
+        LOG("Scheduler:: Scheduled game on node: "+ex.node+" ; game_id:"+to_string(ex.gd.game_id)+string(!ex.ok?" fail":""));
+      }
+      {
+        lock_guard<mutex> lock(mtx);
+        for(auto&ex:recs){
+          if(!ex.ok)fails.push_back(ex.gd);
+        }
       }
     }
   }
