@@ -618,6 +618,15 @@ public:
         WSACleanup();
 #endif
     }
+    #ifdef _WIN32
+    int qap_send(socket_t sock,const char*ptr,int len){
+      return ::send(sock, ptr, len, 0);
+    }
+    #else
+    int qap_send(socket_t sock,const char*ptr,int len){
+      return ::send(sock, ptr, len, MSG_NOSIGNAL);
+    }
+    #endif
     bool send_to_client(int client_id, const string& data) {
         socket_t sock;
         {
@@ -630,7 +639,7 @@ public:
         const char* ptr = data.data();
 
         while (len > 0) {
-            int sent = ::send(sock, ptr, len, 0);
+            int sent = qap_send(sock, ptr, len);
             if (sent <= 0) return false;
             ptr += sent;
             len -= sent;
