@@ -1114,25 +1114,13 @@ struct t_main : t_http_base {
     bool assign_game(const t_game_decl&game,const string&node)override{
       auto payload=qap_zchan_write("new_game:"+UPLOAD_TOKEN,serialize(game));
       auto cid=pmain->node2cid(node);
-      //lock_guard<mutex> lock(pmain->cid2i_mtx);
-      //auto&cid=pmain->cid2i[cid].cid;
       auto ok=pmain->server.send_to_client(cid,payload);
       lock_guard<mutex> lock(pmain->mtx);
       auto&g=pmain->garr[game.game_id];
       g.status=ok?"assigned":"assign_failed";
       pmain->gid2agarr[game.game_id]={game.game_id,node,qap_time(),ok,g.gd.arr.size()};
-      //if(ok)notify_tnr_game_assignment(node,game.game_id,true);
       return ok;
-    }/*
-    void notify_tnr_game_assignment(const string& node, uint64_t game_id, bool success) {
-      if (!pmain) return;
-      json notification;
-      notification["node"] = node;
-      notification["game_id"] = game_id;
-      notification["success"] = success;
-      notification["timestamp"] = qap_time();
-      pmain->broadcast_tnr_message("game_assigned", notification.dump());
-    }*/
+    }
     void node_timeout(const string&node)override{
       lock_guard<mutex> lock(pmain->tnr_mtx);
       auto&m=pmain->tnr_tokens;
@@ -1142,16 +1130,7 @@ struct t_main : t_http_base {
       auto message=qap_zchan_write("t_node_timeout",qap_time());
       pmain->tnr_server.send_to_client(client.client_id,message);
     }
-  };/*
-  void broadcast_tnr_message(const string& z, const string& payload) {
-    lock_guard<mutex> lock(tnr_mtx);
-    for (const auto& [token, client] : tnr_tokens) {
-      if (client.authenticated) {
-        auto message = qap_zchan_write(z, payload);
-        tnr_server.send_to_client(client.client_id, message);
-      }
-    }
-  }*/
+  };
   void handle_tnr_message(int client_id, const string& z, const string& payload, function<void(const string&)> send) {
     LOG("[TNR] Received: " + z + " from client " + to_string(client_id));
   
