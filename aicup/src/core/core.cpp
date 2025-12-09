@@ -987,7 +987,7 @@ struct t_main : t_http_base {
     body_json["coder_id"] = uid;
     body_json["elf_version"] = v;
     body_json["source_code"] = src;
-    body_json["timeout_ms"] = 20000;
+    body_json["timeout_ms"] = 90000;
     body_json["memory_limit_mb"] = 512;
     body_json["season"] = to_string(s.season);
     out.cdn_src_url=b.cdn_src_url;
