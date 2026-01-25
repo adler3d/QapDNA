@@ -134,6 +134,7 @@ bool has_cached_image(const string&image_tag){
 
 using namespace std;
 string local_main_ip_port="127.0.0.1:"+to_string(MAIN_PORT);
+string ovbox_main_ip_port="10.0.2.2:"+to_string(MAIN_PORT);
 //vector<string> split(...){return {};}
 //#define QapAssert(...)
 string generate_token(string coder_name,string time) {

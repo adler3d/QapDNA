@@ -1267,7 +1267,7 @@ struct t_node:t_node_cache{
         pong_received = true;
       }
     };
-    swd=make_unique<SocketWithDecoder>(local_main_ip_port,std::move(cb),true);
+    swd=make_unique<SocketWithDecoder>(1?ovbox_main_ip_port:local_main_ip_port,std::move(cb),true);
     swd->begin();
     thread([this,&pong_received]{
       while(true){
