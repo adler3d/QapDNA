@@ -191,7 +191,7 @@ app.post('/compile', async (req, res) => {
 // Запуск
 init().then(() => {
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
+  app.listen(PORT,'0.0.0.0',() => {
     console.log(`AI Compiler Service running on port ${PORT}`);
   });
 });
