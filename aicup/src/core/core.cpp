@@ -54,6 +54,7 @@ const string ARCHIVE_NAME = "/tmp/universal-runner.tar";
 // DON'T USE LOCALHOST WITH cpp-httplib !!! THIS DON'T WORK!
 const string CDN_HOSTPORT = "127.0.0.1:"+to_string(t_cdn::CDN_PORT);
 const string CDN_URL="http://"+CDN_HOSTPORT;
+const string CDN_URL_FOR_T_MAIN="http://192.168.0.217:"+to_string(t_cdn::CDN_PORT);
 const string CDN_URL_IMAGES=CDN_URL+"/images/"; //TODO: replace to t_main "ip:port/images/"
 const string COMPILER_URL="http://192.168.0.217:3000";//"http://127.0.0.1:3000";
 const int MAIN_PORT=31456;
@@ -67,7 +68,7 @@ bool isValidName(const std::string& name) {
   return true;
 }
 
-int http_put_with_auth(const string& path, const string& body, const string& token,const string&cdn=CDN_URL) {
+int http_put_with_auth(const string& path, const string& body, const string& token,const string&cdn) {
   try {
     httplib::Client cli(cdn);
     cli.set_connection_timeout(60);
@@ -409,7 +410,7 @@ public:
         job=std::move(jobs.front());
         jobs.pop();
       }
-      auto s=http_put_with_auth(job.cdn_src_url,job.src,UPLOAD_TOKEN);
+      auto s=http_put_with_auth(job.cdn_src_url,job.src,UPLOAD_TOKEN,CDN_URL_FOR_T_MAIN);
       if(s!=200){jobs_upe++;job.on_uploaderror(s);continue;}
       if(debug_with_fake_compiler_resp){
         t_post_resp resp;

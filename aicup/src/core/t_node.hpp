@@ -928,11 +928,24 @@ struct t_node:t_node_cache{
       if (result != 0) {
         LOG("spawn_docker::docker run failed: " + to_string(result) + " for " + cdn_url +" at attempt"+to_string(attempt));
         std::this_thread::sleep_for(std::chrono::milliseconds(128));
+        string check_cmd = "docker inspect -f '{{.State.Running}}' " + api.conid + " 2>/dev/null";
+        char buffer[128];
+        string check_result = "";
+        FILE* pipe = popen(check_cmd.c_str(), "r");
+        if (pipe) {
+          while (fgets(buffer, sizeof(buffer), pipe) != NULL) check_result += buffer;
+          pclose(pipe);
+        }
+        if (check_result.find("true") != string::npos) {
+          LOG("spawn_docker::check confirms container " + api.conid + " is RUNNING. Proceeding...");
+          break;
+        }
+        LOG("spawn_docker::docker run failed: " + to_string(result) + " for " + cdn_url +" at attempt "+to_string(attempt));
+        std::this_thread::sleep_for(std::chrono::milliseconds(128));
         if(attempt==5||result==32512){
           api.on_stderr("docker run failed: " + to_string(result) + "\n");
           return false;
         }
-
       }else break;
     }
     auto*api_ptr=&api;api.binary=binary;
@@ -956,7 +969,7 @@ struct t_node:t_node_cache{
     thread([path, data, token, on_done = std::move(on_done)]() {
       string error;auto cgs=to_cgs_str(data);
       try {
-        auto s=http_put_with_auth(path,cgs,token);
+        auto s=http_put_with_auth(path,cgs,token,CDN_URL);
         if(s!=200)error="HTTP error "+to_string(s);
       } catch (const exception& e) {
         error = string("Exception in http_put_with_auth:") + e.what();
