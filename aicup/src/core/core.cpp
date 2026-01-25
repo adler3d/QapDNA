@@ -3992,6 +3992,7 @@ static void sim_sleep(uint64_t ms) {
 
 #ifdef _WIN32
 static FILE*popen(...){return nullptr;}
+static void pclose(...){}
 static int mkfifo(...){return 0;}
 static int open(...){return 0;}
 static int write(...){return 0;}
