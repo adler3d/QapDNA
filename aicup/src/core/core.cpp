@@ -54,9 +54,9 @@ const string ARCHIVE_NAME = "/tmp/universal-runner.tar";
 // DON'T USE LOCALHOST WITH cpp-httplib !!! THIS DON'T WORK!
 const string CDN_HOSTPORT = "127.0.0.1:"+to_string(t_cdn::CDN_PORT);
 const string CDN_URL="http://"+CDN_HOSTPORT;
-const string CDN_URL_FOR_T_MAIN="http://192.168.0.217:"+to_string(t_cdn::CDN_PORT);
+const string CDN_URL_FOR_T_MAIN="http://89.169.1.66:"+to_string(t_cdn::CDN_PORT);
 const string CDN_URL_IMAGES=CDN_URL+"/images/"; //TODO: replace to t_main "ip:port/images/"
-const string COMPILER_URL="http://192.168.0.217:3000";//"http://127.0.0.1:3000";
+const string COMPILER_URL="http://89.169.1.66:3000";//"http://192.168.0.217:3000";//"http://127.0.0.1:3000";
 const int MAIN_PORT=31456;
 void LOG(const string&str){cerr<<"["<<qap_time()<<"] "<<(str)<<endl;}
 bool isValidName(const std::string& name) {
