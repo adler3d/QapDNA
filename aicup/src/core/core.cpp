@@ -4039,9 +4039,9 @@ string popen_and_read(const string&cmd){
   return result;
 };
 void log_handles(const string&s){
-  static pid_t our_pid = getpid();
-  static string lsof_ourpid_wc_l="lsof -p "+to_string(our_pid)+" |grep unix|wc -l";
-  LOG(s+"::lsof_pid_wc_l = "+popen_and_read(lsof_ourpid_wc_l));
+  //static pid_t our_pid = getpid();
+  //static string lsof_ourpid_wc_l="lsof -p "+to_string(our_pid)+" |grep unix|wc -l";
+  //LOG(s+"::lsof_pid_wc_l = "+popen_and_read(lsof_ourpid_wc_l));
 }
 
 #include <cstdlib>
