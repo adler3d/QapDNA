@@ -4028,6 +4028,22 @@ void kill_by_pid(pid_t runner_pid){kill(runner_pid,SIGTERM);}
 #define qap_read read
 #endif
 
+string popen_and_read(const string&cmd){
+  char buffer[128];
+  string result = "";
+  FILE*pipe=popen(cmd.c_str(),"r");
+  if(pipe){
+    while(fgets(buffer,sizeof(buffer),pipe)!=NULL)result+=buffer;
+    pclose(pipe);
+  }
+  return result;
+};
+void log_handles(const string&s){
+  static pid_t our_pid = getpid();
+  static string lsof_ourpid_wc_l="lsof -p "+to_string(our_pid)+" |wc -l";
+  LOG(s+"::lsof_pid_wc_l = "+popen_and_read(lsof_ourpid_wc_l));
+}
+
 #include <cstdlib>
 #include <iostream>
 #include <filesystem>
