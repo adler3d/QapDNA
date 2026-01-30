@@ -920,7 +920,20 @@ struct t_node:t_node_cache{
 
     LOG("spawn_docker::say\n" + cmd);
     for(int attempt=1;;attempt++){
+      static pid_t pid = getpid();static string lsof_pid_wc_l="lsof -p "+to_string(pid)+" |wc -l";
+      auto popen_and_read=[&](const string&cmd){
+        char buffer[128];
+        string result = "";
+        FILE*pipe=popen(cmd.c_str(),"r");
+        if(pipe){
+          while(fgets(buffer,sizeof(buffer),pipe)!=NULL)result+=buffer;
+          pclose(pipe);
+        }
+        return result;
+      };
+      LOG("lsof_pid_wc_l = "+popen_and_read(lsof_pid_wc_l));
       int result = system(cmd.c_str());
+      LOG("lsof_pid_wc_l = "+popen_and_read(lsof_pid_wc_l));
       if(result==32000){
         LOG("spawn_docker::docker run return: " + to_string(result) + " for " + cdn_url +" at attempt"+to_string(attempt)+" -> ok");
         break;

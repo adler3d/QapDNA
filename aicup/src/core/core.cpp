@@ -4008,6 +4008,7 @@ static inline pollfd make_pollinout(...){return {};}
 #define getsockopt(...)0
 typedef int pid_t;
 void kill_by_pid(...){}
+pid_t getpid(){return 0;}
 pid_t fork(...){return {};}
 void execl(...){return;}
 int pipe(...){return {};}
