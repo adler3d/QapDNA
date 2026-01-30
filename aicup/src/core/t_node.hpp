@@ -124,6 +124,7 @@ struct t_unix_socket {
     cerr << "Unix sockets not supported on Windows\n";
     return false;
     #else
+    if (sock != -1) return true;
     sock = ::socket(AF_UNIX, SOCK_STREAM, 0);
     if (sock == -1) return false;
     make_nonblocking(sock);
