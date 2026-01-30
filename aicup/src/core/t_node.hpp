@@ -899,14 +899,14 @@ struct t_node:t_node_cache{
     string baseSocketDir = "/tmp/dokcon_sockets";
     api.container_socket_dir=baseSocketDir + "/" + api.conid;
     
-    log_handles();
+    log_handles("bef mkdir");
     auto mkresult=system(("mkdir -p " + api.container_socket_dir).c_str());
     if(mkresult&&mkresult!=-1){
       LOG("spawn_docker::mkdir failed: " + to_string(mkresult) + " for " + api.conid);
       return false;
     }
     
-    log_handles();
+    log_handles("bef download_binary");
     api.socket_path_on_host = api.container_socket_dir + "/dokcon_" + api.conid + ".sock";
     api.socket_path_in_container = "/tmp/dokcon_" + api.conid + ".sock";
 
@@ -929,9 +929,9 @@ struct t_node:t_node_cache{
 
     LOG("spawn_docker::say\n" + cmd);
     for(int attempt=1;;attempt++){
-      log_handles();
+      log_handles("bef run");
       int result = system(cmd.c_str());
-      log_handles();
+      log_handles("aft run");
       if(result==32000){
         LOG("spawn_docker::docker run return: " + to_string(result) + " for " + cdn_url +" at attempt"+to_string(attempt)+" -> ok");
         break;
@@ -960,14 +960,14 @@ struct t_node:t_node_cache{
       }else break;
     }
     auto*api_ptr=&api;api.binary=binary;
-    log_handles();
+    log_handles("bef connect_to_container_socket");
     bool ok=loop_v2.connect_to_container_socket(api,[this,api_ptr](){
       api_ptr->init_writer();
       LOG("loop_v2.connect_to_container_socket::done::bef::start_reading");
       api_ptr->start_reading();
     });
     
-    log_handles();
+    log_handles("aft connect_to_container_socket");
     return ok;
   }
   static string config2seed(const string&config){return {};}
