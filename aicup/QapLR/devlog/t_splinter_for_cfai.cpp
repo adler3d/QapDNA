@@ -4,6 +4,7 @@
 */
 #include <vector>
 #include <algorithm>
+#include <math.h>
 using namespace std;
 typedef double real;
 template<typename TYPE>inline TYPE Lerp(TYPE A,TYPE B,real v){return A+(B-A)*v;}
